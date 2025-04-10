@@ -49,11 +49,22 @@ class ScraperUtils:
     @staticmethod
     def setup_logging():
         logger.remove()
+        # Log to stderr
         logger.add(
             sys.stderr,
             format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{message}</cyan>",
             level="INFO",
             colorize=True
+        )
+        
+        # Also log to file for dashboard display
+        os.makedirs('logs', exist_ok=True)
+        logger.add(
+            'logs/scraper.log',
+            format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {message}",
+            level="INFO",
+            rotation="10 MB",  # Rotate when file reaches 10MB
+            retention="1 week"  # Keep logs for 1 week
         )
 
     @staticmethod

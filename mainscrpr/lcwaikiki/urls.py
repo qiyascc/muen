@@ -3,11 +3,19 @@ from .views import (
     ConfigBrandsAPIView, 
     ProductAvailableUrlsAPIView, 
     ProductDeletedUrlsAPIView, 
-    ProductNewUrlsAPIView
+    ProductNewUrlsAPIView,
+    DashboardView,
+    TerminalOutputView
 )
 
-# API URL patterns
+app_name = 'lcwaikiki'
+
+# URL patterns
 urlpatterns = [
+    # Dashboard
+    path('dashboard/', DashboardView.as_view(), name='dashboard'),
+    path('dashboard/terminal-output/', TerminalOutputView.as_view(), name='terminal-output'),
+    
     # Configuration endpoints
     path('api/v1/lcwaikiki/config/brands/', ConfigBrandsAPIView.as_view(), name='config-brands'),
     

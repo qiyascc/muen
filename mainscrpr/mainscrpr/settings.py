@@ -42,6 +42,17 @@ UNFOLD = {
         "show_all_applications": True,
         "navigation": [
             {
+                "title": "Dashboard",
+                "items": [
+                    {
+                        "title": "Statistics Dashboard",
+                        "icon": "dashboard",
+                        "link": "/dashboard/",
+                        "permission": "is_staff",
+                    },
+                ],
+            },
+            {
                 "title": "Configurations",
                 "items": [
                     {
@@ -68,6 +79,21 @@ UNFOLD = {
                         "title": "New URLs",
                         "icon": "add_circle",
                         "link": "/admin/lcwaikiki/productnewurl/",
+                    },
+                ],
+            },
+            {
+                "title": "Scraper",
+                "items": [
+                    {
+                        "title": "Scheduled Jobs",
+                        "icon": "schedule",
+                        "link": "/admin/django_apscheduler/djangojob/",
+                    },
+                    {
+                        "title": "Job Executions",
+                        "icon": "history",
+                        "link": "/admin/django_apscheduler/djangojobexecution/",
                     },
                 ],
             },

@@ -1,0 +1,226 @@
+{% extends 'admin/base_site.html' %}
+{% load i18n static %}
+
+{% block title %}{% translate "Dashboard" %}{% endblock %}
+
+{% block content %}
+<div class="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-4">
+    <!-- Total products card -->
+    <div class="card">
+        <div class="card-header">
+            <div class="flex items-center justify-between">
+                <div class="card-title">
+                    <h5>Total Products</h5>
+                </div>
+                <span class="icon-widget-sm">inventory_2</span>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="flex items-center">
+                <div class="flex-grow">
+                    <h2 class="text-3xl font-medium">{{ total_available }}</h2>
+                    <p class="text-sm text-green-500">{{ today_available }} today</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- New products card -->
+    <div class="card">
+        <div class="card-header">
+            <div class="flex items-center justify-between">
+                <div class="card-title">
+                    <h5>New Products</h5>
+                </div>
+                <span class="icon-widget-sm bg-green-100 text-green-500">add_circle</span>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="flex items-center">
+                <div class="flex-grow">
+                    <h2 class="text-3xl font-medium">{{ total_new }}</h2>
+                    <p class="text-sm text-green-500">{{ today_new }} today</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Deleted products card -->
+    <div class="card">
+        <div class="card-header">
+            <div class="flex items-center justify-between">
+                <div class="card-title">
+                    <h5>Deleted Products</h5>
+                </div>
+                <span class="icon-widget-sm bg-red-100 text-red-500">delete</span>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="flex items-center">
+                <div class="flex-grow">
+                    <h2 class="text-3xl font-medium">{{ total_deleted }}</h2>
+                    <p class="text-sm text-red-500">{{ today_deleted }} today</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Weekly and Monthly Stats -->
+    <div class="card">
+        <div class="card-header">
+            <div class="flex items-center justify-between">
+                <div class="card-title">
+                    <h5>Time Period Stats</h5>
+                </div>
+                <span class="icon-widget-sm bg-blue-100 text-blue-500">date_range</span>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="flex flex-col">
+                <p class="text-sm text-gray-500">Past 7 days:</p>
+                <p class="mb-2">New: <span class="text-green-500">{{ week_new }}</span> | Deleted: <span class="text-red-500">{{ week_deleted }}</span></p>
+                <p class="text-sm text-gray-500">Past 30 days:</p>
+                <p>New: <span class="text-green-500">{{ month_new }}</span> | Deleted: <span class="text-red-500">{{ month_deleted }}</span></p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Chart section -->
+<div class="card mt-4">
+    <div class="card-header">
+        <div class="card-title">
+            <h5>Product Changes (Past 30 Days)</h5>
+        </div>
+    </div>
+    <div class="card-body">
+        <canvas id="productChart" height="100"></canvas>
+    </div>
+</div>
+
+<!-- Statistics table -->
+<div class="card mt-4">
+    <div class="card-header">
+        <div class="card-title">
+            <h5>Product Statistics</h5>
+        </div>
+    </div>
+    <div class="card-body overflow-auto">
+        <table class="w-full table-auto">
+            <thead>
+                <tr>
+                    <th class="px-4 py-2 text-left">Time Period</th>
+                    <th class="px-4 py-2 text-left">Available Products</th>
+                    <th class="px-4 py-2 text-left">New Products</th>
+                    <th class="px-4 py-2 text-left">Deleted Products</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td class="border px-4 py-2">Today</td>
+                    <td class="border px-4 py-2">{{ today_available }}</td>
+                    <td class="border px-4 py-2 text-green-500">{{ today_new }}</td>
+                    <td class="border px-4 py-2 text-red-500">{{ today_deleted }}</td>
+                </tr>
+                <tr>
+                    <td class="border px-4 py-2">Past 7 Days</td>
+                    <td class="border px-4 py-2">{{ week_available }}</td>
+                    <td class="border px-4 py-2 text-green-500">{{ week_new }}</td>
+                    <td class="border px-4 py-2 text-red-500">{{ week_deleted }}</td>
+                </tr>
+                <tr>
+                    <td class="border px-4 py-2">Past 30 Days</td>
+                    <td class="border px-4 py-2">{{ month_available }}</td>
+                    <td class="border px-4 py-2 text-green-500">{{ month_new }}</td>
+                    <td class="border px-4 py-2 text-red-500">{{ month_deleted }}</td>
+                </tr>
+                <tr>
+                    <td class="border px-4 py-2">All Time</td>
+                    <td class="border px-4 py-2">{{ total_available }}</td>
+                    <td class="border px-4 py-2 text-green-500">{{ total_new }}</td>
+                    <td class="border px-4 py-2 text-red-500">{{ total_deleted }}</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Terminal Output -->
+<div class="card mt-4">
+    <div class="card-header">
+        <div class="flex items-center justify-between">
+            <div class="card-title">
+                <h5>Terminal Output</h5>
+            </div>
+            <div class="flex gap-2">
+                <button 
+                    id="refreshTerminal" 
+                    class="btn btn-sm btn-outline-primary"
+                    hx-get="{% url 'lcwaikiki:terminal-output' %}"
+                    hx-target="#terminal-content"
+                    hx-trigger="click"
+                >
+                    <span class="material-symbols-outlined text-sm align-middle">refresh</span>
+                    Refresh
+                </button>
+            </div>
+        </div>
+    </div>
+    <div class="card-body">
+        <div id="terminal-content" class="bg-gray-900 text-green-400 p-3 font-mono text-sm rounded h-96 overflow-auto">
+            <pre>{{ terminal_output }}</pre>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extrajs %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const ctx = document.getElementById('productChart').getContext('2d');
+        
+        const productChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: {{ chart_dates|safe }},
+                datasets: [
+                    {
+                        label: 'New Products',
+                        data: {{ chart_new }},
+                        borderColor: 'rgb(34, 197, 94)',
+                        backgroundColor: 'rgba(34, 197, 94, 0.1)',
+                        tension: 0.1
+                    },
+                    {
+                        label: 'Deleted Products',
+                        data: {{ chart_deleted }},
+                        borderColor: 'rgb(239, 68, 68)',
+                        backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                        tension: 0.1
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: {
+                        position: 'top',
+                    },
+                    title: {
+                        display: true,
+                        text: 'Product Changes Over Time'
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            precision: 0
+                        }
+                    }
+                }
+            }
+        });
+    });
+</script>
+{% endblock %}

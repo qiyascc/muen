@@ -3,7 +3,12 @@ from rest_framework.response import Response
 from django.db.models import Q
 from django.utils.dateparse import parse_date
 from django.utils import timezone
+from django.shortcuts import render
+from django.views.generic import TemplateView
+from django.contrib.auth.mixins import LoginRequiredMixin
+from django.http import HttpResponse
 import datetime
+import os
 from .models import Config, ProductAvailableUrl, ProductDeletedUrl, ProductNewUrl
 from .serializers import (
     ConfigSerializer, BrandsSerializer, 
@@ -11,6 +16,34 @@ from .serializers import (
     ProductDeletedUrlSerializer, ProductDeletedUrlListSerializer,
     ProductNewUrlSerializer, ProductNewUrlListSerializer
 )
+from .dashboard import DashboardView
+
+
+class TerminalOutputView(LoginRequiredMixin, TemplateView):
+    """
+    View to handle AJAX requests for terminal output.
+    """
+    template_name = 'lcwaikiki/terminal_output.html'
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        
+        # Create logs directory if it doesn't exist
+        log_path = os.path.join('logs', 'scraper.log')
+        os.makedirs('logs', exist_ok=True)
+        
+        # If the log file doesn't exist yet, create it
+        if not os.path.exists(log_path):
+            with open(log_path, 'w') as f:
+                f.write("Scraper log initialized at: {}".format(timezone.now()))
+        
+        # Read the log file
+        with open(log_path, 'r') as f:
+            # Get last 100 lines
+            log_lines = f.readlines()[-100:]
+            context['terminal_output'] = ''.join(log_lines)
+        
+        return context
 
 
 class ConfigBrandsAPIView(generics.RetrieveAPIView):
