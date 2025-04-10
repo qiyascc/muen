@@ -500,12 +500,13 @@ class ProductScraper:
         if os.path.exists(ScraperConfig.CHECKPOINT_FILE):
             os.remove(ScraperConfig.CHECKPOINT_FILE)
 
-
+from django.db import close_old_connections
 class Command(BaseCommand):
     help = 'Refreshes the product list by scraping LCWaikiki website'
 
     def handle(self, *args, **options):
         self.stdout.write(self.style.SUCCESS('Starting product list refresh...'))
+        close_old_connections()
         
         # Create default config if it doesn't exist
         try:
