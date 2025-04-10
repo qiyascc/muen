@@ -29,6 +29,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'rest_framework',
     'lcwaikiki',
+    'django_apscheduler',  # Django APScheduler for scheduling tasks
 ]
 
 # Unfold settings
@@ -157,3 +158,16 @@ REST_FRAMEWORK = {
         'rest_framework.renderers.BrowsableAPIRenderer',
     ],
 }
+
+# Django APScheduler settings
+SCHEDULER_CONFIG = {
+    "apscheduler.jobstores.default": {
+        "class": "django_apscheduler.jobstores:DjangoJobStore"
+    },
+    "apscheduler.executors.processpool": {
+        "type": "threadpool",
+        "max_workers": 5
+    }
+}
+SCHEDULER_AUTOSTART = True
+SCHEDULER_TIMEZONE = "UTC"
