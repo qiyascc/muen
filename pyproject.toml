@@ -8,4 +8,8 @@ dependencies = [
     "django>=5.2",
     "djangorestframework>=3.16.0",
     "django-apscheduler>=0.7.0",
+    "requests>=2.32.3",
+    "beautifulsoup4>=4.13.3",
+    "loguru>=0.7.3",
+    "tqdm>=4.67.1",
 ]
