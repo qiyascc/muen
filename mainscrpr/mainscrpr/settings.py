@@ -17,6 +17,10 @@ ALLOWED_HOSTS = ['*']
 
 # Application definition
 INSTALLED_APPS = [
+    # Unfold admin theme
+    'unfold',
+    'unfold.contrib.filters',  # Optional for enhanced filters
+    'unfold.contrib.forms',    # Optional for enhanced forms
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -26,6 +30,49 @@ INSTALLED_APPS = [
     'rest_framework',
     'lcwaikiki',
 ]
+
+# Unfold settings
+UNFOLD = {
+    "SITE_TITLE": "LCWaikiki Admin",
+    "SITE_HEADER": "LCWaikiki Management",
+    "SITE_SYMBOL": "settings",  # Use an icon name from https://fonts.google.com/icons
+    "SIDEBAR": {
+        "show_search": True,
+        "show_all_applications": True,
+        "navigation": [
+            {
+                "title": "Configurations",
+                "items": [
+                    {
+                        "title": "Brands Config",
+                        "icon": "settings",
+                        "link": "/admin/lcwaikiki/config/",
+                    },
+                ],
+            },
+            {
+                "title": "Products",
+                "items": [
+                    {
+                        "title": "Available URLs",
+                        "icon": "check_circle",
+                        "link": "/admin/lcwaikiki/productavailableurl/",
+                    },
+                    {
+                        "title": "Deleted URLs",
+                        "icon": "delete",
+                        "link": "/admin/lcwaikiki/productdeletedurl/",
+                    },
+                    {
+                        "title": "New URLs",
+                        "icon": "add_circle",
+                        "link": "/admin/lcwaikiki/productnewurl/",
+                    },
+                ],
+            },
+        ],
+    },
+}
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',

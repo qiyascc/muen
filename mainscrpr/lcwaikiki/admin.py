@@ -2,16 +2,30 @@ from django.contrib import admin
 from django.core.serializers.json import DjangoJSONEncoder
 import json
 from django.utils.html import format_html
+from unfold.admin import ModelAdmin, TabularInline
+from unfold.forms import AdminPasswordChangeForm, UserChangeForm, UserCreationForm
 from .models import Config, ProductAvailableUrl, ProductDeletedUrl, ProductNewUrl
 
 @admin.register(Config)
-class ConfigAdmin(admin.ModelAdmin):
+class ConfigAdmin(ModelAdmin):
     """
     Admin configuration for the Config model.
     """
+    model = Config
     list_display = ('name', 'display_brands', 'created_at', 'updated_at')
     search_fields = ('name',)
     readonly_fields = ('created_at', 'updated_at')
+    list_per_page = 20
+    
+    # Unfold specific configurations
+    fieldsets = (
+        ("General Information", {"fields": ("name",)}),
+        ("Brand Settings", {"fields": ("brands",)}),
+        ("Metadata", {"fields": ("created_at", "updated_at")}),
+    )
+    
+    date_hierarchy = 'created_at'
+    empty_value_display = 'N/A'
     
     def display_brands(self, obj):
         """
@@ -30,14 +44,26 @@ class ConfigAdmin(admin.ModelAdmin):
 
 
 @admin.register(ProductAvailableUrl)
-class ProductAvailableUrlAdmin(admin.ModelAdmin):
+class ProductAvailableUrlAdmin(ModelAdmin):
     """
     Admin configuration for the ProductAvailableUrl model.
     """
+    model = ProductAvailableUrl
     list_display = ('page_id', 'product_id_in_page', 'display_url', 'last_checking', 'created_at')
     list_filter = ('last_checking', 'created_at')
     search_fields = ('page_id', 'product_id_in_page', 'url')
     readonly_fields = ('created_at', 'updated_at')
+    list_per_page = 20
+    
+    # Unfold specific configurations
+    fieldsets = (
+        ("Product Information", {"fields": ("page_id", "product_id_in_page")}),
+        ("URL Details", {"fields": ("url", "last_checking")}),
+        ("Metadata", {"fields": ("created_at", "updated_at")}),
+    )
+    
+    date_hierarchy = 'last_checking'
+    empty_value_display = 'N/A'
     
     def display_url(self, obj):
         """
@@ -49,14 +75,25 @@ class ProductAvailableUrlAdmin(admin.ModelAdmin):
 
 
 @admin.register(ProductDeletedUrl)
-class ProductDeletedUrlAdmin(admin.ModelAdmin):
+class ProductDeletedUrlAdmin(ModelAdmin):
     """
     Admin configuration for the ProductDeletedUrl model.
     """
+    model = ProductDeletedUrl
     list_display = ('display_url', 'last_checking', 'created_at')
     list_filter = ('last_checking', 'created_at')
     search_fields = ('url',)
     readonly_fields = ('created_at', 'updated_at')
+    list_per_page = 20
+    
+    # Unfold specific configurations
+    fieldsets = (
+        ("URL Details", {"fields": ("url", "last_checking")}),
+        ("Metadata", {"fields": ("created_at", "updated_at")}),
+    )
+    
+    date_hierarchy = 'last_checking'
+    empty_value_display = 'N/A'
     
     def display_url(self, obj):
         """
@@ -68,14 +105,25 @@ class ProductDeletedUrlAdmin(admin.ModelAdmin):
 
 
 @admin.register(ProductNewUrl)
-class ProductNewUrlAdmin(admin.ModelAdmin):
+class ProductNewUrlAdmin(ModelAdmin):
     """
     Admin configuration for the ProductNewUrl model.
     """
+    model = ProductNewUrl
     list_display = ('display_url', 'last_checking', 'created_at')
     list_filter = ('last_checking', 'created_at')
     search_fields = ('url',)
     readonly_fields = ('created_at', 'updated_at')
+    list_per_page = 20
+    
+    # Unfold specific configurations
+    fieldsets = (
+        ("URL Details", {"fields": ("url", "last_checking")}),
+        ("Metadata", {"fields": ("created_at", "updated_at")}),
+    )
+    
+    date_hierarchy = 'last_checking'
+    empty_value_display = 'N/A'
     
     def display_url(self, obj):
         """
