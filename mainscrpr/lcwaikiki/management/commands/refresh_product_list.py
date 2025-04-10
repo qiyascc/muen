@@ -118,21 +118,34 @@ class APIManager:
 
     @ScraperUtils.retry_on_failure
     def post_available_urls(self, urls: List[Dict]):
-        # Save available URLs to Django database
+        # Save available URLs to Django database in batches
         current_time = timezone.now()
+        batch_size = 100
+        total_processed = 0
         
         try:
-            # Create new entries
-            for url_data in urls:
-                ProductAvailableUrl.objects.update_or_create(
-                    page_id=url_data['page_id'],
-                    product_id_in_page=url_data['product_id_in_page'],
-                    defaults={
-                        'url': url_data['url'],
-                        'last_checking': current_time
-                    }
-                )
-            logger.success(f"Updated {len(urls)} available URLs in database")
+            # Process in batches to avoid database locking
+            for i in range(0, len(urls), batch_size):
+                batch = urls[i:i+batch_size]
+                
+                # Create new entries
+                for url_data in batch:
+                    ProductAvailableUrl.objects.update_or_create(
+                        page_id=url_data['page_id'],
+                        product_id_in_page=url_data['product_id_in_page'],
+                        defaults={
+                            'url': url_data['url'],
+                            'last_checking': current_time
+                        }
+                    )
+                
+                total_processed += len(batch)
+                logger.info(f"Processed batch {i//batch_size + 1}: {total_processed}/{len(urls)} available URLs")
+                
+                # Add a small delay between batches to prevent database locking
+                time.sleep(0.5)
+                
+            logger.success(f"Updated {total_processed} available URLs in database")
         except Exception as e:
             logger.error(f"Error saving available URLs to database: {str(e)}")
 
@@ -140,20 +153,35 @@ class APIManager:
     def post_new_urls(self, new_urls: List[Dict]):
         # Save new URLs to Django database
         current_time = timezone.now()
+        batch_size = 100
+        total_processed = 0
         
         try:
-            bulk_new_urls = []
-            for url_data in new_urls:
-                # Check if it doesn't already exist
-                if not ProductNewUrl.objects.filter(url=url_data['url']).exists():
-                    bulk_new_urls.append(ProductNewUrl(
-                        url=url_data['url'],
-                        last_checking=current_time
-                    ))
+            # Process in batches
+            for i in range(0, len(new_urls), batch_size):
+                batch = new_urls[i:i+batch_size]
+                
+                # Check and prepare batch
+                bulk_new_urls = []
+                for url_data in batch:
+                    # Check if it doesn't already exist
+                    if not ProductNewUrl.objects.filter(url=url_data['url']).exists():
+                        bulk_new_urls.append(ProductNewUrl(
+                            url=url_data['url'],
+                            last_checking=current_time
+                        ))
+                
+                # Create batch
+                if bulk_new_urls:
+                    ProductNewUrl.objects.bulk_create(bulk_new_urls)
+                    total_processed += len(bulk_new_urls)
+                    logger.info(f"Processed batch {i//batch_size + 1}: {total_processed} new URLs")
+                
+                # Add delay between batches
+                time.sleep(0.5)
             
-            if bulk_new_urls:
-                ProductNewUrl.objects.bulk_create(bulk_new_urls)
-                logger.success(f"Added {len(bulk_new_urls)} new URLs to database")
+            if total_processed > 0:
+                logger.success(f"Added {total_processed} new URLs to database")
         except Exception as e:
             logger.error(f"Error saving new URLs to database: {str(e)}")
 
@@ -161,20 +189,35 @@ class APIManager:
     def post_deleted_urls(self, deleted_urls: List[Dict]):
         # Save deleted URLs to Django database
         current_time = timezone.now()
+        batch_size = 100
+        total_processed = 0
         
         try:
-            bulk_deleted_urls = []
-            for url_data in deleted_urls:
-                # Check if it doesn't already exist
-                if not ProductDeletedUrl.objects.filter(url=url_data['url']).exists():
-                    bulk_deleted_urls.append(ProductDeletedUrl(
-                        url=url_data['url'],
-                        last_checking=current_time
-                    ))
+            # Process in batches
+            for i in range(0, len(deleted_urls), batch_size):
+                batch = deleted_urls[i:i+batch_size]
+                
+                # Check and prepare batch
+                bulk_deleted_urls = []
+                for url_data in batch:
+                    # Check if it doesn't already exist
+                    if not ProductDeletedUrl.objects.filter(url=url_data['url']).exists():
+                        bulk_deleted_urls.append(ProductDeletedUrl(
+                            url=url_data['url'],
+                            last_checking=current_time
+                        ))
+                
+                # Create batch
+                if bulk_deleted_urls:
+                    ProductDeletedUrl.objects.bulk_create(bulk_deleted_urls)
+                    total_processed += len(bulk_deleted_urls)
+                    logger.info(f"Processed batch {i//batch_size + 1}: {total_processed} deleted URLs")
+                
+                # Add delay between batches
+                time.sleep(0.5)
             
-            if bulk_deleted_urls:
-                ProductDeletedUrl.objects.bulk_create(bulk_deleted_urls)
-                logger.success(f"Added {len(bulk_deleted_urls)} deleted URLs to database")
+            if total_processed > 0:
+                logger.success(f"Added {total_processed} deleted URLs to database")
         except Exception as e:
             logger.error(f"Error saving deleted URLs to database: {str(e)}")
 

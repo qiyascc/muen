@@ -43,6 +43,7 @@ class LcwaikikiConfig(AppConfig):
                 id='refresh_product_list',
                 name='Refresh LC Waikiki product list',
                 replace_existing=True,
+                next_run_time=datetime.datetime.now() + datetime.timedelta(seconds=60),
             )
             
             # Run once on startup (in 60 seconds to allow Django to fully initialize)

@@ -22,13 +22,45 @@ from .dashboard import DashboardView
 class TerminalOutputView(LoginRequiredMixin, TemplateView):
     """
     View to handle AJAX requests for terminal output.
+    Shows real-time console output from both log files and system output.
     """
     template_name = 'lcwaikiki/terminal_output.html'
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         
-        # Create logs directory if it doesn't exist
+        # Combine multiple sources for comprehensive output
+        terminal_output = []
+        
+        # 1. Try to get Django server logs from system logs
+        try:
+            import subprocess
+            # Get Django development server logs (recent logs - last 30 lines)
+            result = subprocess.run(
+                ["tail", "-n", "30", "/tmp/django.log"], 
+                capture_output=True, 
+                text=True, 
+                check=False
+            )
+            if result.stdout:
+                terminal_output.append("=== DJANGO SERVER LOGS ===")
+                terminal_output.append(result.stdout)
+            
+            # If we don't have Django logs, try the supervisor logs
+            if not result.stdout:
+                result = subprocess.run(
+                    ["tail", "-n", "30", "/tmp/supervisor.log"], 
+                    capture_output=True, 
+                    text=True, 
+                    check=False
+                )
+                if result.stdout:
+                    terminal_output.append("=== SUPERVISOR LOGS ===")
+                    terminal_output.append(result.stdout)
+        except Exception as e:
+            terminal_output.append(f"Error getting server logs: {str(e)}")
+        
+        # 2. Create logs directory if it doesn't exist
         log_path = os.path.join('logs', 'scraper.log')
         os.makedirs('logs', exist_ok=True)
         
@@ -37,11 +69,48 @@ class TerminalOutputView(LoginRequiredMixin, TemplateView):
             with open(log_path, 'w') as f:
                 f.write("Scraper log initialized at: {}".format(timezone.now()))
         
-        # Read the log file
-        with open(log_path, 'r') as f:
-            # Get last 100 lines
-            log_lines = f.readlines()[-100:]
-            context['terminal_output'] = ''.join(log_lines)
+        # Read the log file for application logs
+        try:
+            with open(log_path, 'r') as f:
+                log_content = f.readlines()[-50:]  # Get last 50 lines
+                if log_content:
+                    terminal_output.append("\n=== APPLICATION LOGS ===")
+                    terminal_output.append(''.join(log_content))
+        except Exception as e:
+            terminal_output.append(f"\nError reading application log file: {str(e)}")
+            
+        # 3. Try to get console output by checking standard output files
+        try:
+            if os.path.exists('/tmp/stdout.log'):
+                result = subprocess.run(
+                    ["tail", "-n", "20", "/tmp/stdout.log"], 
+                    capture_output=True, 
+                    text=True, 
+                    check=False
+                )
+                if result.stdout:
+                    terminal_output.append("\n=== CONSOLE OUTPUT ===")
+                    terminal_output.append(result.stdout)
+        except Exception as e:
+            terminal_output.append(f"\nError getting console output: {str(e)}")
+        
+        # If we have no data yet, check if we can get any output
+        if not terminal_output:
+            try:
+                result = subprocess.run(
+                    ["ps", "aux"], 
+                    capture_output=True, 
+                    text=True, 
+                    check=False
+                )
+                if result.stdout:
+                    terminal_output.append("\n=== RUNNING PROCESSES ===")
+                    terminal_output.append(result.stdout)
+            except Exception as e:
+                terminal_output.append(f"\nError getting process list: {str(e)}")
+        
+        # Combine all the output
+        context['terminal_output'] = "\n".join(terminal_output)
         
         return context
 

@@ -12,4 +12,5 @@ dependencies = [
     "beautifulsoup4>=4.13.3",
     "loguru>=0.7.3",
     "tqdm>=4.67.1",
+    "trafilatura>=2.0.0",
 ]
