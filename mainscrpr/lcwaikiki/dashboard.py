@@ -1,116 +1,128 @@
 from django.db.models import Count
-from django.db.models.functions import TruncDay, TruncWeek, TruncMonth, TruncYear
+from django.db.models.functions import TruncDate, TruncMonth, TruncWeek
 from django.utils import timezone
-from datetime import timedelta
+
 from django.views.generic import TemplateView
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.db.models import Q
-from .models import ProductAvailableUrl, ProductDeletedUrl, ProductNewUrl
+
+import json
+from datetime import timedelta, datetime
+from .models import ProductAvailableUrl, ProductNewUrl, ProductDeletedUrl
 
 
 class DashboardView(LoginRequiredMixin, TemplateView):
     template_name = 'lcwaikiki/dashboard.html'
-    
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         
-        # Get current date and relevant time periods
+        # Get current date
         now = timezone.now()
-        today = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        yesterday = today - timedelta(days=1)
-        week_ago = today - timedelta(days=7)
-        month_ago = today - timedelta(days=30)
-        year_ago = today - timedelta(days=365)
+        today = timezone.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        start_of_week = today - timedelta(days=today.weekday())
+        start_of_month = today.replace(day=1)
         
-        # Get statistics for all time
-        context['total_available'] = ProductAvailableUrl.objects.count()
-        context['total_deleted'] = ProductDeletedUrl.objects.count()
-        context['total_new'] = ProductNewUrl.objects.count()
+        # Statistics for all time
+        total_available = ProductAvailableUrl.objects.count()
+        total_new = ProductNewUrl.objects.count()
+        total_deleted = ProductDeletedUrl.objects.count()
         
-        # Get statistics for today
-        context['today_available'] = ProductAvailableUrl.objects.filter(
+        # Statistics for today
+        today_available = ProductAvailableUrl.objects.filter(
             last_checking__gte=today
         ).count()
-        context['today_deleted'] = ProductDeletedUrl.objects.filter(
+        today_new = ProductNewUrl.objects.filter(
             last_checking__gte=today
         ).count()
-        context['today_new'] = ProductNewUrl.objects.filter(
+        today_deleted = ProductDeletedUrl.objects.filter(
             last_checking__gte=today
         ).count()
         
-        # Get statistics for past week
-        context['week_available'] = ProductAvailableUrl.objects.filter(
-            last_checking__gte=week_ago
+        # Statistics for this week
+        week_available = ProductAvailableUrl.objects.filter(
+            last_checking__gte=start_of_week
         ).count()
-        context['week_deleted'] = ProductDeletedUrl.objects.filter(
-            last_checking__gte=week_ago
+        week_new = ProductNewUrl.objects.filter(
+            last_checking__gte=start_of_week
         ).count()
-        context['week_new'] = ProductNewUrl.objects.filter(
-            last_checking__gte=week_ago
-        ).count()
-        
-        # Get statistics for past month
-        context['month_available'] = ProductAvailableUrl.objects.filter(
-            last_checking__gte=month_ago
-        ).count()
-        context['month_deleted'] = ProductDeletedUrl.objects.filter(
-            last_checking__gte=month_ago
-        ).count()
-        context['month_new'] = ProductNewUrl.objects.filter(
-            last_checking__gte=month_ago
+        week_deleted = ProductDeletedUrl.objects.filter(
+            last_checking__gte=start_of_week
         ).count()
         
-        # Chart data for new and deleted products over past 30 days
-        daily_new = (
-            ProductNewUrl.objects.filter(last_checking__gte=month_ago)
-            .annotate(date=TruncDay("last_checking"))
-            .values("date")
-            .annotate(count=Count("id"))
-            .order_by("date")
-        )
+        # Statistics for this month
+        month_available = ProductAvailableUrl.objects.filter(
+            last_checking__gte=start_of_month
+        ).count()
+        month_new = ProductNewUrl.objects.filter(
+            last_checking__gte=start_of_month
+        ).count()
+        month_deleted = ProductDeletedUrl.objects.filter(
+            last_checking__gte=start_of_month
+        ).count()
         
-        daily_deleted = (
-            ProductDeletedUrl.objects.filter(last_checking__gte=month_ago)
-            .annotate(date=TruncDay("last_checking"))
-            .values("date")
-            .annotate(count=Count("id"))
-            .order_by("date")
-        )
+        # Chart data - last 30 days
+        start_date = now - timedelta(days=30)
         
-        # Format chart data for JavaScript
-        chart_dates = []
-        chart_new = []
-        chart_deleted = []
+        # Get new products by day
+        new_by_day = ProductNewUrl.objects.filter(
+            last_checking__gte=start_date
+        ).annotate(
+            day=TruncDate('last_checking')
+        ).values('day').annotate(
+            count=Count('id')
+        ).order_by('day')
         
-        # Create a map for easy access by date
-        new_by_date = {x['date'].strftime('%Y-%m-%d'): x['count'] for x in daily_new}
-        deleted_by_date = {x['date'].strftime('%Y-%m-%d'): x['count'] for x in daily_deleted}
+        # Get deleted products by day
+        deleted_by_day = ProductDeletedUrl.objects.filter(
+            last_checking__gte=start_date
+        ).annotate(
+            day=TruncDate('last_checking')
+        ).values('day').annotate(
+            count=Count('id')
+        ).order_by('day')
         
-        # Generate a list of the past 30 days
-        for i in range(30, -1, -1):
-            date = (now - timedelta(days=i)).date()
-            date_str = date.strftime('%Y-%m-%d')
-            chart_dates.append(date_str)
-            chart_new.append(new_by_date.get(date_str, 0))
-            chart_deleted.append(deleted_by_date.get(date_str, 0))
+        # Generate data for the chart
+        chart_dates = [(start_date + timedelta(days=i)).strftime('%Y-%m-%d') for i in range(31)]
+        chart_new = [0] * 31
+        chart_deleted = [0] * 31
         
-        context['chart_dates'] = chart_dates
-        context['chart_new'] = chart_new
-        context['chart_deleted'] = chart_deleted
+        # Map data to chart arrays
+        for item in new_by_day:
+            day_diff = (item['day'] - start_date.date()).days
+            if 0 <= day_diff < 31:
+                chart_new[day_diff] = item['count']
+                
+        for item in deleted_by_day:
+            day_diff = (item['day'] - start_date.date()).days
+            if 0 <= day_diff < 31:
+                chart_deleted[day_diff] = item['count']
         
-        # Log File Path
-        import os
-        log_path = os.path.join('logs', 'scraper.log')
-        context['log_path'] = log_path
+        # Add data to context
+        context.update({
+            'total_available': total_available,
+            'total_new': total_new,
+            'total_deleted': total_deleted,
+            'today_available': today_available,
+            'today_new': today_new,
+            'today_deleted': today_deleted,
+            'week_available': week_available,
+            'week_new': week_new,
+            'week_deleted': week_deleted,
+            'month_available': month_available,
+            'month_new': month_new,
+            'month_deleted': month_deleted,
+            'chart_dates': json.dumps(chart_dates),
+            'chart_new': json.dumps(chart_new),
+            'chart_deleted': json.dumps(chart_deleted),
+        })
         
-        if os.path.exists(log_path):
-            with open(log_path, 'r') as f:
-                # Get last 50 lines
-                log_content = f.readlines()[-50:]
-                context['terminal_output'] = ''.join(log_content)
-        else:
-            # Create logs directory
-            os.makedirs('logs', exist_ok=True)
-            context['terminal_output'] = 'No logs available yet.'
+        # Add terminal output to context
+        try:
+            with open('logs/scraper.log', 'r') as f:
+                log_lines = f.readlines()[-100:]  # Get last 100 lines
+                context['terminal_output'] = ''.join(log_lines)
+        except (FileNotFoundError, IOError):
+            context['terminal_output'] = "Scraper log not found."
         
         return context

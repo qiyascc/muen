@@ -48,7 +48,6 @@ UNFOLD = {
                         "title": "Statistics Dashboard",
                         "icon": "dashboard",
                         "link": "/dashboard/",
-                        "permission": "is_staff",
                     },
                 ],
             },
