@@ -40,11 +40,19 @@ class TrendyolApi:
 
   def make_request(self, method, endpoint, data=None, params=None):
     """Make a request to the Trendyol API"""
-    # Remove any duplicate /integration prefix from the endpoint
-    if endpoint.startswith('/integration') and '/integration/' in self.api_url:
-        endpoint = endpoint.replace('/integration', '', 1)
+    # Make sure endpoint starts with a slash
+    if not endpoint.startswith('/'):
+        endpoint = f'/{endpoint}'
         
+    # Remove any duplicate /integration prefix from the endpoint
+    if endpoint.startswith('/integration') and 'integration' in self.api_url:
+        endpoint = endpoint.replace('/integration', '', 1)
+    
+    # Build the URL with proper formatting
     url = f"{self.api_url}{endpoint}"
+    
+    # Additional safeguard against duplicate integration paths
+    url = url.replace('/integration/integration/', '/integration/')
 
     # Format the auth string and encode as Base64 for Basic Authentication
     auth_string = f"{self.api_key}:{self.api_secret}"
