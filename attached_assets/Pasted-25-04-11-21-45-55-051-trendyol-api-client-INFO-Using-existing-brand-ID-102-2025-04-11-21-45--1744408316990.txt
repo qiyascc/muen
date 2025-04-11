@@ -1,0 +1,46 @@
+25-04-11 21:45:55,051 - trendyol.api_client - INFO - Using existing brand ID: 102
+2025-04-11 21:45:55,051 - trendyol.api_client - INFO - Submitting product 'Pembe Bisiklet Yaka Fiyonk Nakışlı Kız Çocuk Tişört' (ID: 10) to Trendyol
+2025-04-11 21:45:55,052 - trendyol.api_client - INFO - Product data: {
+  "barcode": "LCWKtest3434",
+  "title": "Pembe Bisiklet Yaka Fiyonk Nak\u0131\u015fl\u0131 K\u0131z \u00c7ocuk Ti\u015f\u00f6rt",
+  "productMainId": "Ktest3434",
+  "brandId": 102,
+  "categoryId": 2356,
+  "stockCode": "Ktest3434",
+  "quantity": 10,
+  "stockUnitType": "PIECE",
+  "dimensionalWeight": 1.0,
+  "description": "<div class=\"panel-body\">\r\n<div class=\"row\">\r\n<div class=\"col-xs-12\">\r\n<h5>\u00dcr\u00fcn A\u00e7\u0131klamas\u0131</h5>\r\n<ul>\r\n<li class=\"\">\r\n                                                                            Pamuklu penye kuma\u015ftan \u00fcretilen k\u0131z \u00e7ocuk ti\u015f\u00f6rt, yumu\u015fak ve nefes alabilir yap\u0131s\u0131yla g\u00fcn boyu konfor sa\u011flar. Fiyonk nak\u0131\u015fl\u0131 tasar\u0131m\u0131, e\u011flenceli bir g\u00f6r\u00fcn\u00fcm sunar. Uzun kollu ti\u015f\u00f6rt, hem g\u00fcnl\u00fck kullan\u0131m hem de \u00f6zel g\u00fcnler i\u00e7in idealdir.\r\n                                                                        </li>\r\n</ul>\r\n</div>\r\n</div>\r\n<div class=\"row\">\r\n<div class=\"col-xs-12\">\r\n</div>\r\n</div>\r\n<div class=\"row\">\r\n<div class=\"col-xs-12\">\r\n<h5>\u00dcr\u00fcn \u0130\u00e7eri\u011fi ve \u00d6zellikleri</h5>\r\n</div>\r\n<div class=\"col-xs-12\">\r\n<!--googleoff: all-->\r\n<b>\u00dcr\u00fcn \u0130\u00e7eri\u011fi:</b>\r\n<p><b>Ana Kuma\u015f:</b> %100 Pamuk</p>\r\n<!--googleon: all-->\r\n</div>\r\n<div class=\"col-xs-12\">\r\n<div class=\"col-md-6 option-info nopadding\">\r\n<p><b>\u00dcr\u00fcn \u00d6zellikleri:</b></p>\r\n<p><b>Sat\u0131c\u0131:</b> LC Waikiki Ma\u011fazac\u0131l\u0131k Hizmetleri Ticaret A.\u015e.</p>\r\n<p><b>Marka:</b> LCW Kids</p>\r\n<p><b>\u00dcr\u00fcn Tipi:</b> Ti\u015f\u00f6rt</p>\r\n<p><b>Cinsiyet:</b> K\u0131z \u00c7ocuk</p>\r\n<p><b>Kal\u0131p:</b> Standart &amp; Regular</p>\r\n<p><b>Yaka:</b> Bisiklet Yaka</p>\r\n<p><b>Desen:</b> Nak\u0131\u015fl\u0131</p>\r\n<p><b>Kuma\u015f:</b> Penye</p>\r\n<p><b>Kal\u0131nl\u0131k:</b> \u0130nce</p>\r\n<p><b>Kol Boyu:</b> Uzun Kollu</p>\r\n<p><b>Malzeme:</b> %100 Pamuk</p>\r\n</div>\r\n</div>\r\n</div>\r\n</div>",
+  "currencyType": "TRY",
+  "listPrice": 362.99,
+  "salePrice": 362.99,
+  "vatRate": 18,
+  "cargoCompanyId": 0,
+  "shipmentAddressId": 0,
+  "deliveryDuration": 3,
+  "pimCategoryId": 2356,
+  "gender": {
+    "id": 1
+  },
+  "attributes": [
+    {
+      "attributeId": "color",
+      "attributeValueId": "Pembe"
+    }
+  ],
+  "images": [
+    {
+      "url": "https://5d5f0d6a-7ad1-460e-bcb2-7db84ebc77ff-00-30mgnzeqj65wp.kirk.replit.dev/admin/lcwaikiki/product/138/change/"
+    }
+  ],
+  "color": "Pembe"
+}
+2025-04-11 21:45:55,052 - trendyol.api_client - INFO - Making POST request to https://api.trendyol.com/sapigw/integration/product/sellers/535623/products
+2025-04-11 21:45:55,052 - trendyol.api_client - INFO - Request data: {"items": [{"barcode": "LCWKtest3434", "title": "Pembe Bisiklet Yaka Fiyonk Nak\u0131\u015fl\u0131 K\u0131z \u00c7ocuk Ti\u015f\u00f6rt", "productMainId": "Ktest3434", "brandId": 102, "categoryId": 2356, "stockCode": "Ktest3434", "quantity": 10, "stockUnitType": "PIECE", "dimensionalWeight": 1.0, "description": "<div class=\"panel-body\">\r\n<div class=\"row\">\r\n<div class=\"col-xs-12\">\r\n<h5>\u00dcr\u00fcn A\u00e7\u0131klamas\u0131</h5>\r\n<ul>\r\n<li class=\"\">\r\n                                                                            Pamuklu penye kuma\u015ftan \u00fcretilen k\u0131z \u00e7ocuk ti\u015f\u00f6rt, yumu\u015fak ve nefes alabilir yap\u0131s\u0131yla g\u00fcn boyu konfor sa\u011flar. Fiyonk nak\u0131\u015fl\u0131 tasar\u0131m\u0131, e\u011flenceli bir g\u00f6r\u00fcn\u00fcm sunar. Uzun kollu ti\u015f\u00f6rt, hem g\u00fcnl\u00fck kullan\u0131m hem de \u00f6zel g\u00fcnler i\u00e7in idealdir.\r\n                                                                        </li>\r\n</ul>\r\n</div>\r\n</div>\r\n<div class=\"row\">\r\n<div class=\"col-xs-12\">\r\n</div>\r\n</div>\r\n<div class=\"row\">\r\n<div class=\"col-xs-12\">\r\n<h5>\u00dcr\u00fcn \u0130\u00e7eri\u011fi ve \u00d6zellikleri</h5>\r\n</div>\r\n<div class=\"col-xs-12\">\r\n<!--googleoff: all-->\r\n<b>\u00dcr\u00fcn \u0130\u00e7eri\u011fi:</b>\r\n<p><b>Ana Kuma\u015f:</b> %100 Pamuk</p>\r\n<!--googleon: all-->\r\n</div>\r\n<div class=\"col-xs-12\">\r\n<div class=\"col-md-6 option-info nopadding\">\r\n<p><b>\u00dcr\u00fcn \u00d6zellikleri:</b></p>\r\n<p><b>Sat\u0131c\u0131:</b> LC Waikiki Ma\u011fazac\u0131l\u0131k Hizmetleri Ticaret A.\u015e.</p>\r\n<p><b>Marka:</b> LCW Kids</p>\r\n<p><b>\u00dcr\u00fcn Tipi:</b> Ti\u015f\u00f6rt</p>\r\n<p><b>Cinsiyet:</b> K\u0131z \u00c7ocuk</p>\r\n<p><b>Kal\u0131p:</b> Standart &amp; Regular</p>\r\n<p><b>Yaka:</b> Bisiklet Yaka</p>\r\n<p><b>Desen:</b> Nak\u0131\u015fl\u0131</p>\r\n<p><b>Kuma\u015f:</b> Penye</p>\r\n<p><b>Kal\u0131nl\u0131k:</b> \u0130nce</p>\r\n<p><b>Kol Boyu:</b> Uzun Kollu</p>\r\n<p><b>Malzeme:</b> %100 Pamuk</p>\r\n</div>\r\n</div>\r\n</div>\r\n</div>", "currencyType": "TRY", "listPrice": 362.99, "salePrice": 362.99, "vatRate": 18, "cargoCompanyId": 0, "shipmentAddressId": 0, "deliveryDuration": 3, "pimCategoryId": 2356, "gender": {"id": 1}, "attributes": [{"attributeId": "color", "attributeValueId": "Pembe"}], "images": [{"url": "https://5d5f0d6a-7ad1-460e-bcb2-7db84ebc77ff-00-30mgnzeqj65wp.kirk.replit.dev/admin/lcwaikiki/product/138/change/"}], "color": "Pembe"}]}
+2025-04-11 21:45:55,052 - trendyol.api_client - INFO - Product 1 data: {"barcode": "LCWKtest3434", "title": "Pembe Bisiklet Yaka Fiyonk Nak\u0131\u015fl\u0131 K\u0131z \u00c7ocuk Ti\u015f\u00f6rt", "productMainId": "Ktest3434", "brandId": 102, "categoryId": 2356, "stockCode": "Ktest3434", "quantity": 10, "stockUnitType": "PIECE", "dimensionalWeight": 1.0, "description": "<div class=\"panel-body\">\r\n<div class=\"row\">\r\n<div class=\"col-xs-12\">\r\n<h5>\u00dcr\u00fcn A\u00e7\u0131klamas\u0131</h5>\r\n<ul>\r\n<li class=\"\">\r\n                                                                            Pamuklu penye kuma\u015ftan \u00fcretilen k\u0131z \u00e7ocuk ti\u015f\u00f6rt, yumu\u015fak ve nefes alabilir yap\u0131s\u0131yla g\u00fcn boyu konfor sa\u011flar. Fiyonk nak\u0131\u015fl\u0131 tasar\u0131m\u0131, e\u011flenceli bir g\u00f6r\u00fcn\u00fcm sunar. Uzun kollu ti\u015f\u00f6rt, hem g\u00fcnl\u00fck kullan\u0131m hem de \u00f6zel g\u00fcnler i\u00e7in idealdir.\r\n                                                                        </li>\r\n</ul>\r\n</div>\r\n</div>\r\n<div class=\"row\">\r\n<div class=\"col-xs-12\">\r\n</div>\r\n</div>\r\n<div class=\"row\">\r\n<div class=\"col-xs-12\">\r\n<h5>\u00dcr\u00fcn \u0130\u00e7eri\u011fi ve \u00d6zellikleri</h5>\r\n</div>\r\n<div class=\"col-xs-12\">\r\n<!--googleoff: all-->\r\n<b>\u00dcr\u00fcn \u0130\u00e7eri\u011fi:</b>\r\n<p><b>Ana Kuma\u015f:</b> %100 Pamuk</p>\r\n<!--googleon: all-->\r\n</div>\r\n<div class=\"col-xs-12\">\r\n<div class=\"col-md-6 option-info nopadding\">\r\n<p><b>\u00dcr\u00fcn \u00d6zellikleri:</b></p>\r\n<p><b>Sat\u0131c\u0131:</b> LC Waikiki Ma\u011fazac\u0131l\u0131k Hizmetleri Ticaret A.\u015e.</p>\r\n<p><b>Marka:</b> LCW Kids</p>\r\n<p><b>\u00dcr\u00fcn Tipi:</b> Ti\u015f\u00f6rt</p>\r\n<p><b>Cinsiyet:</b> K\u0131z \u00c7ocuk</p>\r\n<p><b>Kal\u0131p:</b> Standart &amp; Regular</p>\r\n<p><b>Yaka:</b> Bisiklet Yaka</p>\r\n<p><b>Desen:</b> Nak\u0131\u015fl\u0131</p>\r\n<p><b>Kuma\u015f:</b> Penye</p>\r\n<p><b>Kal\u0131nl\u0131k:</b> \u0130nce</p>\r\n<p><b>Kol Boyu:</b> Uzun Kollu</p>\r\n<p><b>Malzeme:</b> %100 Pamuk</p>\r\n</div>\r\n</div>\r\n</div>\r\n</div>", "currencyType": "TRY", "listPrice": 362.99, "salePrice": 362.99, "vatRate": 18, "cargoCompanyId": 0, "shipmentAddressId": 0, "deliveryDuration": 3, "pimCategoryId": 2356, "gender": {"id": 1}, "attributes": [{"attributeId": "color", "attributeValueId": "Pembe"}], "images": [{"url": "https://5d5f0d6a-7ad1-460e-bcb2-7db84ebc77ff-00-30mgnzeqj65wp.kirk.replit.dev/admin/lcwaikiki/product/138/change/"}], "color": "Pembe"}
+2025-04-11 21:45:55,314 - trendyol.api_client - INFO - Response status: 556
+2025-04-11 21:45:55,315 - trendyol.api_client - ERROR - Error making request to Trendyol API: 556 Server Error:  for url: https://api.trendyol.com/sapigw/integration/product/sellers/535623/products
+2025-04-11 21:45:55,315 - trendyol.api_client - ERROR - API error for product ID 10: 556 Server Error:  for url: https://api.trendyol.com/sapigw/integration/product/sellers/535623/products
+2025-04-11 21:45:55,444 - trendyol.api_client - INFO - Processed 1/1 products: 0 succeeded, 1 failed
+[11/Apr/2025 21:45:55] "POST /admin/lcwaikiki/product/ HTTP/1.1" 302 0
+[11/Apr/2025 21:45:57] "GET /admin/lcwaikiki/product/ HTTP/1.1" 200 191333
