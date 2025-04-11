@@ -547,41 +547,95 @@ def create_trendyol_product(product: TrendyolProduct) -> Optional[str]:
     """
     Create a product on Trendyol using the new API structure.
     Returns the batch ID if successful, None otherwise.
+    
+    This function includes comprehensive error handling with detailed
+    error messages to make debugging easier. It validates required fields
+    before submission and properly logs all operations.
     """
     client = get_api_client()
     if not client:
+        error_message = "No active Trendyol API configuration found"
+        logger.error(error_message)
         product.batch_status = 'failed'
-        product.status_message = "No active Trendyol API configuration found"
+        product.status_message = error_message
         product.save()
         return None
     
     try:
         # Prepare product data
-        product_data = prepare_product_data(product)
+        try:
+            product_data = prepare_product_data(product)
+        except ValueError as e:
+            error_message = f"Error preparing product data: {str(e)}"
+            logger.error(f"{error_message} for product ID {product.id}")
+            product.batch_status = 'failed'
+            product.status_message = error_message
+            product.save()
+            return None
+        
+        # Validate that required fields are present
+        required_fields = ['barcode', 'title', 'productMainId', 'brandId', 'categoryId', 'quantity']
+        missing_fields = [field for field in required_fields if field not in product_data or product_data[field] is None]
+        
+        if missing_fields:
+            error_message = f"Product data missing required fields: {', '.join(missing_fields)}"
+            logger.error(f"{error_message} for product ID {product.id}")
+            product.batch_status = 'failed'
+            product.status_message = error_message
+            product.save()
+            return None
         
         # Create the product on Trendyol
+        logger.info(f"Submitting product '{product.title}' (ID: {product.id}) to Trendyol")
         response = client.products.create_products([product_data])
         
-        if not response or 'batchRequestId' not in response:
-            logger.error(f"Failed to create product {product.id} on Trendyol")
+        # Handle different response error scenarios
+        if not response:
+            error_message = "No response from Trendyol API"
+            logger.error(f"{error_message} for product ID {product.id}")
             product.batch_status = 'failed'
-            product.status_message = "Failed to create product on Trendyol: No batch request ID returned"
+            product.status_message = error_message
+            product.save()
+            return None
+        
+        # Check for errors in response
+        if 'errors' in response and response['errors']:
+            errors = response['errors']
+            if isinstance(errors, list):
+                error_message = f"Failed to create product: {errors[0].get('message', 'Unknown error')}"
+            else:
+                error_message = f"Failed to create product: {errors}"
+            
+            logger.error(f"{error_message} for product ID {product.id}")
+            product.batch_status = 'failed'
+            product.status_message = error_message
+            product.save()
+            return None
+        
+        if 'batchRequestId' not in response:
+            error_message = "Failed to create product on Trendyol: No batch request ID returned"
+            logger.error(f"{error_message} for product ID {product.id}")
+            product.batch_status = 'failed'
+            product.status_message = error_message
             product.save()
             return None
         
         batch_id = response.get('batchRequestId')
         
         # Update product with batch ID and status
+        logger.info(f"Product '{product.title}' (ID: {product.id}) submitted with batch ID: {batch_id}")
         product.batch_id = batch_id
         product.batch_status = 'processing'
         product.status_message = "Product creation initiated"
+        product.last_check_time = timezone.now()
         product.save()
         
         return batch_id
     except Exception as e:
-        logger.error(f"Error creating product {product.id} on Trendyol: {str(e)}")
+        error_message = f"Error creating product: {str(e)}"
+        logger.error(f"{error_message} for product ID {product.id}")
         product.batch_status = 'failed'
-        product.status_message = f"Error creating product: {str(e)}"
+        product.status_message = error_message
         product.save()
         return None
 
@@ -674,48 +728,112 @@ def update_price_and_inventory(product: TrendyolProduct) -> Optional[str]:
     Update only the price and inventory for an existing product on Trendyol.
     This uses the dedicated price and inventory update endpoint.
     
+    This function includes comprehensive error handling with detailed
+    error messages to make debugging easier. It properly validates
+    required fields before submission and logs all operations.
+    
     Returns:
         The batch request ID if successful, None otherwise.
     """
     client = get_api_client()
     if not client:
+        error_message = "No active Trendyol API configuration found"
+        logger.error(f"{error_message} for product ID {product.id}")
         product.batch_status = 'failed'
-        product.status_message = "No active Trendyol API configuration found"
+        product.status_message = error_message
         product.save()
         return None
     
     try:
-        # Prepare price and inventory data
+        # Validate barcode and quantity
+        if not product.barcode:
+            error_message = "Missing barcode for price and inventory update"
+            logger.error(f"{error_message} for product ID {product.id}")
+            product.batch_status = 'failed'
+            product.status_message = error_message
+            product.save()
+            return None
+        
+        if product.quantity < 0:
+            error_message = "Invalid quantity (negative) for price and inventory update"
+            logger.error(f"{error_message} for product ID {product.id}")
+            product.batch_status = 'failed'
+            product.status_message = error_message
+            product.save()
+            return None
+        
+        if product.price <= Decimal('0.00'):
+            error_message = "Invalid price (zero or negative) for price and inventory update"
+            logger.error(f"{error_message} for product ID {product.id}")
+            product.batch_status = 'failed'
+            product.status_message = error_message
+            product.save()
+            return None
+        
+        # Prepare price and inventory data with proper list price
+        # List price should always be equal or higher than sale price
+        sale_price = float(product.price)
+        list_price = max(float(product.price * Decimal('1.05')), sale_price)  # 5% higher for list price, but never lower
+        
         item_data = {
             "barcode": product.barcode,
             "quantity": product.quantity,
-            "salePrice": float(product.price),
-            "listPrice": float(product.price * Decimal('1.05'))  # 5% higher for list price
+            "salePrice": sale_price,
+            "listPrice": list_price
         }
         
         # Update price and inventory on Trendyol
+        logger.info(f"Updating price and inventory for product '{product.title}' (ID: {product.id}) on Trendyol")
+        logger.info(f"Price: {sale_price}, List Price: {list_price}, Quantity: {product.quantity}")
         response = client.inventory.update_price_and_inventory([item_data])
         
-        if not response or 'batchRequestId' not in response:
-            logger.error(f"Failed to update price and inventory for product {product.id} on Trendyol")
+        # Handle different response error scenarios
+        if not response:
+            error_message = "No response from Trendyol API"
+            logger.error(f"{error_message} for product ID {product.id}")
             product.batch_status = 'failed'
-            product.status_message = "Failed to update price and inventory: No batch request ID returned"
+            product.status_message = error_message
+            product.save()
+            return None
+        
+        # Check for errors in response
+        if 'errors' in response and response['errors']:
+            errors = response['errors']
+            if isinstance(errors, list):
+                error_message = f"Failed to update price and inventory: {errors[0].get('message', 'Unknown error')}"
+            else:
+                error_message = f"Failed to update price and inventory: {errors}"
+            
+            logger.error(f"{error_message} for product ID {product.id}")
+            product.batch_status = 'failed'
+            product.status_message = error_message
+            product.save()
+            return None
+        
+        if 'batchRequestId' not in response:
+            error_message = "Failed to update price and inventory: No batch request ID returned"
+            logger.error(f"{error_message} for product ID {product.id}")
+            product.batch_status = 'failed'
+            product.status_message = error_message
             product.save()
             return None
         
         batch_id = response.get('batchRequestId')
         
         # Update product with batch ID and status
+        logger.info(f"Price and inventory update submitted for product '{product.title}' (ID: {product.id}) with batch ID: {batch_id}")
         product.batch_id = batch_id
         product.batch_status = 'processing'
         product.status_message = "Price and inventory update initiated"
+        product.last_check_time = timezone.now()
         product.save()
         
         return batch_id
     except Exception as e:
-        logger.error(f"Error updating price and inventory for product {product.id} on Trendyol: {str(e)}")
+        error_message = f"Error updating price and inventory: {str(e)}"
+        logger.error(f"{error_message} for product ID {product.id}")
         product.batch_status = 'failed'
-        product.status_message = f"Error updating price and inventory: {str(e)}"
+        product.status_message = error_message
         product.save()
         return None
 
@@ -771,6 +889,60 @@ def sync_product_to_trendyol(product: TrendyolProduct) -> bool:
         # No batch ID, create a new product
         batch_id = create_trendyol_product(product)
         return bool(batch_id)
+
+
+def batch_process_products(products, process_func, batch_size=10, delay=0.5):
+    """
+    Process a batch of products using the provided function.
+    
+    Args:
+        products: List of products to process
+        process_func: Function to apply to each product
+        batch_size: Number of products to process in one batch
+        delay: Delay in seconds between processing each product
+        
+    Returns:
+        Tuple of (success_count, error_count, batch_ids)
+    """
+    success_count = 0
+    error_count = 0
+    batch_ids = []
+    
+    total = len(products)
+    logger.info(f"Processing {total} products in batches of {batch_size}")
+    
+    for i, product in enumerate(products):
+        try:
+            # Apply the processing function
+            result = process_func(product)
+            
+            # Check the result
+            if result:
+                success_count += 1
+                # If the function returns a batch ID, add it to the list
+                if isinstance(result, str):
+                    batch_ids.append(result)
+            else:
+                error_count += 1
+            
+            # Log progress
+            if (i + 1) % 5 == 0 or i == total - 1:
+                logger.info(f"Processed {i + 1}/{total} products: {success_count} succeeded, {error_count} failed")
+            
+            # Add delay to avoid overwhelming the API
+            if delay > 0 and i < total - 1:
+                time.sleep(delay)
+                
+            # Take a longer break after each batch to avoid rate limits
+            if (i + 1) % batch_size == 0 and i < total - 1:
+                logger.info(f"Batch complete. Taking a short break to avoid rate limits...")
+                time.sleep(delay * 4)  # Longer pause between batches
+                
+        except Exception as e:
+            logger.error(f"Error processing product: {str(e)}")
+            error_count += 1
+    
+    return success_count, error_count, batch_ids
 
 
 def lcwaikiki_to_trendyol_product(lcw_product) -> Optional[TrendyolProduct]:
