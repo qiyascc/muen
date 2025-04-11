@@ -149,19 +149,32 @@ class TrendyolApi:
         error_details['status_code'] = e.response.status_code
         error_details['response_text'] = e.response.text
         logger.error(f"Response status: {e.response.status_code}")
+        logger.error(f"Response headers: {dict(e.response.headers)}")
         logger.error(f"Response content: {e.response.text}")
+        
+        # For 400 errors, log the request details to help diagnose the issue
+        if e.response.status_code == 400:
+            logger.error(f"Request URL: {url}")
+            logger.error(f"Request method: {method}")
+            logger.error(f"Request headers: {headers}")
+            if data:
+                logger.error(f"Request data: {json.dumps(data, default=str)}")
+            if params:
+                logger.error(f"Request params: {params}")
 
         # Try to parse error content if it's JSON
         try:
           error_json = e.response.json()
           error_details['error_json'] = error_json
+          logger.error(f"Error JSON: {json.dumps(error_json, indent=2)}")
 
           if 'errors' in error_json:
             error_messages = []
             for error in error_json['errors']:
               error_msg = error.get('message', 'Unknown error')
-              error_messages.append(error_msg)
-              logger.error(f"API Error: {error_msg}")
+              error_code = error.get('code', 'Unknown code')
+              error_messages.append(f"{error_code}: {error_msg}")
+              logger.error(f"API Error: Code={error_code}, Message={error_msg}")
             error_details['error_messages'] = error_messages
         except Exception as json_err:
           logger.error(f"Error parsing response JSON: {str(json_err)}")
