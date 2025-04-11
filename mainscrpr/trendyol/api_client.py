@@ -441,6 +441,11 @@ class TrendyolCategoryFinder:
     
     def find_category_id(self, product):
         """Find the most appropriate category ID for a product"""
+        # Log product information for debugging
+        product_title = product.title if product.title else ""
+        product_category = product.category_name if product.category_name else ""
+        logger.info(f"Finding category for product: '{product_title}' (Category: '{product_category}')")
+        
         # Strategy 1: Use existing category ID if available
         if product.category_id:
             try:
@@ -449,6 +454,7 @@ class TrendyolCategoryFinder:
                 logger.info(f"Using existing category ID: {product.category_id}")
                 return product.category_id
             except TrendyolCategory.DoesNotExist:
+                logger.warning(f"Category ID {product.category_id} does not exist in database")
                 pass
         
         # Strategy 2: Search by category name from database
@@ -558,6 +564,22 @@ class TrendyolCategoryFinder:
         search_text = re.sub(r'[^\w\s]', ' ', search_text)
         # Normalize spaces
         search_text = ' ' + re.sub(r'\s+', ' ', search_text) + ' '
+        
+        logger.info(f"Search text for category matching: '{search_text}'")
+        
+        # Special handling for t-shirt - add extra variants
+        if 't-shirt' in search_text or 'tshirt' in search_text or 't shirt' in search_text:
+            search_text += ' tshirt t-shirt t shirt '
+            logger.info(f"Enhanced search text with t-shirt variants: '{search_text}'")
+            
+        # Special handling for men's/women's - add extra variants
+        if "men's" in search_text or 'mens' in search_text or ' men ' in search_text:
+            search_text += ' men mens '
+            logger.info(f"Enhanced search text with men's variants: '{search_text}'")
+            
+        if "women's" in search_text or 'womens' in search_text or ' women ' in search_text:
+            search_text += ' women womens '
+            logger.info(f"Enhanced search text with women's variants: '{search_text}'")
         
         logger.debug(f"Search text for category matching: '{search_text}'")
         
