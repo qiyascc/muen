@@ -58,7 +58,7 @@ def test_trendyol_api_auth():
     }
     
     # Attempt to get brands (simple API call)
-    brands_url = f"https://apigw.trendyol.com/integration/product/sellers/{supplier_id}/brands"
+    brands_url = f"https://api.trendyol.com/sapigw/suppliers/{supplier_id}/brands"
     
     try:
         response = requests.get(brands_url, headers=headers)
