@@ -66,7 +66,7 @@ class Command(BaseCommand):
             self.stdout.write(self.style.ERROR("Failed to get API client, check configuration"))
             return
             
-        self.stdout.write(self.style.SUCCESS(f"Successfully connected to API: {api_client.base_url}"))
+        self.stdout.write(self.style.SUCCESS(f"Successfully connected to API: {api_client.api_url}"))
         
         # Test each product
         for product in products:
@@ -92,17 +92,25 @@ class Command(BaseCommand):
             if product.attributes:
                 self.stdout.write(f"  Current attributes: {json.dumps(product.attributes, indent=2)}")
                 
-                # Check for proper attribute format
-                has_numeric_attrs = all(
-                    isinstance(attr.get('attributeId'), int) and 
-                    isinstance(attr.get('attributeValueId'), int)
-                    for attr in product.attributes if 'attributeId' in attr and 'attributeValueId' in attr
-                )
-                
-                if has_numeric_attrs:
-                    self.stdout.write(self.style.SUCCESS("  ✓ Attributes use proper numeric IDs"))
+                # First check if attributes is a dictionary (old format) or list (new format)
+                if isinstance(product.attributes, dict):
+                    self.stdout.write(self.style.WARNING("  ✗ Attributes are in dictionary format, should be list of objects with attributeId/attributeValueId"))
+                    has_numeric_attrs = False
+                elif isinstance(product.attributes, list):
+                    # Check for proper attribute format
+                    has_numeric_attrs = all(
+                        isinstance(attr.get('attributeId'), int) and 
+                        isinstance(attr.get('attributeValueId'), int)
+                        for attr in product.attributes if 'attributeId' in attr and 'attributeValueId' in attr
+                    )
+                    
+                    if has_numeric_attrs:
+                        self.stdout.write(self.style.SUCCESS("  ✓ Attributes use proper numeric IDs"))
+                    else:
+                        self.stdout.write(self.style.ERROR("  ✗ Attributes do not use proper numeric IDs"))
                 else:
-                    self.stdout.write(self.style.ERROR("  ✗ Attributes do not use proper numeric IDs"))
+                    self.stdout.write(self.style.ERROR("  ✗ Attributes are in an unknown format"))
+                    has_numeric_attrs = False
             else:
                 self.stdout.write(self.style.WARNING("  ✗ No attributes defined"))
             
@@ -161,10 +169,14 @@ class Command(BaseCommand):
                 # Check if this color is already in attributes
                 has_color_attr = False
                 if product.attributes:
-                    for attr in product.attributes:
-                        if attr.get('attributeId') == 348:  # 348 is the attributeId for color
-                            has_color_attr = True
-                            break
+                    # Handle different attribute formats
+                    if isinstance(product.attributes, dict) and 'color' in product.attributes:
+                        has_color_attr = True
+                    elif isinstance(product.attributes, list):
+                        for attr in product.attributes:
+                            if isinstance(attr, dict) and attr.get('attributeId') == 348:  # 348 is the attributeId for color
+                                has_color_attr = True
+                                break
                 
                 if not has_color_attr:
                     self.stdout.write(self.style.WARNING(
