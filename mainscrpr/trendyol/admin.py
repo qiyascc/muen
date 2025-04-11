@@ -108,7 +108,7 @@ class TrendyolProductAdmin(ModelAdmin):
         return "Not available"
     display_trendyol_link.short_description = "Trendyol Link"
     
-    actions = ['sync_with_trendyol', 'check_sync_status']
+    actions = ['sync_with_trendyol', 'check_sync_status', 'retry_failed_products', 'refresh_product_data']
     
     def sync_with_trendyol(self, request, queryset):
         """
@@ -149,3 +149,204 @@ class TrendyolProductAdmin(ModelAdmin):
         else:
             self.message_user(request, "No products with batch IDs were found.", level='warning')
     check_sync_status.short_description = "Check sync status for selected products"
+    
+    def retry_failed_products(self, request, queryset):
+        """
+        Retry failed products with improved attribute handling.
+        Specifically removes the problematic 'color' field and uses proper attribute IDs.
+        """
+        from . import api_client
+        import json
+        import re
+        
+        fixed_count = 0
+        success_count = 0
+        already_pending_count = 0
+        
+        # Color ID mapping to use numeric IDs instead of string values
+        color_id_map = {
+            'Beyaz': 1001, 
+            'Siyah': 1002, 
+            'Mavi': 1003, 
+            'Kirmizi': 1004, 
+            'Pembe': 1005,
+            'Yeşil': 1006,
+            'Sarı': 1007,
+            'Mor': 1008,
+            'Gri': 1009,
+            'Kahverengi': 1010
+        }
+        
+        for product in queryset:
+            try:
+                # Skip products that are already in pending or processing status
+                if product.batch_status in ['pending', 'processing']:
+                    already_pending_count += 1
+                    continue
+                    
+                # Step 1: Fix product attributes (extract color from title if possible)
+                color = None
+                if product.title:
+                    color_match = re.search(r'(Beyaz|Siyah|Mavi|Kirmizi|Pembe|Yeşil|Sarı|Mor|Gri|Kahverengi)', 
+                                            product.title, re.IGNORECASE)
+                    if color_match:
+                        color = color_match.group(1)
+                
+                # Apply proper numeric color ID attribute
+                if color and color in color_id_map:
+                    color_id = color_id_map[color]
+                    product.attributes = [{"attributeId": 348, "attributeValueId": color_id}]
+                    fixed_count += 1
+                
+                # Set to pending status with a placeholder message
+                product.batch_status = 'pending'
+                product.status_message = 'Pending retry after fix'
+                product.save()
+                
+                # Step 2: Create a temporary function to prepare product data without the 'color' field
+                def prepare_product_data_fixed(product_obj):
+                    # Get standard product data
+                    data = api_client.prepare_product_data(product_obj)
+                    
+                    # Remove problematic 'color' field if it exists
+                    if 'color' in data:
+                        del data['color']
+                        
+                    return data
+                
+                # Step 3: Call API client with our modified data
+                client = api_client.get_api_client()
+                if client:
+                    # Prepare data using our fixed function
+                    api_data = prepare_product_data_fixed(product)
+                    if api_data:
+                        # Submit to API
+                        response = client.products.create_products([api_data])
+                        
+                        # Update status based on response
+                        if response and isinstance(response, dict) and 'batchId' in response:
+                            batch_id = response['batchId']
+                            product.batch_id = batch_id
+                            product.batch_status = 'processing'
+                            product.save()
+                            
+                            success_count += 1
+            except Exception as e:
+                self.message_user(request, f"Error retrying product {product.title}: {str(e)}", level='error')
+        
+        # Report results
+        message_parts = []
+        if fixed_count:
+            message_parts.append(f"Fixed attributes for {fixed_count} products")
+        if success_count:
+            message_parts.append(f"Successfully submitted {success_count} products to Trendyol")
+        if already_pending_count:
+            message_parts.append(f"Skipped {already_pending_count} products already in pending/processing state")
+            
+        if message_parts:
+            self.message_user(request, ". ".join(message_parts) + ".")
+        else:
+            self.message_user(request, "No products were eligible for retry.", level='warning')
+    
+    retry_failed_products.short_description = "Retry failed products (fix attributes & color)"
+    
+    def refresh_product_data(self, request, queryset):
+        """
+        Refresh product data from LCWaikiki source (if available) and update attributes.
+        Useful for synchronizing changes in product details with Trendyol.
+        """
+        import re
+        from django.utils import timezone
+        from lcwaikiki.models import Product as LCWaikikiProduct
+        
+        updated_count = 0
+        not_linked_count = 0
+        attribute_fixed_count = 0
+        
+        # Color ID mapping for Trendyol
+        color_id_map = {
+            'Beyaz': 1001, 
+            'Siyah': 1002, 
+            'Mavi': 1003, 
+            'Kirmizi': 1004, 
+            'Pembe': 1005,
+            'Yeşil': 1006,
+            'Sarı': 1007,
+            'Mor': 1008,
+            'Gri': 1009,
+            'Kahverengi': 1010
+        }
+        
+        for product in queryset:
+            try:
+                # Check if product is linked to LCWaikiki product
+                if not product.lcwaikiki_product_id:
+                    # Try to find a matching LCWaikiki product by barcode or stock code
+                    matching_product = None
+                    if product.barcode:
+                        matching_product = LCWaikikiProduct.objects.filter(
+                            product_code=product.barcode
+                        ).first()
+                    
+                    if not matching_product and product.stock_code:
+                        matching_product = LCWaikikiProduct.objects.filter(
+                            product_code=product.stock_code
+                        ).first()
+                    
+                    if matching_product:
+                        # Link the products
+                        product.lcwaikiki_product = matching_product
+                        self.message_user(
+                            request, 
+                            f"Linked product '{product.title}' to LCWaikiki product '{matching_product.title}'", 
+                            level='success'
+                        )
+                    else:
+                        not_linked_count += 1
+                        continue
+                
+                # Get linked LCWaikiki product
+                lcw_product = product.lcwaikiki_product
+                if lcw_product:
+                    # Update product data
+                    product.title = lcw_product.title or product.title
+                    product.description = lcw_product.description or product.description
+                    product.price = lcw_product.price or product.price
+                    product.image_url = lcw_product.images[0] if lcw_product.images else product.image_url
+                    
+                    # Fix color attribute
+                    color = lcw_product.color or None
+                    if not color and product.title:
+                        color_match = re.search(r'(Beyaz|Siyah|Mavi|Kirmizi|Pembe|Yeşil|Sarı|Mor|Gri|Kahverengi)', 
+                                               product.title, re.IGNORECASE)
+                        if color_match:
+                            color = color_match.group(1)
+                    
+                    # Apply proper numeric color ID attribute
+                    if color and color in color_id_map:
+                        color_id = color_id_map[color]
+                        product.attributes = [{"attributeId": 348, "attributeValueId": color_id}]
+                        attribute_fixed_count += 1
+                    
+                    # Update timestamp
+                    product.updated_at = timezone.now()
+                    product.save()
+                    updated_count += 1
+                
+            except Exception as e:
+                self.message_user(request, f"Error refreshing product {product.title}: {str(e)}", level='error')
+        
+        # Report results
+        if updated_count:
+            self.message_user(
+                request, 
+                f"Successfully refreshed {updated_count} products. Fixed attributes for {attribute_fixed_count} products."
+            )
+        if not_linked_count:
+            self.message_user(
+                request, 
+                f"Could not find LCWaikiki data for {not_linked_count} products.", 
+                level='warning'
+            )
+    
+    refresh_product_data.short_description = "Refresh product data from LCWaikiki"
