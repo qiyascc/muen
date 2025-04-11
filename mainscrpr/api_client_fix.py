@@ -46,11 +46,18 @@ def fix_trendyol_api_client():
                 print(f"  {key}: {value}")
         
         # Attempt to get brands (simple API call)
-        brands_url = f"https://apigw.trendyol.com/integration/product/sellers/{active_config.supplier_id}/brands"
+        # First, let's try to get categories (general API call)
+        categories_url = "https://api.trendyol.com/sapigw/product-categories"
         
         try:
-            print(f"\nTesting API connection to: {brands_url}")
-            response = requests.get(brands_url, headers=headers)
+            print(f"\nTesting API connection to: {categories_url}")
+            response = requests.get(categories_url, headers=headers)
+            
+            if response.status_code != 200:
+                # Try alternative URL structure based on Trendyol documentation
+                brands_url = f"https://api.trendyol.com/sapigw/suppliers/{active_config.supplier_id}/brands"
+                print(f"\nFirst URL failed, trying alternative URL: {brands_url}")
+                response = requests.get(brands_url, headers=headers)
             
             if response.status_code == 200:
                 print(f"\n✅ Success! Direct API connection established.")

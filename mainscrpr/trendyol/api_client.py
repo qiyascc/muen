@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 class TrendyolApi:
     """Custom Trendyol API client implementation"""
     
-    def __init__(self, api_key, api_secret, supplier_id, api_url='https://apigw.trendyol.com/integration'):
+    def __init__(self, api_key, api_secret, supplier_id, api_url='https://api.trendyol.com/sapigw'):
         self.api_key = api_key
         self.api_secret = api_secret
         self.supplier_id = supplier_id
@@ -144,7 +144,7 @@ class BrandsAPI:
         
     def get_brands(self, page=0, size=1000):
         """Get all brands from Trendyol"""
-        endpoint = '/product/brands'
+        endpoint = '/brands'
         params = {
             'page': page,
             'size': size
@@ -153,7 +153,7 @@ class BrandsAPI:
     
     def get_brand_by_name(self, name):
         """Get brand by name"""
-        endpoint = '/product/brands/by-name'
+        endpoint = '/brands/by-name'
         params = {
             'name': name
         }
@@ -168,12 +168,12 @@ class CategoriesAPI:
         
     def get_categories(self):
         """Get all categories from Trendyol"""
-        endpoint = '/product/product-categories'
+        endpoint = '/product-categories'
         return self.client.make_request('GET', endpoint)
         
     def get_category_attributes(self, category_id):
         """Get attributes for a specific category"""
-        endpoint = f'/product/product-categories/{category_id}/attributes'
+        endpoint = f'/product-categories/{category_id}/attributes'
         return self.client.make_request('GET', endpoint)
 
 
@@ -185,28 +185,28 @@ class ProductsAPI:
         
     def create_products(self, products):
         """Create products on Trendyol"""
-        endpoint = f'/product/sellers/{self.client.supplier_id}/products'
+        endpoint = f'/suppliers/{self.client.supplier_id}/products'
         return self.client.make_request('POST', endpoint, data={"items": products})
         
     def update_products(self, products):
         """Update existing products on Trendyol"""
-        endpoint = f'/product/sellers/{self.client.supplier_id}/products'
+        endpoint = f'/suppliers/{self.client.supplier_id}/products'
         return self.client.make_request('PUT', endpoint, data={"items": products})
         
     def delete_products(self, barcodes):
         """Delete products from Trendyol"""
-        endpoint = f'/product/sellers/{self.client.supplier_id}/products'
+        endpoint = f'/suppliers/{self.client.supplier_id}/products'
         items = [{"barcode": barcode} for barcode in barcodes]
         return self.client.make_request('DELETE', endpoint, data={"items": items})
         
     def get_batch_request_status(self, batch_id):
         """Get the status of a batch request"""
-        endpoint = f'/product/sellers/{self.client.supplier_id}/products/batch-requests/{batch_id}'
+        endpoint = f'/suppliers/{self.client.supplier_id}/products/batch-requests/{batch_id}'
         return self.client.make_request('GET', endpoint)
         
     def get_products(self, barcode=None, approved=None, page=0, size=50):
         """Get products from Trendyol"""
-        endpoint = f'/product/sellers/{self.client.supplier_id}/products'
+        endpoint = f'/suppliers/{self.client.supplier_id}/products'
         params = {
             'page': page,
             'size': size
