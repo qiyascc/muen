@@ -507,21 +507,46 @@ class TrendyolCategoryFinder:
         default_categories = {
             'giyim': 522,      # Giyim (Clothing)
             'erkek': 2356,     # Erkek Giyim (Men's Clothing)
+            'men': 2356,       # Erkek Giyim (Men's Clothing) - English
+            "men's": 2356,     # Erkek Giyim (Men's Clothing) - English
             'kadin': 41,       # Kadın Giyim (Women's Clothing)
+            'kadın': 41,       # Kadın Giyim (Women's Clothing)
+            'women': 41,       # Kadın Giyim (Women's Clothing) - English
+            "women's": 41,     # Kadın Giyim (Women's Clothing) - English
             'çocuk': 674,      # Çocuk Gereçleri (Children's Items)
             'cocuk': 674,      # Çocuk Gereçleri (Children's Items)
+            'child': 674,      # Çocuk Gereçleri (Children's Items) - English
+            'children': 674,   # Çocuk Gereçleri (Children's Items) - English
             'bebek': 2164,     # Bebek Hediyelik (Baby Items)
+            'baby': 2164,      # Bebek Hediyelik (Baby Items) - English
             'ayakkabi': 403,   # Ayakkabı (Shoes)
             'ayakkabı': 403,   # Ayakkabı (Shoes)
+            'shoe': 403,       # Ayakkabı (Shoes) - English
+            'shoes': 403,      # Ayakkabı (Shoes) - English
             'aksesuar': 368,   # Aksesuar (Accessories)
+            'accessory': 368,  # Aksesuar (Accessories) - English
+            'accessories': 368,# Aksesuar (Accessories) - English
             'tisort': 384,     # T-shirt
             'tişört': 384,     # T-shirt
+            't-shirt': 384,    # T-shirt - With dash
+            'tshirt': 384,     # T-shirt - Without dash
+            't shirt': 384,    # T-shirt - With space
             'pantolon': 383,   # Pants
+            'pant': 383,       # Pants - English
+            'pants': 383,      # Pants - English
+            'jean': 383,       # Jeans - English
+            'jeans': 383,      # Jeans - English
             'gömlek': 385,     # Shirt
             'gomlek': 385,     # Shirt
+            'shirt': 385,      # Shirt - English
             'elbise': 1032,    # Dress
-            'bluz': 1027       # Blouse
+            'dress': 1032,     # Dress - English
+            'bluz': 1027,      # Blouse
+            'blouse': 1027     # Blouse - English
         }
+        
+        # Clean search text - replace punctuation with spaces to improve matching
+        import re
         
         search_text = ' '.join(filter(None, [
             product.title and product.title.lower() or '',
@@ -529,8 +554,62 @@ class TrendyolCategoryFinder:
             lcw_category and lcw_category.lower() or ''
         ]))
         
+        # Replace punctuation with spaces to improve matching
+        search_text = re.sub(r'[^\w\s]', ' ', search_text)
+        # Normalize spaces
+        search_text = ' ' + re.sub(r'\s+', ' ', search_text) + ' '
+        
+        logger.debug(f"Search text for category matching: '{search_text}'")
+        
+        # First, try to find specific item types like t-shirt, pants, etc.
+        specific_item_types = [
+            ('tshirt', 't-shirt', 't shirt', 'tisort', 'tişört'),
+            ('pant', 'pants', 'jean', 'jeans', 'pantolon'),
+            ('shirt', 'gömlek', 'gomlek'),
+            ('dress', 'elbise'),
+            ('blouse', 'bluz')
+        ]
+        
+        for item_types in specific_item_types:
+            for item_type in item_types:
+                pattern = f' {item_type} '
+                if pattern in search_text:
+                    # Get the first keyword in the tuple for mapping
+                    category_id = default_categories.get(item_types[0])
+                    if category_id:
+                        try:
+                            category = TrendyolCategory.objects.get(category_id=category_id)
+                            logger.info(f"Using specific category based on item type '{item_type}': {category.name} (ID: {category_id})")
+                            return category_id
+                        except TrendyolCategory.DoesNotExist:
+                            continue
+        
+        # Then try to find gender/age groups
+        audience_types = [
+            ('men', "men's", 'erkek'),
+            ('women', "women's", 'kadin', 'kadın'),
+            ('child', 'children', 'çocuk', 'cocuk'),
+            ('baby', 'bebek')
+        ]
+        
+        for audience in audience_types:
+            for audience_type in audience:
+                pattern = f' {audience_type} '
+                if pattern in search_text:
+                    # Get the first keyword in the tuple for mapping
+                    category_id = default_categories.get(audience[0])
+                    if category_id:
+                        try:
+                            category = TrendyolCategory.objects.get(category_id=category_id)
+                            logger.info(f"Using demographic category based on audience type '{audience_type}': {category.name} (ID: {category_id})")
+                            return category_id
+                        except TrendyolCategory.DoesNotExist:
+                            continue
+        
+        # Finally try generic fallbacks for any keyword
         for keyword, category_id in default_categories.items():
-            if keyword in search_text:
+            pattern = f' {keyword} '
+            if pattern in search_text:
                 try:
                     category = TrendyolCategory.objects.get(category_id=category_id)
                     logger.info(f"Using default category based on keyword '{keyword}': {category.name} (ID: {category_id})")
