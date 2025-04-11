@@ -1281,20 +1281,19 @@ def prepare_product_data(product: TrendyolProduct) -> Dict[str, Any]:
       "categoryId": category_id,
       "stockCode": product.stock_code or product.barcode,
       "quantity": product.quantity or 10,  # Default to 10 if not specified
-      "stockUnitType": "PIECE",  # Default to pieces
-      "dimensionalWeight": 1,  # Default to 1kg
+      # Removed stockUnitType per request
+      # Removed dimensionalWeight per request
       "description": product.description
       or product.title,  # Use title as fallback description
       "currencyType": product.currency_type
       or "TRY",  # Default to Turkish Lira
       "listPrice": float(product.price or 0),
       "salePrice": float(product.price or 0),
-      "vatRate": product.vat_rate or 18,  # Default to 18% VAT
-      "cargoCompanyId": 0,  # Default cargo company
-      "shipmentAddressId": 0,  # Required field by Trendyol
-      "deliveryDuration": 3,  # 3 days default delivery time
-      "pimCategoryId": product.pim_category_id
-      or category_id,  # Use main category as fallback
+      "vatRate": 10,  # Fix to 10% VAT as requested
+      "cargoCompanyId": 17,  # Fixed cargo company ID as requested
+      # Removed shipmentAddressId per request
+      # Removed deliveryDuration per request
+      # Removed pimCategoryId per request
       "gender": {
           "id": 1  # Default to Unisex
       },
@@ -1317,18 +1316,17 @@ def prepare_product_data(product: TrendyolProduct) -> Dict[str, Any]:
 
   # Ensure all numeric values are proper floats/ints
   for key in [
-      "quantity", "dimensionalWeight", "listPrice", "salePrice", "vatRate",
-      "deliveryDuration"
+      "quantity", "listPrice", "salePrice", "vatRate"
   ]:
     if key in product_data and product_data[key] is not None:
       try:
-        if key in ["listPrice", "salePrice", "dimensionalWeight"]:
+        if key in ["listPrice", "salePrice"]:
           product_data[key] = float(product_data[key])
         else:
           product_data[key] = int(product_data[key])
       except (ValueError, TypeError):
         # If conversion fails, use default values
-        if key in ["listPrice", "salePrice", "dimensionalWeight"]:
+        if key in ["listPrice", "salePrice"]:
           product_data[key] = 0.0
         else:
           product_data[key] = 0
