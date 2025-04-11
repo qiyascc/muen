@@ -171,17 +171,21 @@ class BrandsAPI:
     
   def _get_brands_endpoint(self):
     """Get the brands endpoint for verification"""
-    return '/brands/suppliers'
+    return '/suppliers/brands'
     
   def get_brands(self, page=0, size=1000):
     """Get all brands from Trendyol"""
-    endpoint = '/brands/suppliers'
+    endpoint = self._get_brands_endpoint()
     params = {'page': page, 'size': size}
     return self.client.make_request('GET', endpoint, params=params)
 
+  def _get_brand_by_name_endpoint(self):
+    """Get the brand by name endpoint for verification"""
+    return '/suppliers/brands/by-name'
+    
   def get_brand_by_name(self, name):
     """Get brand by name"""
-    endpoint = '/brands/suppliers/by-name'
+    endpoint = self._get_brand_by_name_endpoint()
     params = {'name': name}
     return self.client.make_request('GET', endpoint, params=params)
 

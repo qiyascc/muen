@@ -49,5 +49,10 @@ def main():
     
     print(f"Updated {count} API configuration(s) with the correct URL")
 
-if __name__ == "__main__":
-    main()
+# When running with python manage.py shell < script.py
+# the __name__ == "__main__" condition is not met
+# So we call main() directly
+
+print("Starting the update_api_urls script...")
+main()
+print("Script completed.")
