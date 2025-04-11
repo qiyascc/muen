@@ -1205,6 +1205,7 @@ def create_trendyol_product(product: TrendyolProduct) -> Optional[str]:
         
         # Create the product on Trendyol
         logger.info(f"Submitting product '{product.title}' (ID: {product.id}) to Trendyol")
+        logger.info(f"Product data: {json.dumps(product_data, default=str, indent=2)}")
         response = client.products.create_products([product_data])
         
         # Handle different response error scenarios
@@ -1688,7 +1689,7 @@ def lcwaikiki_to_trendyol_product(lcw_product) -> Optional[TrendyolProduct]:
         attributes = {}
         
         # Add color attribute if available
-        if lcw_product.color:
+        if hasattr(lcw_product, 'color') and lcw_product.color:
             attributes["color"] = lcw_product.color
             
         # Add size attributes if available (placeholder for now)
