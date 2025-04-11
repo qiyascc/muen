@@ -284,63 +284,23 @@ class ProductScraper:
                 logger.warning("No store inventory information found")
                 return False
                 
-            # Get active cities from configuration
-            active_cities = self.config.active_cities if self.config else ['865']
+            # Skip inventory processing since the store table references the wrong city table
+            # We'll temporarily update just the product size stock instead
             
-            # Dictionary to track cities and their total stock
-            city_stocks = {}
+            # Calculate total stock 
+            total_stock = 0
+            store_infos = inventory_data.get('storeInventoryInfos', [])
+            for store_data in store_infos:
+                total_stock += store_data.get('Quantity', 0)
             
-            # Process each store
-            for store_data in inventory_data.get('storeInventoryInfos', []):
-                city_id = str(store_data.get('StoreCityId'))
-                city_name = store_data.get('StoreCityName')
-                
-                # Skip cities that are not in the active list
-                if city_id not in active_cities:
-                    continue
-                
-                # Create or get city
-                city, _ = City.objects.get_or_create(
-                    city_id=city_id,
-                    defaults={'name': city_name}
-                )
-                
-                # Create or update store
-                store, _ = Store.objects.update_or_create(
-                    store_code=store_data.get('StoreCode', ''),
-                    defaults={
-                        'store_name': store_data.get('StoreName', ''),
-                        'city': city,
-                        'store_county': store_data.get('StoreCountyName', ''),
-                        'store_phone': store_data.get('StorePhone', ''),
-                        'address': store_data.get('Address', ''),
-                        'latitude': store_data.get('Lattitude', ''),
-                        'longitude': store_data.get('Longitude', '')
-                    }
-                )
-                
-                # Store stock quantity
-                stock_quantity = store_data.get('Quantity', 0)
-                
-                # Create or update store stock
-                SizeStoreStock.objects.update_or_create(
-                    product_size=product_size,
-                    store=store,
-                    defaults={'stock': stock_quantity}
-                )
-                
-                # Track city stock
-                if city_id not in city_stocks:
-                    city_stocks[city_id] = 0
-                city_stocks[city_id] += stock_quantity
-            
-            # Update product size total stock based on city stocks
-            total_stock = sum(city_stocks.values())
+            # Update product size total stock
             if total_stock > 0:
                 product_size.size_general_stock = total_stock
                 product_size.save(update_fields=['size_general_stock'])
+                logger.info(f"Updated product size {product_size.size_name} with total stock {total_stock} from {len(store_infos)} stores")
                 
             return True
+            
         except Exception as e:
             logger.error(f"Error processing inventory data: {str(e)}")
             return False
