@@ -62,7 +62,27 @@ UNFOLD = {
                 ],
             },
             {
-                "title": "Products",
+                "title": "LCWaikiki Management",
+                "items": [
+                    {
+                        "title": "Products",
+                        "icon": "inventory_2",
+                        "link": "/admin/lcwaikiki/product/",
+                    },
+                    {
+                        "title": "Cities",
+                        "icon": "location_city",
+                        "link": "/admin/lcwaikiki/city/",
+                    },
+                    {
+                        "title": "Stores",
+                        "icon": "store",
+                        "link": "/admin/lcwaikiki/store/",
+                    },
+                ],
+            },
+            {
+                "title": "URL Management",
                 "items": [
                     {
                         "title": "Available URLs",
