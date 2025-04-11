@@ -105,19 +105,35 @@ class TrendyolApi:
                 
         except requests.exceptions.RequestException as e:
             logger.error(f"Error making request to Trendyol API: {str(e)}")
+            error_details = {}
             if hasattr(e, 'response') and e.response:
+                error_details['status_code'] = e.response.status_code
+                error_details['response_text'] = e.response.text
                 logger.error(f"Response status: {e.response.status_code}")
                 logger.error(f"Response content: {e.response.text}")
                 
                 # Try to parse error content if it's JSON
                 try:
                     error_json = e.response.json()
+                    error_details['error_json'] = error_json
+                    
                     if 'errors' in error_json:
+                        error_messages = []
                         for error in error_json['errors']:
-                            logger.error(f"API Error: {error.get('message', 'Unknown error')}")
-                except Exception:
-                    pass
-            return None
+                            error_msg = error.get('message', 'Unknown error')
+                            error_messages.append(error_msg)
+                            logger.error(f"API Error: {error_msg}")
+                        error_details['error_messages'] = error_messages
+                except Exception as json_err:
+                    logger.error(f"Error parsing response JSON: {str(json_err)}")
+                    error_details['parse_error'] = str(json_err)
+            
+            # Return an error response object instead of None
+            return {
+                "error": True,
+                "message": str(e),
+                "details": error_details
+            }
 
 
 class BrandsAPI:
@@ -1216,9 +1232,29 @@ def create_trendyol_product(product: TrendyolProduct) -> Optional[str]:
             product.status_message = error_message
             product.save()
             return None
+            
+        # Check if the response contains an error flag (from our enhanced error handling)
+        if isinstance(response, dict) and response.get('error') is True:
+            error_message = response.get('message', 'Unknown API error')
+            error_details = response.get('details', '')
+            
+            # Log detailed error information
+            logger.error(f"API error for product ID {product.id}: {error_message}")
+            if error_details:
+                logger.error(f"Error details: {error_details}")
+                
+            # Save detailed error information to the product
+            full_error = f"{error_message}"
+            if error_details:
+                full_error += f" - {error_details}"
+                
+            product.batch_status = 'failed'
+            product.status_message = full_error[:500]  # Truncate if too long
+            product.save()
+            return None
         
-        # Check for errors in response
-        if 'errors' in response and response['errors']:
+        # Check for errors in standard response format
+        if isinstance(response, dict) and 'errors' in response and response['errors']:
             errors = response['errors']
             if isinstance(errors, list):
                 error_message = f"Failed to create product: {errors[0].get('message', 'Unknown error')}"
@@ -1414,9 +1450,29 @@ def update_price_and_inventory(product: TrendyolProduct) -> Optional[str]:
             product.status_message = error_message
             product.save()
             return None
+            
+        # Check if the response contains an error flag (from our enhanced error handling)
+        if isinstance(response, dict) and response.get('error') is True:
+            error_message = response.get('message', 'Unknown API error')
+            error_details = response.get('details', '')
+            
+            # Log detailed error information
+            logger.error(f"API error for product ID {product.id}: {error_message}")
+            if error_details:
+                logger.error(f"Error details: {error_details}")
+                
+            # Save detailed error information to the product
+            full_error = f"{error_message}"
+            if error_details:
+                full_error += f" - {error_details}"
+                
+            product.batch_status = 'failed'
+            product.status_message = full_error[:500]  # Truncate if too long
+            product.save()
+            return None
         
-        # Check for errors in response
-        if 'errors' in response and response['errors']:
+        # Check for errors in standard response format
+        if isinstance(response, dict) and 'errors' in response and response['errors']:
             errors = response['errors']
             if isinstance(errors, list):
                 error_message = f"Failed to update price and inventory: {errors[0].get('message', 'Unknown error')}"
