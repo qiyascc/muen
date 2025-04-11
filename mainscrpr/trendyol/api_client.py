@@ -44,11 +44,40 @@ class TrendyolApi:
             'User-Agent': user_agent,
         }
         
-        logger.debug(f"Making {method} request to {url}")
+        logger.info(f"Making {method} request to {url}")
         if data:
-            logger.debug(f"Request data: {json.dumps(data)}")
+            logger.info(f"Request data: {json.dumps(data)}")
         
         try:
+            # Enhanced debugging for product creation
+            if endpoint.endswith('/products') and method == 'POST':
+                # Check for required fields in each product
+                if data and 'items' in data and isinstance(data['items'], list):
+                    for i, item in enumerate(data['items']):
+                        # Log each product's data
+                        logger.info(f"Product {i+1} data: {json.dumps(item)}")
+                        
+                        # Check for critical fields
+                        required_fields = ['barcode', 'title', 'productMainId', 'brandId', 'categoryId',
+                                           'listPrice', 'salePrice', 'vatRate', 'stockCode']
+                        
+                        missing_fields = [field for field in required_fields if field not in item or item[field] is None]
+                        if missing_fields:
+                            logger.error(f"Product {i+1} missing required fields: {', '.join(missing_fields)}")
+                        
+                        # Verify attributes structure
+                        if 'attributes' in item:
+                            if not isinstance(item['attributes'], list):
+                                logger.error(f"Product {i+1} attributes must be a list, got {type(item['attributes'])}")
+                            
+                            for attr in item['attributes']:
+                                if not isinstance(attr, dict):
+                                    logger.error(f"Product {i+1} attribute must be an object, got {type(attr)}")
+                                    continue
+                                    
+                                if 'attributeId' not in attr or 'attributeValueId' not in attr:
+                                    logger.error(f"Product {i+1} attribute missing required fields: {attr}")
+            
             response = requests.request(
                 method=method,
                 url=url,
@@ -59,7 +88,7 @@ class TrendyolApi:
             )
             
             # Log response status
-            logger.debug(f"Response status: {response.status_code}")
+            logger.info(f"Response status: {response.status_code}")
             
             # Check if the request was successful
             response.raise_for_status()
@@ -67,11 +96,11 @@ class TrendyolApi:
             # Parse the response JSON
             try:
                 result = response.json()
-                logger.debug(f"Response data: {json.dumps(result)}")
+                logger.info(f"Response data: {json.dumps(result)}")
                 return result
             except ValueError:
                 # If the response is not JSON, return the response text
-                logger.debug(f"Response text: {response.text}")
+                logger.info(f"Response text: {response.text}")
                 return {"response": response.text}
                 
         except requests.exceptions.RequestException as e:
@@ -79,6 +108,15 @@ class TrendyolApi:
             if hasattr(e, 'response') and e.response:
                 logger.error(f"Response status: {e.response.status_code}")
                 logger.error(f"Response content: {e.response.text}")
+                
+                # Try to parse error content if it's JSON
+                try:
+                    error_json = e.response.json()
+                    if 'errors' in error_json:
+                        for error in error_json['errors']:
+                            logger.error(f"API Error: {error.get('message', 'Unknown error')}")
+                except Exception:
+                    pass
             return None
 
 
@@ -878,13 +916,17 @@ def find_best_brand_match(product: TrendyolProduct) -> Optional[int]:
     Find the best matching brand for a product.
     Returns the brand ID if found, None otherwise.
     """
+    logger.info(f"Finding brand for product: {product.title} (Brand name: {product.brand_name})")
+    
     # If we already have a brand ID, use it
     if product.brand_id:
         # Verify the brand exists
         try:
             TrendyolBrand.objects.get(brand_id=product.brand_id)
+            logger.info(f"Using existing brand ID: {product.brand_id}")
             return product.brand_id
         except TrendyolBrand.DoesNotExist:
+            logger.warning(f"Brand ID {product.brand_id} does not exist in database")
             pass
     
     # Try to find by brand name
@@ -897,6 +939,7 @@ def find_best_brand_match(product: TrendyolProduct) -> Optional[int]:
             ).first()
             
             if brand:
+                logger.info(f"Found exact brand match: {brand.name} (ID: {brand.brand_id})")
                 return brand.brand_id
             
             # Try partial match
@@ -906,24 +949,66 @@ def find_best_brand_match(product: TrendyolProduct) -> Optional[int]:
             ).first()
             
             if brand:
+                logger.info(f"Found partial brand match: {brand.name} (ID: {brand.brand_id})")
                 return brand.brand_id
+                
+            # Try with brand name variations
+            brand_variations = []
+            
+            # Handle LC WAIKIKI / LCW variations
+            if 'lcw' in product.brand_name.lower() or 'waikiki' in product.brand_name.lower():
+                brand_variations.extend(['LC WAIKIKI', 'LCW'])
+            
+            for variation in brand_variations:
+                brand = TrendyolBrand.objects.filter(
+                    name__iexact=variation,
+                    is_active=True
+                ).first()
+                
+                if brand:
+                    logger.info(f"Found brand match using variation '{variation}': {brand.name} (ID: {brand.brand_id})")
+                    return brand.brand_id
+                    
         except Exception as e:
             logger.error(f"Error finding brand by name: {str(e)}")
     
     # If we have a related LCWaikiki product, assume it's LCWaikiki brand
     if product.lcwaikiki_product:
         try:
+            # First try LC WAIKIKI
             brand = TrendyolBrand.objects.filter(
-                name__icontains="LCW",
+                name__icontains="WAIKIKI",
                 is_active=True
             ).first()
             
             if brand:
+                logger.info(f"Found LCW brand using related product: {brand.name} (ID: {brand.brand_id})")
                 return brand.brand_id
+                
+            # Then try LCW
+            brand = TrendyolBrand.objects.filter(
+                name__iexact="LCW",
+                is_active=True
+            ).first()
+            
+            if brand:
+                logger.info(f"Found LCW brand using related product: {brand.name} (ID: {brand.brand_id})")
+                return brand.brand_id
+                
         except Exception as e:
             logger.error(f"Error finding LCW brand: {str(e)}")
     
-    # If all else fails, return None
+    # If all else fails, try to find any brand and use it as fallback
+    try:
+        fallback_brand = TrendyolBrand.objects.filter(is_active=True).first()
+        if fallback_brand:
+            logger.warning(f"Using fallback brand: {fallback_brand.name} (ID: {fallback_brand.brand_id})")
+            return fallback_brand.brand_id
+    except Exception as e:
+        logger.error(f"Error finding fallback brand: {str(e)}")
+    
+    # No brand found
+    logger.error(f"No matching brand found for product: {product.title}")
     return None
 
 
@@ -1019,18 +1104,55 @@ def prepare_product_data(product: TrendyolProduct) -> Dict[str, Any]:
         "brandId": brand_id,
         "categoryId": category_id,
         "stockCode": product.stock_code or product.barcode,
-        "quantity": product.quantity,
+        "quantity": product.quantity or 10,  # Default to 10 if not specified
         "stockUnitType": "PIECE",  # Default to pieces
         "dimensionalWeight": 1,  # Default to 1kg
-        "description": product.description,
-        "currencyType": product.currency_type,
-        "listPrice": float(product.price),
-        "salePrice": float(product.price),
-        "vatRate": product.vat_rate,
+        "description": product.description or product.title,  # Use title as fallback description
+        "currencyType": product.currency_type or "TRY",  # Default to Turkish Lira
+        "listPrice": float(product.price or 0),
+        "salePrice": float(product.price or 0),
+        "vatRate": product.vat_rate or 18,  # Default to 18% VAT
         "cargoCompanyId": 0,  # Default cargo company
-        "images": [{"url": url} for url in image_urls if url],
+        "shipmentAddressId": 0,  # Required field by Trendyol
+        "deliveryDuration": 3,  # 3 days default delivery time
+        "pimCategoryId": product.pim_category_id or category_id,  # Use main category as fallback
+        "gender": {
+            "id": 1  # Default to Unisex
+        },
         "attributes": attributes,
     }
+    
+    # Only add images if we have any
+    if image_urls:
+        product_data["images"] = [{"url": url} for url in image_urls if url]
+    
+    # Add color attribute if not already present
+    if product.color and not any(attr.get("attributeName") == "Renk" for attr in attributes):
+        product_data["color"] = product.color
+    
+    # Ensure all numeric values are proper floats/ints
+    for key in ["quantity", "dimensionalWeight", "listPrice", "salePrice", "vatRate", "deliveryDuration"]:
+        if key in product_data and product_data[key] is not None:
+            try:
+                if key in ["listPrice", "salePrice", "dimensionalWeight"]:
+                    product_data[key] = float(product_data[key])
+                else:
+                    product_data[key] = int(product_data[key])
+            except (ValueError, TypeError):
+                # If conversion fails, use default values
+                if key in ["listPrice", "salePrice", "dimensionalWeight"]:
+                    product_data[key] = 0.0
+                else:
+                    product_data[key] = 0
+                    
+    # Make sure brandId and categoryId are integers
+    for key in ["brandId", "categoryId"]:
+        if key in product_data and product_data[key] is not None:
+            try:
+                product_data[key] = int(product_data[key])
+            except (ValueError, TypeError):
+                logger.error(f"Invalid {key}: {product_data[key]}")
+                raise ValueError(f"Invalid {key}: must be an integer")
     
     return product_data
 
