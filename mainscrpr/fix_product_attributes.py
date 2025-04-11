@@ -21,6 +21,10 @@ from trendyol.models import TrendyolProduct
 from django.utils import timezone
 from loguru import logger
 
+# Configure logger to write to stdout
+logger.remove()
+logger.add(sys.stdout, level="INFO")
+
 def main():
     """Fix attributes format to use numeric IDs for all products"""
     # Color ID mapping to use numeric IDs instead of string values
@@ -160,7 +164,7 @@ def main():
         else:
             logger.warning(f"Product {product.id} has attributes in unknown format: {type(product.attributes)}")
     
-    logger.info(f"Updated {updated_count} products with corrected attribute format")
+    print(f"Updated {updated_count} products with corrected attribute format")
 
 if __name__ == "__main__":
     main()

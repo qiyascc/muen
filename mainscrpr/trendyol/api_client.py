@@ -1409,8 +1409,11 @@ def prepare_product_data(product: TrendyolProduct) -> Dict[str, Any]:
           })
 
   # Prepare product data
+  # Normalize whitespace - replace multiple spaces with single space
+  normalized_title = " ".join(product.title.split()) if product.title else ""
+  
   # Limit title to 100 characters to avoid "Ürün Adı 100 karakterden fazla olamaz" error
-  title = product.title[:100] if product.title and len(product.title) > 100 else product.title
+  title = normalized_title[:100] if normalized_title and len(normalized_title) > 100 else normalized_title
   
   product_data = {
       "barcode": product.barcode,
