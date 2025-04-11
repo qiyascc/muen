@@ -5,6 +5,7 @@ import time
 import random
 import requests
 import threading
+import html
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from urllib.parse import urlparse
@@ -347,6 +348,7 @@ class ProductScraper:
     def extract_json_data(self, response):
         """Extract product JSON data from the response"""
         try:
+            # First try looking for the script tag containing cartOperationViewModel
             script_tags = re.findall(r'<script[^>]*>(.*?)</script>', response.text, re.DOTALL)
             
             for script in script_tags:
@@ -355,14 +357,44 @@ class ProductScraper:
                     match = re.search(pattern, script, re.DOTALL)
                     if match:
                         json_str = match.group(1).strip()
+                        # Clean up the JSON string - remove comments, trailing commas, etc.
                         json_str = re.sub(r'/\*.*?\*/', '', json_str, flags=re.DOTALL)
                         json_str = re.sub(r',\s*}', '}', json_str)
                         json_str = re.sub(r',\s*]', ']', json_str)
                         
-                        return json.loads(json_str)
+                        try:
+                            return json.loads(json_str)
+                        except json.JSONDecodeError as e:
+                            logger.warning(f"JSON decode error: {str(e)}, attempting additional cleanup")
+                            # Additional cleanup for problematic JSON strings
+                            json_str = re.sub(r'undefined', 'null', json_str)
+                            json_str = re.sub(r'NaN', '0', json_str)
+                            json_str = re.sub(r'//.*?\\n', '', json_str)
+                            return json.loads(json_str)
                 except Exception as e:
-                    logger.error(f"JSON parsing error: {str(e)}")
+                    logger.error(f"JSON parsing error in script tag: {str(e)}")
                     continue
+            
+            # Try an alternative approach by looking for meta tags
+            try:
+                meta_tag = re.search(r'<meta name="product-info" content="([^"]+)"', response.text)
+                if meta_tag:
+                    meta_content = meta_tag.group(1)
+                    meta_content = html.unescape(meta_content)  # Handle HTML entities
+                    return json.loads(meta_content)
+            except Exception as e:
+                logger.error(f"Error extracting meta tag product info: {str(e)}")
+            
+            # Try directly looking for product data in the HTML
+            try:
+                product_data_match = re.search(r'var\s+productDetailData\s*=\s*({.*?});', response.text, re.DOTALL)
+                if product_data_match:
+                    json_str = product_data_match.group(1).strip()
+                    json_str = re.sub(r',\s*}', '}', json_str)
+                    json_str = re.sub(r',\s*]', ']', json_str)
+                    return json.loads(json_str)
+            except Exception as e:
+                logger.error(f"Error extracting product detail data: {str(e)}")
             
             logger.warning(f"No valid JSON data found in response")
             return None
