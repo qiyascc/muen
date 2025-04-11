@@ -4,6 +4,118 @@ import json
 from django.utils import timezone
 
 
+class Config(models.Model):
+  """
+    Config model to store configuration data for the application.
+    The brands field stores a list of brand identifiers in JSON format.
+    """
+  name = models.CharField(max_length=100,
+                          unique=True,
+                          help_text="Configuration name")
+  brands = models.JSONField(
+      help_text="List of brands in JSON format, e.g. ['lcw-classic', 'lcw-abc']"
+  )
+  created_at = models.DateTimeField(auto_now_add=True)
+  updated_at = models.DateTimeField(auto_now=True)
+
+  def __str__(self):
+    return self.name
+
+  def clean(self):
+    """
+        Validate that the brands field contains a list of strings.
+        """
+    if not isinstance(self.brands, list):
+      raise ValidationError({'brands': 'Brands must be a list'})
+
+    for brand in self.brands:
+      if not isinstance(brand, str):
+        raise ValidationError({'brands': 'All brands must be strings'})
+
+  def save(self, *args, **kwargs):
+    """
+        Override save to validate data before saving.
+        """
+    self.clean()
+    super().save(*args, **kwargs)
+
+  class Meta:
+    verbose_name = "Configuration"
+    verbose_name_plural = "Configurations"
+
+
+class ProductAvailableUrl(models.Model):
+  """
+    Model to store available product URLs.
+    """
+  page_id = models.CharField(max_length=255, help_text="Page identifier")
+  product_id_in_page = models.CharField(
+      max_length=255, help_text="Product identifier within the page")
+  url = models.URLField(max_length=1000, help_text="URL to the product")
+  last_checking = models.DateTimeField(default=timezone.now,
+                                       help_text="Date of last check")
+  created_at = models.DateTimeField(auto_now_add=True)
+  updated_at = models.DateTimeField(auto_now=True)
+
+  def __str__(self):
+    return f"{self.page_id} - {self.product_id_in_page}"
+
+  class Meta:
+    verbose_name = "Available Product URL"
+    verbose_name_plural = "Available Product URLs"
+    indexes = [
+        models.Index(fields=['page_id']),
+        models.Index(fields=['product_id_in_page']),
+        models.Index(fields=['last_checking']),
+        models.Index(fields=['url']),
+    ]
+
+
+class ProductDeletedUrl(models.Model):
+  """
+    Model to store deleted product URLs.
+    """
+  url = models.URLField(max_length=1000,
+                        help_text="URL to the deleted product")
+  last_checking = models.DateTimeField(default=timezone.now,
+                                       help_text="Date of last check")
+  created_at = models.DateTimeField(auto_now_add=True)
+  updated_at = models.DateTimeField(auto_now=True)
+
+  def __str__(self):
+    return self.url
+
+  class Meta:
+    verbose_name = "Deleted Product URL"
+    verbose_name_plural = "Deleted Product URLs"
+    indexes = [
+        models.Index(fields=['last_checking']),
+        models.Index(fields=['url']),
+    ]
+
+
+class ProductNewUrl(models.Model):
+  """
+    Model to store new product URLs.
+    """
+  url = models.URLField(max_length=1000, help_text="URL to the new product")
+  last_checking = models.DateTimeField(default=timezone.now,
+                                       help_text="Date of last check")
+  created_at = models.DateTimeField(auto_now_add=True)
+  updated_at = models.DateTimeField(auto_now=True)
+
+  def __str__(self):
+    return self.url
+
+  class Meta:
+    verbose_name = "New Product URL"
+    verbose_name_plural = "New Product URLs"
+    indexes = [
+        models.Index(fields=['last_checking']),
+        models.Index(fields=['url']),
+    ]
+
+
 class CityConfiguration(models.Model):
   CITY_CHOICES = [
       ("866", "Adana"),
@@ -104,74 +216,13 @@ class CityConfiguration(models.Model):
     return self.get_city_id_display()
 
 
-class Config(models.Model):
-  name = models.CharField(max_length=100,
-                          unique=True,
-                          help_text="Configuration name")
-  brands = models.JSONField(
-      help_text="List of brands in JSON format, e.g. ['lcw-classic', 'lcw-abc']"
-  )
-  price_config = models.JSONField(
-      default=dict, help_text="Price configuration in JSON format")
-  default_city = models.ForeignKey(
-      CityConfiguration,
-      on_delete=models.SET_NULL,
-      null=True,
-      blank=True,
-      help_text="Default city for inventory checks")
-  created_at = models.DateTimeField(auto_now_add=True)
-  updated_at = models.DateTimeField(auto_now=True)
-
-  def __str__(self):
-    return self.name
-
-  def clean(self):
-    if not isinstance(self.brands, list):
-      raise ValidationError({'brands': 'Brands must be a list'})
-    for brand in self.brands:
-      if not isinstance(brand, str):
-        raise ValidationError({'brands': 'All brands must be strings'})
-
-    # Set default price config if not provided
-    if not self.price_config:
-      self.price_config = {
-          "default_multiplier":
-          1.8,
-          "rules": [{
-              "max_price": 700,
-              "multiplier": 2.0
-          }, {
-              "min_price": 700,
-              "multiplier": 1.5
-          }]
-      }
-
-  def save(self, *args, **kwargs):
-    self.clean()
-    super().save(*args, **kwargs)
-
-  class Meta:
-    verbose_name = "Configuration"
-    verbose_name_plural = "Configurations"
-
-
 class Product(models.Model):
-  STATUS_CHOICES = [
-      ('pending', 'Pending'),
-      ('success', 'Success'),
-      ('error', 'Error'),
-  ]
-
   url = models.URLField(max_length=255, unique=True)
   title = models.CharField(max_length=255, blank=True, null=True)
   category = models.CharField(max_length=255, blank=True, null=True)
   description = models.TextField(blank=True, null=True)
   product_code = models.CharField(max_length=35, blank=True, null=True)
   color = models.CharField(max_length=100, blank=True, null=True)
-  original_price = models.DecimalField(max_digits=10,
-                                       decimal_places=2,
-                                       null=True,
-                                       blank=True)
   price = models.DecimalField(max_digits=10,
                               decimal_places=2,
                               null=True,
@@ -183,22 +234,20 @@ class Product(models.Model):
   in_stock = models.BooleanField(default=False)
   images = models.JSONField(default=list)
   timestamp = models.DateTimeField(auto_now=True)
-  status = models.CharField(max_length=50,
-                            choices=STATUS_CHOICES,
-                            default="pending")
-  last_checking = models.DateTimeField(default=timezone.now)
+  status = models.CharField(max_length=50, default="pending")
+
+  def save(self, *args, **kwargs):
+    from .utils import apply_price_configuration
+    if self.price:
+      self.price = apply_price_configuration(self.price)
+    super().save(*args, **kwargs)
 
   def __str__(self):
-    return self.title or self.url
+    return self.url or "Product"
 
   class Meta:
     verbose_name = "Product"
     verbose_name_plural = "Products"
-    indexes = [
-        models.Index(fields=['status']),
-        models.Index(fields=['last_checking']),
-        models.Index(fields=['product_code']),
-    ]
 
 
 class ProductSize(models.Model):
@@ -220,6 +269,18 @@ class ProductSize(models.Model):
     verbose_name = "Product Size"
     verbose_name_plural = "Product Sizes"
     unique_together = ('product', 'size_name')
+
+
+class City(models.Model):
+  city_id = models.CharField(max_length=20, primary_key=True)
+  name = models.CharField(max_length=100)
+
+  def __str__(self):
+    return self.name
+
+  class Meta:
+    verbose_name = "City"
+    verbose_name_plural = "Cities"
 
 
 class Store(models.Model):
@@ -249,7 +310,6 @@ class SizeStoreStock(models.Model):
   store = models.ForeignKey(Store,
                             on_delete=models.CASCADE,
                             related_name='size_stocks')
-  original_stock = models.IntegerField(default=0)
   stock = models.IntegerField(default=0)
 
   def __str__(self):
@@ -259,66 +319,3 @@ class SizeStoreStock(models.Model):
     verbose_name = "Size Store Stock"
     verbose_name_plural = "Size Store Stocks"
     unique_together = ('product_size', 'store')
-
-
-class ProductAvailableUrl(models.Model):
-  page_id = models.CharField(max_length=255, help_text="Page identifier")
-  product_id_in_page = models.CharField(
-      max_length=255, help_text="Product identifier within the page")
-  url = models.URLField(max_length=1000, help_text="URL to the product")
-  last_checking = models.DateTimeField(default=timezone.now,
-                                       help_text="Date of last check")
-  created_at = models.DateTimeField(auto_now_add=True)
-  updated_at = models.DateTimeField(auto_now=True)
-
-  def __str__(self):
-    return f"{self.page_id} - {self.product_id_in_page}"
-
-  class Meta:
-    verbose_name = "Available Product URL"
-    verbose_name_plural = "Available Product URLs"
-    indexes = [
-        models.Index(fields=['page_id']),
-        models.Index(fields=['product_id_in_page']),
-        models.Index(fields=['last_checking']),
-        models.Index(fields=['url']),
-    ]
-
-
-class ProductDeletedUrl(models.Model):
-  url = models.URLField(max_length=1000,
-                        help_text="URL to the deleted product")
-  last_checking = models.DateTimeField(default=timezone.now,
-                                       help_text="Date of last check")
-  created_at = models.DateTimeField(auto_now_add=True)
-  updated_at = models.DateTimeField(auto_now=True)
-
-  def __str__(self):
-    return self.url
-
-  class Meta:
-    verbose_name = "Deleted Product URL"
-    verbose_name_plural = "Deleted Product URLs"
-    indexes = [
-        models.Index(fields=['last_checking']),
-        models.Index(fields=['url']),
-    ]
-
-
-class ProductNewUrl(models.Model):
-  url = models.URLField(max_length=1000, help_text="URL to the new product")
-  last_checking = models.DateTimeField(default=timezone.now,
-                                       help_text="Date of last check")
-  created_at = models.DateTimeField(auto_now_add=True)
-  updated_at = models.DateTimeField(auto_now=True)
-
-  def __str__(self):
-    return self.url
-
-  class Meta:
-    verbose_name = "New Product URL"
-    verbose_name_plural = "New Product URLs"
-    indexes = [
-        models.Index(fields=['last_checking']),
-        models.Index(fields=['url']),
-    ]

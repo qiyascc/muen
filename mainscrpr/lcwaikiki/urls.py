@@ -28,6 +28,7 @@ urlpatterns = [
     path('api/lcwaikiki/product/urls/new/',
          ProductNewUrlsAPIView.as_view(),
          name='product-new-urls'),
+  
     path('api/lcwaikiki/product/refresh-products/',
          RefreshProductDataView.as_view(),
          name='refresh-products'),
