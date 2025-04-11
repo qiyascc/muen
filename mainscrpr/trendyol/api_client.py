@@ -275,6 +275,9 @@ class ProductsAPI:
       # Extract just the UUID part before the timestamp
       batch_id = batch_id.split('-')[0]
       
+    # Log for debugging purposes
+    logger.info(f"Using batch ID for request: {batch_id}")
+      
     return f'/integration/product/sellers/{self.client.supplier_id}/products/batch-requests/{batch_id}'
 
   def create_products(self, products):
@@ -1548,6 +1551,12 @@ def check_product_batch_status(product: TrendyolProduct) -> str:
   """
     Check the status of a product batch on Trendyol.
     Updates the product with the status and returns the status.
+    
+    The Trendyol API returns different response formats for batch status:
+    - For a valid batch, we get a dictionary with 'batchRequestId' and potentially empty 'items'
+    - For a completed batch, we might get status info in the response
+    
+    We need to handle these different response types and determine the status.
     """
   if not product.batch_id:
     product.batch_status = 'failed'
@@ -1565,6 +1574,7 @@ def check_product_batch_status(product: TrendyolProduct) -> str:
   try:
     # Check batch status
     response = client.products.get_batch_request_status(product.batch_id)
+    logger.info(f"Batch status response for product {product.id}: {response}")
 
     if not response:
       logger.error(
@@ -1576,17 +1586,41 @@ def check_product_batch_status(product: TrendyolProduct) -> str:
 
     # Check if response is a dictionary or string
     if isinstance(response, dict):
-        # Get batch status details
-        status = response.get('status', 'failed')
-
-        # Map Trendyol status to our status
-        status_mapping = {
-            'PROCESSING': 'processing',
-            'DONE': 'completed',
-            'FAILED': 'failed',
-        }
-
-        internal_status = status_mapping.get(status, 'failed')
+        # First check if the response has a status field
+        status = response.get('status')
+        
+        # If no status field but we have a batchRequestId, check other indicators
+        if not status and 'batchRequestId' in response:
+            logger.info(f"Found batch ID {response.get('batchRequestId')} but no status field")
+            
+            # Check if there are items to analyze
+            items = response.get('items', [])
+            if not items:
+                # Empty items list could mean the batch is still processing
+                # Since we're getting a valid response with the batch ID, we'll assume it's in progress
+                logger.info("Empty items list, assuming batch is still processing")
+                internal_status = 'processing'
+            else:
+                # Check if any items failed
+                failed_items = [item for item in items if item.get('status') in ['FAILED', 'INVALID']]
+                if failed_items:
+                    logger.info(f"Found {len(failed_items)} failed items")
+                    internal_status = 'failed'
+                else:
+                    # If we have items and none failed, assume completed
+                    logger.info("No failed items found, assuming batch completed")
+                    internal_status = 'completed'
+        else:
+            # Map Trendyol status to our status
+            status_mapping = {
+                'PROCESSING': 'processing',
+                'DONE': 'completed',
+                'FAILED': 'failed',
+            }
+            
+            # If we don't have a standard status value, assume processing
+            internal_status = status_mapping.get(status, 'processing')
+            logger.info(f"Using status from response: {status} -> {internal_status}")
     else:
         # If it's not a dictionary, handle it as a raw response (like string)
         logger.info(f"Received non-dictionary response: {response}")

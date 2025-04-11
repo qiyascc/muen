@@ -8,76 +8,47 @@ with the corrected API client.
 Run this script with: python manage.py shell < reset_failed_products.py
 """
 
-import django
 import os
 import sys
+import django
+import logging
 from loguru import logger
 
-# Set up Django environment
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'mainscrpr.settings')
+# Setup Django
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "mainscrpr.settings")
 django.setup()
 
-# Import models
 from trendyol.models import TrendyolProduct
 
 def main():
     """Reset failed products with API URL errors"""
-    # Get all failed products
+    # Get all products with failed status
     failed_products = TrendyolProduct.objects.filter(batch_status='failed')
+    logger.info(f"Found {failed_products.count()} failed products")
     
-    if not failed_products:
-        print("No failed products found in the database.")
-        return
-    
-    count = 0
-    url_error_count = 0
-    
-    print(f"Found {failed_products.count()} failed products")
-    
-    # Show all error messages
-    print("\nError messages from failed products:")
+    # Filter by error types that could be fixed with updated API client
+    api_errors = []
     for product in failed_products:
-        print(f"- Product ID {product.id}: {product.status_message}")
+        msg = product.status_message or ""
+        
+        # Check for API or endpoint related errors
+        if any(err_type in msg.lower() for err_type in 
+              ['api', 'url', 'endpoint', 'connection', 'unknown', 'batch']):
+            api_errors.append(product)
     
-    print("\nResetting products...")
-    for product in failed_products:
-        error_msg = product.status_message or ""  # Use empty string if None
-        
-        # Check if the failure was related to an API URL error
-        # Be more lenient with error matching to catch more cases
-        api_related_keywords = [
-            'apigw.trendyol.com', 
-            'api.trendyol.com',
-            '/integration/',
-            'Server Error', 
-            '502', 
-            '556',
-            'url'
-        ]
-        
-        if any(e.lower() in error_msg.lower() for e in api_related_keywords):
-            print(f"Resetting product: {product.title} (ID: {product.id})")
-            print(f"  Previous error: {error_msg}")
-            
-            # Reset the product status
-            product.batch_status = 'pending'
-            product.status_message = "Reset after API URL fixes"
+    logger.info(f"Found {len(api_errors)} products with API-related failures")
+    
+    # Reset these products
+    if api_errors:
+        for product in api_errors:
+            old_status = product.status_message
+            product.batch_status = None
+            product.status_message = f"Reset from: {old_status}"
             product.save()
             
-            url_error_count += 1
-        else:
-            print(f"Skipping product: {product.title} (ID: {product.id})")
-            print(f"  Error doesn't appear API-related: {error_msg}")
-        
-        count += 1
-    
-    print(f"Processed {count} failed products")
-    print(f"Reset {url_error_count} products with API URL errors")
+        logger.info(f"Reset {len(api_errors)} products")
+    else:
+        logger.info("No API-related failures found to reset")
 
-# When running with python manage.py shell < script.py
-# the __name__ == "__main__" condition is not met
-# So we call main() directly
-
-print("Starting the reset_failed_products script...")
-main()
-print("Script completed.")
+if __name__ == "__main__":
+    main()
