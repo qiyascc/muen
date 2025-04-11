@@ -333,20 +333,20 @@ class Command(BaseCommand):
         except Exception as e:
             self.stdout.write(self.style.ERROR(f'Error updating existing products: {str(e)}'))
 
-    def check_deleted_products(self, scraper):
+    def check_deleted_products(self, scraper, max_items=100):
         """Check for deleted products and update their status"""
         self.stdout.write(self.style.NOTICE('Checking for deleted products...'))
         
         try:
-            # Get the list of deleted URLs from the database
-            deleted_urls = list(ProductDeletedUrl.objects.all().values_list('url', flat=True))
+            # Get the list of deleted URLs from the database, limited by max_items
+            deleted_urls = list(ProductDeletedUrl.objects.all().values_list('url', flat=True)[:max_items])
             count = len(deleted_urls)
             
             if count == 0:
                 self.stdout.write(self.style.SUCCESS('No deleted URLs to process'))
                 return
                 
-            self.stdout.write(self.style.SUCCESS(f'Found {count} deleted URLs to process'))
+            self.stdout.write(self.style.SUCCESS(f'Found {count} deleted URLs to process (limited to {max_items})'))
             
             # Process deleted URLs
             processed_count = 0

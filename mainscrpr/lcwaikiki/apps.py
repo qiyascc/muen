@@ -7,27 +7,34 @@ def run_sync_products_full():
     Function to run the sync_products management command with all operations.
     This handles new products, deleted products, and updates to existing products.
     This needs to be defined as a module-level function for proper serialization.
+    
+    The max-items parameter is set to 100 to avoid processing too many items at once
+    and causing timeouts or excessive resource usage.
     """
     from django.core.management import call_command
-    call_command('sync_products', '--all')
+    call_command('sync_products', '--all', '--max-items=100')
 
 
 def run_sync_products_new_only():
     """
     Function to run the sync_products management command to check for new products only.
     This is a lightweight operation that can run more frequently.
+    
+    The max-items parameter is set to 50 since this operation runs more frequently.
     """
     from django.core.management import call_command
-    call_command('sync_products', '--check-new')
+    call_command('sync_products', '--check-new', '--max-items=50')
 
 
 def run_sync_products_deleted_only():
     """
     Function to run the sync_products management command to check for deleted products only.
     This is a lightweight operation that can run at a medium frequency.
+    
+    The max-items parameter is set to 75 for this medium frequency operation.
     """
     from django.core.management import call_command
-    call_command('sync_products', '--check-deleted')
+    call_command('sync_products', '--check-deleted', '--max-items=75')
 
 
 class LcwaikikiConfig(AppConfig):
