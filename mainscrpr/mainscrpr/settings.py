@@ -29,6 +29,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'rest_framework',
     'lcwaikiki',
+    'trendyol',  # Trendyol integration app
     'django_apscheduler',  # Django APScheduler for scheduling tasks
 ]
 
@@ -45,9 +46,14 @@ UNFOLD = {
                 "title": "Dashboard",
                 "items": [
                     {
-                        "title": "Statistics Dashboard",
+                        "title": "LCWaikiki Dashboard",
                         "icon": "dashboard",
                         "link": "/dashboard/",
+                    },
+                    {
+                        "title": "Trendyol Dashboard",
+                        "icon": "analytics",
+                        "link": "/trendyol/dashboard/",
                     },
                 ],
             },
@@ -55,9 +61,14 @@ UNFOLD = {
                 "title": "Configurations",
                 "items": [
                     {
-                        "title": "Brands Config",
+                        "title": "LCWaikiki Config",
                         "icon": "settings",
                         "link": "/admin/lcwaikiki/config/",
+                    },
+                    {
+                        "title": "Trendyol API Config",
+                        "icon": "api",
+                        "link": "/admin/trendyol/trendyolapiconfig/",
                     },
                 ],
             },
@@ -78,6 +89,31 @@ UNFOLD = {
                         "title": "Stores",
                         "icon": "store",
                         "link": "/admin/lcwaikiki/store/",
+                    },
+                ],
+            },
+            {
+                "title": "Trendyol Management",
+                "items": [
+                    {
+                        "title": "Products",
+                        "icon": "inventory_2",
+                        "link": "/admin/trendyol/trendyolproduct/",
+                    },
+                    {
+                        "title": "Brands",
+                        "icon": "branding_watermark",
+                        "link": "/admin/trendyol/trendyolbrand/",
+                    },
+                    {
+                        "title": "Categories",
+                        "icon": "category",
+                        "link": "/admin/trendyol/trendyolcategory/",
+                    },
+                    {
+                        "title": "Sync Status",
+                        "icon": "sync",
+                        "link": "/trendyol/sync-status/",
                     },
                 ],
             },

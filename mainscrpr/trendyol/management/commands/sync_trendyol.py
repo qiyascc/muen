@@ -4,177 +4,158 @@ from django.core.management.base import BaseCommand
 from django.utils import timezone
 from django.db import transaction
 from django.db.models import Q
-from datetime import timedelta
+from tqdm import tqdm
 
-from lcwaikiki.models import Product as LCWProduct
+from lcwaikiki.models import Product
 from trendyol.models import TrendyolProduct
-from trendyol.api_client import update_product_from_lcwaikiki, create_trendyol_product, check_product_batch_status
+from trendyol import api_client
 
 logger = logging.getLogger(__name__)
 
+
 class Command(BaseCommand):
-    help = 'Synchronize products with Trendyol marketplace'
+    help = 'Synchronize products with Trendyol'
     
     def add_arguments(self, parser):
         parser.add_argument(
             '--max-items',
             type=int,
-            default=100,
-            help='Maximum number of products to process in a single run'
+            default=50,
+            help='Maximum number of items to process in one run'
         )
-        parser.add_argument(
-            '--check-pending',
-            action='store_true',
-            help='Check status of pending products'
-        )
-        parser.add_argument(
-            '--sync-new',
-            action='store_true',
-            help='Synchronize new products with Trendyol'
-        )
-        parser.add_argument(
-            '--update-existing',
-            action='store_true',
-            help='Update existing products on Trendyol'
-        )
-    
+        
     def handle(self, *args, **options):
-        self.stdout.write(self.style.SUCCESS('Starting Trendyol synchronization...'))
+        max_items = options['max_items']
         
-        max_items = options.get('max_items', 100)
-        check_pending = options.get('check_pending', False)
-        sync_new = options.get('sync_new', False)
-        update_existing = options.get('update_existing', False)
+        self.stdout.write(self.style.SUCCESS(f"Starting Trendyol synchronization (max_items={max_items})"))
         
-        # Default behavior: do everything if no specific options provided
-        if not (check_pending or sync_new or update_existing):
-            check_pending = sync_new = update_existing = True
+        # First, make sure we have the latest brands and categories
+        self.fetch_reference_data()
         
-        # Process operations
-        processed_count = 0
+        # Then check LCWaikiki products that need to be synced
+        self.sync_lcwaikiki_products(max_items)
         
+        # Finally, check existing Trendyol products for updates
+        self.check_trendyol_product_status(max_items)
+        
+        self.stdout.write(self.style.SUCCESS("Trendyol synchronization completed"))
+        
+    def fetch_reference_data(self):
+        """
+        Fetch brands and categories from Trendyol.
+        """
         try:
-            # Step 1: Check pending products
-            if check_pending:
-                self.stdout.write('Checking pending product uploads...')
-                processed_count += self.check_pending_products(max_items)
+            self.stdout.write("Fetching brands from Trendyol...")
+            brands = api_client.fetch_brands()
+            self.stdout.write(self.style.SUCCESS(f"Fetched {len(brands)} brands"))
             
-            # Step 2: Synchronize new products from LCWaikiki to Trendyol
-            if sync_new:
-                self.stdout.write('Finding new products to sync with Trendyol...')
-                processed_count += self.sync_new_products(max_items)
-            
-            # Step 3: Update existing products if they've changed
-            if update_existing:
-                self.stdout.write('Checking for product updates...')
-                processed_count += self.update_existing_products(max_items)
-                
-            self.stdout.write(self.style.SUCCESS(f'Trendyol synchronization completed. Processed {processed_count} items.'))
-            
+            self.stdout.write("Fetching categories from Trendyol...")
+            categories = api_client.fetch_categories()
+            self.stdout.write(self.style.SUCCESS(f"Fetched {len(categories)} categories"))
         except Exception as e:
-            self.stdout.write(self.style.ERROR(f'Error during Trendyol synchronization: {str(e)}'))
-            logger.error(f'Error during Trendyol synchronization: {str(e)}', exc_info=True)
-            return False
+            self.stdout.write(self.style.ERROR(f"Error fetching reference data: {str(e)}"))
             
-        return True
-    
-    def check_pending_products(self, max_items):
-        """Check status of pending Trendyol products"""
-        pending_products = TrendyolProduct.objects.filter(
-            batch_id__isnull=False,
-            batch_status__in=['pending', 'processing']
-        ).order_by('last_check_time')[:max_items]
-        
-        count = 0
-        for product in pending_products:
-            try:
-                if product.needs_status_check():
-                    self.stdout.write(f"Checking status for: {product.title}")
-                    check_product_batch_status(product)
-                    count += 1
-                    # Add a small delay to avoid overwhelming the API
-                    time.sleep(0.5)
-            except Exception as e:
-                logger.error(f"Error checking product {product.id}: {str(e)}")
-        
-        return count
-    
-    def sync_new_products(self, max_items):
-        """Find new LCWaikiki products and create them on Trendyol"""
-        # Find LCWaikiki products that aren't linked to Trendyol products yet
-        with transaction.atomic():
-            lcw_products = LCWProduct.objects.filter(
+    def sync_lcwaikiki_products(self, max_items):
+        """
+        Check for LCWaikiki products that need to be synced to Trendyol.
+        """
+        try:
+            # Get LCWaikiki products that are in stock and have no Trendyol product
+            lcw_products = Product.objects.filter(
                 in_stock=True,
                 status='active'
             ).exclude(
-                trendyol_products__isnull=False
+                trendyolproduct__isnull=False
             ).order_by('-timestamp')[:max_items]
             
-            count = 0
-            for lcw_product in lcw_products:
-                try:
-                    self.stdout.write(f"Creating Trendyol product for: {lcw_product.title}")
-                    
-                    # Create Trendyol product from LCWaikiki product
-                    trendyol_product = update_product_from_lcwaikiki(lcw_product)
-                    if trendyol_product:
-                        # Submit to Trendyol API
-                        batch_id = create_trendyol_product(trendyol_product)
-                        if batch_id:
-                            self.stdout.write(self.style.SUCCESS(f"Successfully submitted to Trendyol, batch ID: {batch_id}"))
-                            count += 1
-                    
-                    # Add a small delay to avoid overwhelming the API
-                    time.sleep(1)
-                    
-                except Exception as e:
-                    logger.error(f"Error creating Trendyol product for {lcw_product.id}: {str(e)}")
+            if not lcw_products:
+                self.stdout.write("No new LCWaikiki products to sync")
+                return
             
-            return count
+            self.stdout.write(f"Found {lcw_products.count()} LCWaikiki products to sync")
+            
+            with tqdm(total=len(lcw_products), desc="Processing LCWaikiki products") as progress_bar:
+                for lcw_product in lcw_products:
+                    try:
+                        with transaction.atomic():
+                            # Convert LCWaikiki product to Trendyol product
+                            trendyol_product = api_client.lcwaikiki_to_trendyol_product(lcw_product)
+                            
+                            if trendyol_product:
+                                # Try to sync with Trendyol
+                                api_client.sync_product_to_trendyol(trendyol_product)
+                                self.stdout.write(self.style.SUCCESS(f"Synced product {lcw_product.title}"))
+                            else:
+                                self.stdout.write(self.style.WARNING(f"Could not create Trendyol product for {lcw_product.title}"))
+                    except Exception as e:
+                        self.stdout.write(self.style.ERROR(f"Error syncing product {lcw_product.title}: {str(e)}"))
+                    finally:
+                        progress_bar.update(1)
+                        # Small delay to avoid API rate limits
+                        time.sleep(0.5)
+        except Exception as e:
+            self.stdout.write(self.style.ERROR(f"Error in sync_lcwaikiki_products: {str(e)}"))
     
-    def update_existing_products(self, max_items):
-        """Update existing Trendyol products if their LCWaikiki counterparts have changed"""
-        cutoff_time = timezone.now() - timedelta(hours=12)
-        
-        # Find Trendyol products with recently updated LCWaikiki products
-        trendyol_products = TrendyolProduct.objects.filter(
-            lcwaikiki_product__isnull=False,
-            lcwaikiki_product__timestamp__gt=cutoff_time,
-            batch_status='completed'  # Only update products that were successfully created
-        ).exclude(
-            # Avoid products that were recently synced
-            last_sync_time__gt=cutoff_time
-        ).order_by('last_sync_time')[:max_items]
-        
-        count = 0
-        for trendyol_product in trendyol_products:
-            try:
-                lcw_product = trendyol_product.lcwaikiki_product
+    def check_trendyol_product_status(self, max_items):
+        """
+        Check the status of existing Trendyol products.
+        """
+        try:
+            # Get Trendyol products that have a batch ID and are in processing state
+            processing_products = TrendyolProduct.objects.filter(
+                batch_status='processing',
+                batch_id__isnull=False
+            ).order_by('last_check_time')[:max_items//2]
+            
+            if processing_products:
+                self.stdout.write(f"Checking status for {processing_products.count()} processing products")
                 
-                # Check if price or stock has changed
-                lcw_price = lcw_product.price or 0
-                trendyol_price = trendyol_product.price or 0
+                with tqdm(total=len(processing_products), desc="Checking processing products") as progress_bar:
+                    for product in processing_products:
+                        try:
+                            status = api_client.check_product_batch_status(product)
+                            self.stdout.write(f"Product {product.title} status: {status}")
+                        except Exception as e:
+                            self.stdout.write(self.style.ERROR(f"Error checking status for {product.title}: {str(e)}"))
+                        finally:
+                            progress_bar.update(1)
+                            # Small delay to avoid API rate limits
+                            time.sleep(0.5)
+            else:
+                self.stdout.write("No processing products to check")
+            
+            # Check for products that need data updates
+            # Products with LCWaikiki relationship that have been updated recently
+            update_products = TrendyolProduct.objects.filter(
+                Q(lcwaikiki_product__isnull=False),
+                ~Q(batch_status='processing'),
+            ).order_by('last_sync_time')[:max_items//2]
+            
+            if update_products:
+                self.stdout.write(f"Checking for updates in {update_products.count()} products")
                 
-                lcw_in_stock = lcw_product.in_stock
-                trendyol_in_stock = trendyol_product.quantity > 0
-                
-                if abs(float(lcw_price) - float(trendyol_price)) > 0.01 or lcw_in_stock != trendyol_in_stock:
-                    self.stdout.write(f"Updating Trendyol product: {trendyol_product.title}")
-                    
-                    # Update the Trendyol product from LCWaikiki data
-                    trendyol_product.from_lcwaikiki_product(lcw_product)
-                    trendyol_product.save()
-                    
-                    # Submit for update (recreate the product)
-                    batch_id = create_trendyol_product(trendyol_product)
-                    if batch_id:
-                        self.stdout.write(self.style.SUCCESS(f"Successfully updated on Trendyol, batch ID: {batch_id}"))
-                        count += 1
-                    
-                    # Add a small delay to avoid overwhelming the API
-                    time.sleep(1)
-                    
-            except Exception as e:
-                logger.error(f"Error updating Trendyol product {trendyol_product.id}: {str(e)}")
-        
-        return count
+                with tqdm(total=len(update_products), desc="Checking for updates") as progress_bar:
+                    for product in update_products:
+                        try:
+                            if product.lcwaikiki_product:
+                                # Check if LCWaikiki product has been updated since last sync
+                                if (not product.last_sync_time or 
+                                    product.lcwaikiki_product.timestamp > product.last_sync_time):
+                                    
+                                    # Update Trendyol product from LCWaikiki data
+                                    updated_product = api_client.lcwaikiki_to_trendyol_product(product.lcwaikiki_product)
+                                    
+                                    if updated_product:
+                                        # Sync with Trendyol
+                                        api_client.sync_product_to_trendyol(updated_product)
+                                        self.stdout.write(self.style.SUCCESS(f"Updated product {product.title}"))
+                        except Exception as e:
+                            self.stdout.write(self.style.ERROR(f"Error updating product {product.title}: {str(e)}"))
+                        finally:
+                            progress_bar.update(1)
+                            # Small delay to avoid API rate limits
+                            time.sleep(0.5)
+            else:
+                self.stdout.write("No products to update")
+        except Exception as e:
+            self.stdout.write(self.style.ERROR(f"Error in check_trendyol_product_status: {str(e)}"))

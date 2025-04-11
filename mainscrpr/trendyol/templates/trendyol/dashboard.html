@@ -1,0 +1,373 @@
+{% extends "admin/base_site.html" %}
+{% load i18n static %}
+
+{% block content %}
+<div class="dashboard-container">
+    <h1>Trendyol Integration Dashboard</h1>
+    
+    <div class="stats-container">
+        <div class="stats-card">
+            <div class="stats-icon">
+                <i class="material-icons">inventory_2</i>
+            </div>
+            <div class="stats-content">
+                <h2>{{ products_count }}</h2>
+                <p>Products</p>
+            </div>
+        </div>
+        
+        <div class="stats-card">
+            <div class="stats-icon">
+                <i class="material-icons">business</i>
+            </div>
+            <div class="stats-content">
+                <h2>{{ brands_count }}</h2>
+                <p>Brands</p>
+            </div>
+        </div>
+        
+        <div class="stats-card">
+            <div class="stats-icon">
+                <i class="material-icons">category</i>
+            </div>
+            <div class="stats-content">
+                <h2>{{ categories_count }}</h2>
+                <p>Categories</p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="status-container">
+        <h2>Sync Status</h2>
+        
+        <div class="status-cards">
+            <div class="status-card pending">
+                <div class="status-icon">
+                    <i class="material-icons">hourglass_empty</i>
+                </div>
+                <div class="status-content">
+                    <h3>{{ pending_count }}</h3>
+                    <p>Pending</p>
+                </div>
+            </div>
+            
+            <div class="status-card processing">
+                <div class="status-icon">
+                    <i class="material-icons">sync</i>
+                </div>
+                <div class="status-content">
+                    <h3>{{ processing_count }}</h3>
+                    <p>Processing</p>
+                </div>
+            </div>
+            
+            <div class="status-card completed">
+                <div class="status-icon">
+                    <i class="material-icons">check_circle</i>
+                </div>
+                <div class="status-content">
+                    <h3>{{ completed_count }}</h3>
+                    <p>Completed</p>
+                </div>
+            </div>
+            
+            <div class="status-card failed">
+                <div class="status-icon">
+                    <i class="material-icons">error</i>
+                </div>
+                <div class="status-content">
+                    <h3>{{ failed_count }}</h3>
+                    <p>Failed</p>
+                </div>
+            </div>
+        </div>
+        
+        <a href="{% url 'trendyol:sync-status' %}" class="btn btn-primary">View Detailed Status</a>
+    </div>
+    
+    <div class="recent-products">
+        <h2>Recent Products</h2>
+        
+        <table class="recent-products-table">
+            <thead>
+                <tr>
+                    <th>Title</th>
+                    <th>Barcode</th>
+                    <th>Status</th>
+                    <th>Created</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for product in recent_products %}
+                <tr>
+                    <td>{{ product.title }}</td>
+                    <td>{{ product.barcode }}</td>
+                    <td>
+                        {% if product.batch_status == 'pending' %}
+                        <span class="status-badge pending">Pending</span>
+                        {% elif product.batch_status == 'processing' %}
+                        <span class="status-badge processing">Processing</span>
+                        {% elif product.batch_status == 'completed' %}
+                        <span class="status-badge completed">Completed</span>
+                        {% elif product.batch_status == 'failed' %}
+                        <span class="status-badge failed">Failed</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ product.created_at|date:"M d, Y" }}</td>
+                    <td>
+                        <a href="{% url 'admin:trendyol_trendyolproduct_change' product.id %}" class="btn btn-sm btn-primary">View</a>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="5" class="text-center">No products found</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        
+        <a href="{% url 'admin:trendyol_trendyolproduct_changelist' %}" class="btn btn-primary">View All Products</a>
+    </div>
+    
+    <div class="action-buttons">
+        <a href="{% url 'admin:trendyol_trendyolproduct_add' %}" class="btn btn-success">
+            <i class="material-icons">add</i> Add New Product
+        </a>
+        
+        <a href="{% url 'admin:index' %}" class="btn btn-secondary">
+            <i class="material-icons">dashboard</i> Back to Admin
+        </a>
+    </div>
+</div>
+
+<style>
+    .dashboard-container {
+        padding: 20px;
+    }
+    
+    .stats-container {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 30px;
+    }
+    
+    .stats-card {
+        background-color: #fff;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        padding: 20px;
+        display: flex;
+        align-items: center;
+        width: 30%;
+    }
+    
+    .stats-icon {
+        background-color: #f0f4f8;
+        border-radius: 50%;
+        width: 60px;
+        height: 60px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-right: 15px;
+    }
+    
+    .stats-icon i {
+        font-size: 30px;
+        color: #4a5568;
+    }
+    
+    .stats-content h2 {
+        font-size: 24px;
+        margin: 0;
+        color: #2d3748;
+    }
+    
+    .stats-content p {
+        margin: 5px 0 0;
+        color: #718096;
+    }
+    
+    .status-container {
+        background-color: #fff;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        padding: 20px;
+        margin-bottom: 30px;
+    }
+    
+    .status-cards {
+        display: flex;
+        justify-content: space-between;
+        margin: 20px 0;
+    }
+    
+    .status-card {
+        text-align: center;
+        width: 22%;
+        padding: 15px;
+        border-radius: 8px;
+    }
+    
+    .status-card.pending {
+        background-color: #fff7e5;
+    }
+    
+    .status-card.processing {
+        background-color: #e6f6fe;
+    }
+    
+    .status-card.completed {
+        background-color: #e6faf0;
+    }
+    
+    .status-card.failed {
+        background-color: #fee6e6;
+    }
+    
+    .status-icon {
+        margin-bottom: 10px;
+    }
+    
+    .status-icon i {
+        font-size: 30px;
+    }
+    
+    .pending .status-icon i {
+        color: #f59e0b;
+    }
+    
+    .processing .status-icon i {
+        color: #0ea5e9;
+    }
+    
+    .completed .status-icon i {
+        color: #10b981;
+    }
+    
+    .failed .status-icon i {
+        color: #ef4444;
+    }
+    
+    .status-content h3 {
+        margin: 0;
+        font-size: 24px;
+    }
+    
+    .status-content p {
+        margin: 5px 0 0;
+    }
+    
+    .recent-products {
+        background-color: #fff;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        padding: 20px;
+        margin-bottom: 30px;
+    }
+    
+    .recent-products-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 20px 0;
+    }
+    
+    .recent-products-table th,
+    .recent-products-table td {
+        padding: 12px 15px;
+        text-align: left;
+        border-bottom: 1px solid #e2e8f0;
+    }
+    
+    .recent-products-table th {
+        background-color: #f8fafc;
+        font-weight: 600;
+    }
+    
+    .status-badge {
+        display: inline-block;
+        padding: 5px 10px;
+        border-radius: 4px;
+        font-size: 12px;
+        font-weight: 500;
+    }
+    
+    .status-badge.pending {
+        background-color: #fff7e5;
+        color: #f59e0b;
+    }
+    
+    .status-badge.processing {
+        background-color: #e6f6fe;
+        color: #0ea5e9;
+    }
+    
+    .status-badge.completed {
+        background-color: #e6faf0;
+        color: #10b981;
+    }
+    
+    .status-badge.failed {
+        background-color: #fee6e6;
+        color: #ef4444;
+    }
+    
+    .btn {
+        display: inline-block;
+        padding: 8px 16px;
+        border-radius: 4px;
+        font-weight: 500;
+        text-decoration: none;
+        text-align: center;
+        cursor: pointer;
+        transition: background-color 0.2s;
+    }
+    
+    .btn-sm {
+        padding: 5px 10px;
+        font-size: 12px;
+    }
+    
+    .btn-primary {
+        background-color: #3b82f6;
+        color: #fff;
+    }
+    
+    .btn-primary:hover {
+        background-color: #2563eb;
+    }
+    
+    .btn-success {
+        background-color: #10b981;
+        color: #fff;
+    }
+    
+    .btn-success:hover {
+        background-color: #059669;
+    }
+    
+    .btn-secondary {
+        background-color: #6b7280;
+        color: #fff;
+    }
+    
+    .btn-secondary:hover {
+        background-color: #4b5563;
+    }
+    
+    .action-buttons {
+        display: flex;
+        justify-content: space-between;
+    }
+    
+    .action-buttons .btn {
+        display: flex;
+        align-items: center;
+    }
+    
+    .action-buttons .btn i {
+        margin-right: 5px;
+    }
+</style>
+{% endblock %}

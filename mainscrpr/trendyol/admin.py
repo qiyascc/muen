@@ -2,8 +2,8 @@ from django.contrib import admin
 from django.core.serializers.json import DjangoJSONEncoder
 from django.utils import timezone
 from django.utils.html import format_html
+from django.forms.widgets import PasswordInput
 from unfold.admin import ModelAdmin, TabularInline
-from unfold.forms import AdminPasswordWidget, AdminDateWidget, SplitHiddenDateTimeWidget
 
 from .models import TrendyolAPIConfig, TrendyolBrand, TrendyolCategory, TrendyolProduct
 
@@ -28,7 +28,7 @@ class TrendyolAPIConfigAdmin(ModelAdmin):
     
     def formfield_for_dbfield(self, db_field, **kwargs):
         if db_field.name in ('api_key', 'api_secret'):
-            kwargs['widget'] = AdminPasswordWidget
+            kwargs['widget'] = PasswordInput
         return super().formfield_for_dbfield(db_field, **kwargs)
     
     def save_model(self, request, obj, form, change):

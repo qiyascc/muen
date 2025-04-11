@@ -1,0 +1,336 @@
+{% extends "admin/base_site.html" %}
+{% load i18n static %}
+
+{% block content %}
+<div class="sync-container">
+    <h1>Trendyol Synchronization Status</h1>
+    
+    <div class="status-summary">
+        <a href="{% url 'trendyol:dashboard' %}" class="btn btn-secondary">
+            <i class="material-icons">arrow_back</i> Back to Dashboard
+        </a>
+        
+        <div class="status-tabs">
+            <button class="tab-button active" data-tab="pending">
+                <i class="material-icons">hourglass_empty</i> Pending
+            </button>
+            <button class="tab-button" data-tab="processing">
+                <i class="material-icons">sync</i> Processing
+            </button>
+            <button class="tab-button" data-tab="completed">
+                <i class="material-icons">check_circle</i> Completed
+            </button>
+            <button class="tab-button" data-tab="failed">
+                <i class="material-icons">error</i> Failed
+            </button>
+        </div>
+    </div>
+    
+    <div class="tab-content" id="pending-tab">
+        <h2>Pending Products</h2>
+        
+        <table class="status-table">
+            <thead>
+                <tr>
+                    <th>Title</th>
+                    <th>Barcode</th>
+                    <th>Brand</th>
+                    <th>Category</th>
+                    <th>Created</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for product in pending_products %}
+                <tr>
+                    <td>{{ product.title }}</td>
+                    <td>{{ product.barcode }}</td>
+                    <td>{{ product.brand_name }}</td>
+                    <td>{{ product.category_name }}</td>
+                    <td>{{ product.created_at|date:"M d, Y H:i" }}</td>
+                    <td>
+                        <a href="{% url 'admin:trendyol_trendyolproduct_change' product.id %}" class="btn btn-sm btn-primary">View</a>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="6" class="text-center">No pending products</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    
+    <div class="tab-content" id="processing-tab" style="display: none;">
+        <h2>Processing Products</h2>
+        
+        <table class="status-table">
+            <thead>
+                <tr>
+                    <th>Title</th>
+                    <th>Barcode</th>
+                    <th>Batch ID</th>
+                    <th>Last Check</th>
+                    <th>Message</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for product in processing_products %}
+                <tr>
+                    <td>{{ product.title }}</td>
+                    <td>{{ product.barcode }}</td>
+                    <td>{{ product.batch_id|default:"N/A" }}</td>
+                    <td>{{ product.last_check_time|date:"M d, Y H:i"|default:"Never" }}</td>
+                    <td>{{ product.status_message|default:"N/A" }}</td>
+                    <td>
+                        <a href="{% url 'admin:trendyol_trendyolproduct_change' product.id %}" class="btn btn-sm btn-primary">View</a>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="6" class="text-center">No processing products</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    
+    <div class="tab-content" id="completed-tab" style="display: none;">
+        <h2>Completed Products</h2>
+        
+        <table class="status-table">
+            <thead>
+                <tr>
+                    <th>Title</th>
+                    <th>Barcode</th>
+                    <th>Trendyol ID</th>
+                    <th>Last Sync</th>
+                    <th>Trendyol Link</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for product in completed_products %}
+                <tr>
+                    <td>{{ product.title }}</td>
+                    <td>{{ product.barcode }}</td>
+                    <td>{{ product.trendyol_id|default:"N/A" }}</td>
+                    <td>{{ product.last_sync_time|date:"M d, Y H:i"|default:"Never" }}</td>
+                    <td>
+                        {% if product.trendyol_url %}
+                        <a href="{{ product.trendyol_url }}" target="_blank" class="btn btn-sm btn-success">View on Trendyol</a>
+                        {% else %}
+                        N/A
+                        {% endif %}
+                    </td>
+                    <td>
+                        <a href="{% url 'admin:trendyol_trendyolproduct_change' product.id %}" class="btn btn-sm btn-primary">View</a>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="6" class="text-center">No completed products</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    
+    <div class="tab-content" id="failed-tab" style="display: none;">
+        <h2>Failed Products</h2>
+        
+        <table class="status-table">
+            <thead>
+                <tr>
+                    <th>Title</th>
+                    <th>Barcode</th>
+                    <th>Batch ID</th>
+                    <th>Last Check</th>
+                    <th>Error Message</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for product in failed_products %}
+                <tr>
+                    <td>{{ product.title }}</td>
+                    <td>{{ product.barcode }}</td>
+                    <td>{{ product.batch_id|default:"N/A" }}</td>
+                    <td>{{ product.last_check_time|date:"M d, Y H:i"|default:"Never" }}</td>
+                    <td>{{ product.status_message|default:"N/A" }}</td>
+                    <td>
+                        <a href="{% url 'admin:trendyol_trendyolproduct_change' product.id %}" class="btn btn-sm btn-primary">View</a>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="6" class="text-center">No failed products</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    
+    <div class="action-buttons">
+        <a href="{% url 'admin:trendyol_trendyolproduct_changelist' %}" class="btn btn-primary">
+            <i class="material-icons">list</i> View All Products
+        </a>
+    </div>
+</div>
+
+<style>
+    .sync-container {
+        padding: 20px;
+    }
+    
+    .status-summary {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 20px;
+    }
+    
+    .status-tabs {
+        display: flex;
+    }
+    
+    .tab-button {
+        background-color: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-bottom: none;
+        padding: 10px 15px;
+        margin-right: 5px;
+        border-radius: 4px 4px 0 0;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        font-weight: 500;
+    }
+    
+    .tab-button i {
+        margin-right: 5px;
+    }
+    
+    .tab-button.active {
+        background-color: #fff;
+        border-bottom: 2px solid #3b82f6;
+    }
+    
+    .tab-content {
+        background-color: #fff;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        padding: 20px;
+        margin-bottom: 30px;
+    }
+    
+    .status-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 20px 0;
+    }
+    
+    .status-table th,
+    .status-table td {
+        padding: 12px 15px;
+        text-align: left;
+        border-bottom: 1px solid #e2e8f0;
+    }
+    
+    .status-table th {
+        background-color: #f8fafc;
+        font-weight: 600;
+    }
+    
+    .text-center {
+        text-align: center;
+    }
+    
+    .btn {
+        display: inline-block;
+        padding: 8px 16px;
+        border-radius: 4px;
+        font-weight: 500;
+        text-decoration: none;
+        text-align: center;
+        cursor: pointer;
+        transition: background-color 0.2s;
+    }
+    
+    .btn-sm {
+        padding: 5px 10px;
+        font-size: 12px;
+    }
+    
+    .btn-primary {
+        background-color: #3b82f6;
+        color: #fff;
+    }
+    
+    .btn-primary:hover {
+        background-color: #2563eb;
+    }
+    
+    .btn-success {
+        background-color: #10b981;
+        color: #fff;
+    }
+    
+    .btn-success:hover {
+        background-color: #059669;
+    }
+    
+    .btn-secondary {
+        background-color: #6b7280;
+        color: #fff;
+    }
+    
+    .btn-secondary:hover {
+        background-color: #4b5563;
+    }
+    
+    .action-buttons {
+        display: flex;
+        justify-content: space-between;
+    }
+    
+    .action-buttons .btn {
+        display: flex;
+        align-items: center;
+    }
+    
+    .action-buttons .btn i {
+        margin-right: 5px;
+    }
+</style>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const tabButtons = document.querySelectorAll('.tab-button');
+        const tabContents = document.querySelectorAll('.tab-content');
+        
+        tabButtons.forEach(button => {
+            button.addEventListener('click', function() {
+                const tabId = this.getAttribute('data-tab');
+                
+                // Hide all tab contents
+                tabContents.forEach(content => {
+                    content.style.display = 'none';
+                });
+                
+                // Remove active class from all buttons
+                tabButtons.forEach(btn => {
+                    btn.classList.remove('active');
+                });
+                
+                // Show the selected tab content
+                document.getElementById(tabId + '-tab').style.display = 'block';
+                
+                // Add active class to the clicked button
+                this.classList.add('active');
+            });
+        });
+    });
+</script>
+{% endblock %}

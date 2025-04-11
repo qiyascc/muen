@@ -1,430 +1,718 @@
-import requests
-import json
-import uuid
 import logging
-from urllib.parse import quote
-from django.utils import timezone
-from collections import defaultdict
+import json
 import time
+import requests
+from decimal import Decimal
+from typing import Dict, List, Optional, Any, Tuple, Union
 
-from .models import TrendyolAPIConfig, TrendyolProduct, TrendyolBrand, TrendyolCategory
+import json
+from django.utils import timezone
+# We'll implement our own API client class
 
-# Configure logging
+from .models import TrendyolAPIConfig, TrendyolBrand, TrendyolCategory, TrendyolProduct
+
 logger = logging.getLogger(__name__)
 
-# Constants
-DEFAULT_TIMEOUT = 15
-MAX_RETRIES = 3
-RETRY_DELAY = 1
 
-
-class TrendyolAPI:
-    """Base class for Trendyol API operations with retry mechanism"""
+class TrendyolApi:
+    """Custom Trendyol API client implementation"""
     
-    def __init__(self, config: TrendyolAPIConfig):
-        self.config = config
-        self.session = requests.Session()
-        self.session.headers.update({
-            "Authorization": f"Basic {self.config.api_key}:{self.config.api_secret}",
-            "User-Agent": f"{self.config.seller_id} - SelfIntegration",
-            "Content-Type": "application/json"
-        })
-    
-    def _make_request(self, method, endpoint, **kwargs):
-        """Generic request method with retry logic"""
-        url = f"{self.config.base_url.rstrip('/')}/{endpoint.lstrip('/')}"
-        kwargs.setdefault('timeout', DEFAULT_TIMEOUT)
+    def __init__(self, api_key, api_secret, supplier_id, api_url='https://api.trendyol.com/sapigw'):
+        self.api_key = api_key
+        self.api_secret = api_secret
+        self.supplier_id = supplier_id
+        self.api_url = api_url
+        self.brands = BrandsAPI(self)
+        self.categories = CategoriesAPI(self)
+        self.products = ProductsAPI(self)
         
-        for attempt in range(MAX_RETRIES):
+    def make_request(self, method, endpoint, data=None, params=None):
+        """Make a request to the Trendyol API"""
+        import base64
+        import hmac
+        import hashlib
+        import time
+        
+        url = f"{self.api_url}{endpoint}"
+        headers = {
+            'Authorization': f"Basic {base64.b64encode(f'{self.api_key}:{self.api_secret}'.encode()).decode()}",
+            'Content-Type': 'application/json',
+            'User-Agent': 'Trendyol-Python-SDK/1.0',
+        }
+        
+        try:
+            response = requests.request(
+                method=method,
+                url=url,
+                headers=headers,
+                params=params,
+                json=data,
+                timeout=30
+            )
+            
+            # Check if the request was successful
+            response.raise_for_status()
+            
+            # Parse the response JSON
             try:
-                response = self.session.request(method, url, **kwargs)
-                response.raise_for_status()
                 return response.json()
-            except requests.exceptions.RequestException as e:
-                if attempt == MAX_RETRIES - 1:
-                    logger.error(f"API request failed after {MAX_RETRIES} attempts: {str(e)}")
-                    raise
-                logger.warning(f"Attempt {attempt + 1} failed, retrying...")
-                time.sleep(RETRY_DELAY * (attempt + 1))
-    
-    def get(self, endpoint, params=None):
-        return self._make_request('GET', endpoint, params=params)
-    
-    def post(self, endpoint, data):
-        return self._make_request('POST', endpoint, json=data)
+            except ValueError:
+                # If the response is not JSON, return the response text
+                return {"response": response.text}
+                
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error making request to Trendyol API: {str(e)}")
+            return None
 
 
-class TrendyolCategoryFinder:
-    """Handles category discovery and attribute management"""
+class BrandsAPI:
+    """Trendyol Brands API"""
     
-    def __init__(self, api_client: TrendyolAPI):
-        self.api = api_client
-        self._category_cache = None
-        self._attribute_cache = {}
+    def __init__(self, client):
+        self.client = client
+        
+    def get_brands(self):
+        """Get all brands from Trendyol"""
+        endpoint = '/brands'
+        return self.client.make_request('GET', endpoint)
+
+
+class CategoriesAPI:
+    """Trendyol Categories API"""
     
-    @property
-    def category_cache(self):
-        if self._category_cache is None:
-            self._category_cache = self._fetch_all_categories()
-        return self._category_cache
-    
-    def _fetch_all_categories(self):
-        """Fetch all categories from Trendyol API"""
-        try:
-            data = self.api.get("product/product-categories")
-            return data.get('categories', [])
-        except Exception as e:
-            logger.error(f"Failed to fetch categories: {str(e)}")
-            raise Exception("Failed to load categories. Please check your API credentials and try again.")
-    
+    def __init__(self, client):
+        self.client = client
+        
+    def get_categories(self):
+        """Get all categories from Trendyol"""
+        endpoint = '/product-categories'
+        return self.client.make_request('GET', endpoint)
+        
     def get_category_attributes(self, category_id):
-        """Get attributes for a specific category with caching"""
-        if category_id in self._attribute_cache:
-            return self._attribute_cache[category_id]
-            
-        try:
-            data = self.api.get(f"product/product-categories/{category_id}/attributes")
-            self._attribute_cache[category_id] = data
-            return data
-        except Exception as e:
-            logger.error(f"Failed to fetch attributes for category {category_id}: {str(e)}")
-            raise Exception(f"Failed to load attributes for category {category_id}")
+        """Get attributes for a specific category"""
+        endpoint = f'/product-categories/{category_id}/attributes'
+        return self.client.make_request('GET', endpoint)
+
+
+class ProductsAPI:
+    """Trendyol Products API"""
     
-    def find_best_category(self, search_term):
-        """Find the most relevant category for a given search term"""
-        try:
-            categories = self.category_cache
-            if not categories:
-                raise ValueError("Empty category list received from API")
-            
-            # Store matching categories here
-            all_matches = []
-            
-            # Find exact matches and close matches by name
-            for category in self._search_categories(categories, search_term.lower()):
-                all_matches.append(category)
-            
-            # If we found exact matches, use the first one
-            for match in all_matches:
-                if match['name'].lower() == search_term.lower():
-                    return match['id']
-            
-            # Otherwise, use the first match (if any)
-            if all_matches:
-                return all_matches[0]['id']
-            
-            # If no matches found, get all leaf categories for fallback
-            leaf_categories = []
-            self._collect_leaf_categories(categories, leaf_categories)
-            
-            # Attempt to find a fallback match
-            for category in leaf_categories:
-                if "clothing" in category['name'].lower() or "apparel" in category['name'].lower():
-                    logger.warning(f"Using fallback category for '{search_term}': {category['name']}")
-                    return category['id']
-            
-            # Last resort: use the first leaf category
-            if leaf_categories:
-                logger.warning(f"Using first leaf category for '{search_term}': {leaf_categories[0]['name']}")
-                return leaf_categories[0]['id']
-            
-            raise ValueError(f"No category match found for '{search_term}'")
-            
-        except Exception as e:
-            logger.error(f"Category search failed for '{search_term}': {str(e)}")
-            raise
-    
-    def _search_categories(self, categories, search_term):
-        """Recursively search categories for matching terms"""
-        matches = []
+    def __init__(self, client):
+        self.client = client
         
-        for category in categories:
-            # Check if this category matches
-            if search_term in category['name'].lower():
-                matches.append(category)
-            
-            # Search subcategories (if any)
-            if 'subCategories' in category and category['subCategories']:
-                sub_matches = self._search_categories(category['subCategories'], search_term)
-                matches.extend(sub_matches)
+    def create_products(self, products):
+        """Create products on Trendyol"""
+        endpoint = '/suppliers/{}/v2/products'.format(self.client.supplier_id)
+        return self.client.make_request('POST', endpoint, data={"items": products})
         
-        return matches
-    
-    def _collect_leaf_categories(self, categories, result):
-        """Recursively collect leaf categories (those without subcategories)"""
-        for category in categories:
-            if not category.get('subCategories'):
-                result.append(category)
-            else:
-                self._collect_leaf_categories(category['subCategories'], result)
-    
-    def get_sample_attributes(self, category_id):
-        """Generate sample attributes for a category"""
-        attributes = []
-        try:
-            category_attrs = self.get_category_attributes(category_id)
+    def get_batch_request_status(self, batch_id):
+        """Get the status of a batch request"""
+        endpoint = '/suppliers/{}/products/batch-requests/{}'.format(
+            self.client.supplier_id, batch_id
+        )
+        return self.client.make_request('GET', endpoint)
+        
+    def get_products(self, barcode=None, approved=None, page=0, size=50):
+        """Get products from Trendyol"""
+        endpoint = '/suppliers/{}/products'.format(self.client.supplier_id)
+        params = {
+            'page': page,
+            'size': size
+        }
+        
+        if barcode:
+            params['barcode'] = barcode
             
-            for attr in category_attrs.get('categoryAttributes', []):
-                # Skip attributes with empty attributeValues array when custom values are not allowed
-                if not attr.get('attributeValues') and not attr.get('allowCustom'):
-                    continue
-                    
-                attribute = {
-                    "attributeId": attr['attribute']['id'],
-                    "attributeName": attr['attribute']['name']
-                }
-                
-                if attr.get('attributeValues') and len(attr['attributeValues']) > 0:
-                    if not attr.get('allowCustom'):
-                        attribute["attributeValueId"] = attr['attributeValues'][0]['id']
-                        attribute["attributeValue"] = attr['attributeValues'][0]['name']
-                    else:
-                        attribute["customAttributeValue"] = f"Sample {attr['attribute']['name']}"
-                elif attr.get('allowCustom'):
-                    attribute["customAttributeValue"] = f"Sample {attr['attribute']['name']}"
-                else:
-                    continue
-                
-                attributes.append(attribute)
-                
-            return attributes
-        except Exception as e:
-            logger.error(f"Error getting sample attributes: {str(e)}")
-            return []
+        if approved is not None:
+            params['approved'] = approved
+            
+        return self.client.make_request('GET', endpoint, params=params)
 
 
-class TrendyolProductManager:
-    """Handles product creation and management"""
-    
-    def __init__(self, api_client: TrendyolAPI):
-        self.api = api_client
-        self.category_finder = TrendyolCategoryFinder(api_client)
-    
-    def get_brand_id(self, brand_name):
-        """Find brand ID by name"""
-        encoded_name = quote(brand_name)
-        try:
-            brands = self.api.get(f"product/brands/by-name?name={encoded_name}")
-            if isinstance(brands, list) and brands:
-                brand_id = brands[0]['id']
-                
-                # Store brand in the database
-                TrendyolBrand.objects.update_or_create(
-                    brand_id=brand_id,
-                    defaults={'name': brands[0]['name']}
-                )
-                
-                return brand_id
-                
-            raise ValueError(f"Brand not found: {brand_name}")
-        except Exception as e:
-            logger.error(f"Brand search failed for '{brand_name}': {str(e)}")
-            raise
-    
-    def create_product(self, product_data):
-        """Create a new product on Trendyol"""
-        try:
-            # Find category
-            if not product_data.category_id:
-                category_id = self.category_finder.find_best_category(product_data.category_name)
-                product_data.category_id = category_id
-            else:
-                category_id = product_data.category_id
-            
-            # Find brand
-            if not product_data.brand_id:
-                brand_id = self.get_brand_id(product_data.brand_name)
-                product_data.brand_id = brand_id
-            else:
-                brand_id = product_data.brand_id
-            
-            # Get attributes if needed
-            if not product_data.attributes:
-                attributes = self.category_finder.get_sample_attributes(category_id)
-                product_data.attributes = attributes
-            else:
-                attributes = product_data.attributes
-            
-            # Build payload
-            payload = {
-                "items": [{
-                    "barcode": product_data.barcode,
-                    "title": product_data.title,
-                    "productMainId": product_data.product_main_id,
-                    "brandId": brand_id,
-                    "categoryId": category_id,
-                    "quantity": product_data.quantity,
-                    "stockCode": product_data.stock_code,
-                    "description": product_data.description,
-                    "currencyType": product_data.currency_type,
-                    "listPrice": float(product_data.price) + 10,  # Add margin for list price
-                    "salePrice": float(product_data.price),
-                    "vatRate": product_data.vat_rate,
-                    "images": [{"url": product_data.image_url}] + [{"url": img} for img in product_data.additional_images],
-                    "attributes": attributes
-                }]
-            }
-            
-            logger.info(f"Submitting product creation request for {product_data.title}")
-            response = self.api.post(f"product/sellers/{self.api.config.seller_id}/products", payload)
-            
-            return response.get('batchRequestId')
-        except Exception as e:
-            logger.error(f"Product creation failed: {str(e)}")
-            raise
-    
-    def check_batch_status(self, batch_id):
-        """Check the status of a batch operation"""
-        try:
-            return self.api.get(f"product/sellers/{self.api.config.seller_id}/products/batch-requests/{batch_id}")
-        except Exception as e:
-            logger.error(f"Failed to check batch status: {str(e)}")
-            raise
-    
-    def update_product_stock(self, product):
-        """Update product stock"""
-        try:
-            payload = {
-                "items": [{
-                    "barcode": product.barcode,
-                    "quantity": product.quantity
-                }]
-            }
-            
-            response = self.api.post(f"product/sellers/{self.api.config.seller_id}/products/batch-stock-update", payload)
-            return response.get('batchRequestId')
-        except Exception as e:
-            logger.error(f"Failed to update product stock: {str(e)}")
-            raise
-    
-    def update_product_price(self, product):
-        """Update product price"""
-        try:
-            payload = {
-                "items": [{
-                    "barcode": product.barcode,
-                    "listPrice": float(product.price) + 10,  # Add margin for list price
-                    "salePrice": float(product.price)
-                }]
-            }
-            
-            response = self.api.post(f"product/sellers/{self.api.config.seller_id}/products/batch-price-update", payload)
-            return response.get('batchRequestId')
-        except Exception as e:
-            logger.error(f"Failed to update product price: {str(e)}")
-            raise
-
-
-def get_active_api_config():
-    """Get the active API configuration"""
+def get_api_client() -> Optional[TrendyolApi]:
+    """
+    Get a configured Trendyol API client.
+    Returns None if no active API configuration is found.
+    """
     try:
-        return TrendyolAPIConfig.objects.filter(is_active=True).first()
-    except:
+        config = TrendyolAPIConfig.objects.filter(is_active=True).first()
+        if not config:
+            logger.error("No active Trendyol API configuration found")
+            return None
+        
+        # Initialize the Trendyol API client
+        client = TrendyolApi(
+            api_key=config.api_key,
+            api_secret=config.api_secret,
+            supplier_id=config.seller_id,
+            api_url=config.base_url
+        )
+        
+        return client
+    except Exception as e:
+        logger.error(f"Error creating Trendyol API client: {str(e)}")
         return None
 
 
-def create_trendyol_product(product):
-    """Create a product on Trendyol"""
-    config = get_active_api_config()
-    if not config:
-        logger.error("No active Trendyol API config found")
-        product.set_batch_status('failed', 'No active Trendyol API config found')
-        return
+def fetch_brands() -> List[Dict[str, Any]]:
+    """
+    Fetch all brands from Trendyol and update the local database.
+    Returns a list of brand dictionaries.
+    """
+    client = get_api_client()
+    if not client:
+        return []
     
     try:
-        api = TrendyolAPI(config)
-        product_manager = TrendyolProductManager(api)
+        # Fetch brands from Trendyol
+        response = client.brands.get_brands()
         
-        batch_id = product_manager.create_product(product)
+        if not response or 'brands' not in response:
+            logger.error("Failed to fetch brands from Trendyol API")
+            return []
         
+        brands = response.get('brands', [])
+        
+        # Update or create brands in our database
+        for brand in brands:
+            brand_id = brand.get('id')
+            name = brand.get('name')
+            
+            if brand_id and name:
+                TrendyolBrand.objects.update_or_create(
+                    brand_id=brand_id,
+                    defaults={
+                        'name': name,
+                        'is_active': True
+                    }
+                )
+        
+        return brands
+    except Exception as e:
+        logger.error(f"Error fetching brands from Trendyol: {str(e)}")
+        return []
+
+
+def fetch_categories() -> List[Dict[str, Any]]:
+    """
+    Fetch all categories from Trendyol and update the local database.
+    Returns a list of category dictionaries.
+    """
+    client = get_api_client()
+    if not client:
+        return []
+    
+    try:
+        # Fetch categories from Trendyol
+        response = client.categories.get_categories()
+        
+        if not response or 'categories' not in response:
+            logger.error("Failed to fetch categories from Trendyol API")
+            return []
+        
+        categories = response.get('categories', [])
+        
+        # Update or create categories in our database
+        for category in categories:
+            category_id = category.get('id')
+            name = category.get('name')
+            parent_id = category.get('parentId')
+            
+            if category_id and name:
+                # Build category path
+                path = name
+                if parent_id:
+                    try:
+                        parent = TrendyolCategory.objects.get(category_id=parent_id)
+                        path = f"{parent.path} > {name}"
+                    except TrendyolCategory.DoesNotExist:
+                        pass
+                
+                TrendyolCategory.objects.update_or_create(
+                    category_id=category_id,
+                    defaults={
+                        'name': name,
+                        'parent_id': parent_id,
+                        'path': path,
+                        'is_active': True
+                    }
+                )
+        
+        return categories
+    except Exception as e:
+        logger.error(f"Error fetching categories from Trendyol: {str(e)}")
+        return []
+
+
+def find_best_category_match(product: TrendyolProduct) -> Optional[int]:
+    """
+    Find the best matching category for a product.
+    Returns the category ID if found, None otherwise.
+    """
+    # If we already have a category ID, use it
+    if product.category_id:
+        # Verify the category exists
+        try:
+            TrendyolCategory.objects.get(category_id=product.category_id)
+            return product.category_id
+        except TrendyolCategory.DoesNotExist:
+            pass
+    
+    # Try to find by category name
+    if product.category_name:
+        try:
+            # Try exact match first
+            category = TrendyolCategory.objects.filter(
+                name__iexact=product.category_name,
+                is_active=True
+            ).first()
+            
+            if category:
+                return category.category_id
+            
+            # Try partial match
+            category = TrendyolCategory.objects.filter(
+                name__icontains=product.category_name,
+                is_active=True
+            ).first()
+            
+            if category:
+                return category.category_id
+        except Exception as e:
+            logger.error(f"Error finding category by name: {str(e)}")
+    
+    # If we have a related LCWaikiki product, use its category
+    if product.lcwaikiki_product and product.lcwaikiki_product.category:
+        try:
+            # Try to find similar category
+            category = TrendyolCategory.objects.filter(
+                name__icontains=product.lcwaikiki_product.category,
+                is_active=True
+            ).first()
+            
+            if category:
+                return category.category_id
+        except Exception as e:
+            logger.error(f"Error finding category from LCWaikiki product: {str(e)}")
+    
+    # If all else fails, return None or a default category ID
+    return None
+
+
+def find_best_brand_match(product: TrendyolProduct) -> Optional[int]:
+    """
+    Find the best matching brand for a product.
+    Returns the brand ID if found, None otherwise.
+    """
+    # If we already have a brand ID, use it
+    if product.brand_id:
+        # Verify the brand exists
+        try:
+            TrendyolBrand.objects.get(brand_id=product.brand_id)
+            return product.brand_id
+        except TrendyolBrand.DoesNotExist:
+            pass
+    
+    # Try to find by brand name
+    if product.brand_name:
+        try:
+            # Try exact match first
+            brand = TrendyolBrand.objects.filter(
+                name__iexact=product.brand_name,
+                is_active=True
+            ).first()
+            
+            if brand:
+                return brand.brand_id
+            
+            # Try partial match
+            brand = TrendyolBrand.objects.filter(
+                name__icontains=product.brand_name,
+                is_active=True
+            ).first()
+            
+            if brand:
+                return brand.brand_id
+        except Exception as e:
+            logger.error(f"Error finding brand by name: {str(e)}")
+    
+    # If we have a related LCWaikiki product, assume it's LCWaikiki brand
+    if product.lcwaikiki_product:
+        try:
+            brand = TrendyolBrand.objects.filter(
+                name__icontains="LCW",
+                is_active=True
+            ).first()
+            
+            if brand:
+                return brand.brand_id
+        except Exception as e:
+            logger.error(f"Error finding LCW brand: {str(e)}")
+    
+    # If all else fails, return None
+    return None
+
+
+def get_required_attributes_for_category(category_id: int) -> List[Dict[str, Any]]:
+    """
+    Get required attributes for a specific category.
+    Returns a list of attribute dictionaries.
+    """
+    client = get_api_client()
+    if not client or not category_id:
+        return []
+    
+    try:
+        # Fetch category attributes from Trendyol
+        response = client.categories.get_category_attributes(category_id)
+        
+        if not response or 'categoryAttributes' not in response:
+            logger.error(f"Failed to fetch attributes for category {category_id}")
+            return []
+        
+        category_attributes = response.get('categoryAttributes', [])
+        
+        # Filter required attributes
+        required_attributes = [
+            attr for attr in category_attributes 
+            if attr.get('required', False) and attr.get('allowCustom', False)
+        ]
+        
+        return required_attributes
+    except Exception as e:
+        logger.error(f"Error fetching category attributes: {str(e)}")
+        return []
+
+
+def prepare_product_data(product: TrendyolProduct) -> Dict[str, Any]:
+    """
+    Prepare product data for Trendyol API.
+    Returns a dictionary with the product data.
+    """
+    # Validate required fields
+    if not product.title or not product.barcode or not product.price:
+        logger.error(f"Product {product.id} is missing required fields")
+        raise ValueError("Product is missing required fields: title, barcode, or price")
+    
+    # Find best category and brand matches
+    category_id = find_best_category_match(product)
+    brand_id = find_best_brand_match(product)
+    
+    if not category_id:
+        logger.error(f"No matching category found for product {product.id}")
+        raise ValueError("No matching category found for product")
+    
+    if not brand_id:
+        logger.error(f"No matching brand found for product {product.id}")
+        raise ValueError("No matching brand found for product")
+    
+    # Get image URLs
+    image_urls = []
+    if product.image_url:
+        image_urls.append(product.image_url)
+    
+    if product.additional_images:
+        if isinstance(product.additional_images, list):
+            image_urls.extend(product.additional_images)
+        elif isinstance(product.additional_images, str):
+            try:
+                additional = json.loads(product.additional_images)
+                if isinstance(additional, list):
+                    image_urls.extend(additional)
+            except json.JSONDecodeError:
+                pass
+    
+    # Prepare attributes
+    attributes = []
+    if product.attributes:
+        if isinstance(product.attributes, dict):
+            for key, value in product.attributes.items():
+                attributes.append({
+                    "attributeId": key,
+                    "attributeValueId": value
+                })
+        elif isinstance(product.attributes, str):
+            try:
+                attrs = json.loads(product.attributes)
+                if isinstance(attrs, dict):
+                    for key, value in attrs.items():
+                        attributes.append({
+                            "attributeId": key,
+                            "attributeValueId": value
+                        })
+            except json.JSONDecodeError:
+                pass
+    
+    # If no attributes are set, check if there are required attributes for the category
+    if not attributes:
+        required_attrs = get_required_attributes_for_category(category_id)
+        for attr in required_attrs:
+            attr_id = attr.get('id')
+            if attr_id and attr.get('allowCustom', False) and attr.get('values', []):
+                # Use the first value as a default
+                value_id = attr.get('values', [])[0].get('id')
+                if value_id:
+                    attributes.append({
+                        "attributeId": attr_id,
+                        "attributeValueId": value_id
+                    })
+    
+    # Prepare product data
+    product_data = {
+        "barcode": product.barcode,
+        "title": product.title,
+        "productMainId": product.product_main_id or product.barcode,
+        "brandId": brand_id,
+        "categoryId": category_id,
+        "stockCode": product.stock_code or product.barcode,
+        "quantity": product.quantity,
+        "stockUnitType": "PIECE",  # Default to pieces
+        "dimensionalWeight": 1,  # Default to 1kg
+        "description": product.description,
+        "currencyType": product.currency_type,
+        "listPrice": float(product.price),
+        "salePrice": float(product.price),
+        "vatRate": product.vat_rate,
+        "cargoCompanyId": 0,  # Default cargo company
+        "images": [{"url": url} for url in image_urls if url],
+        "attributes": attributes,
+    }
+    
+    return product_data
+
+
+def create_trendyol_product(product: TrendyolProduct) -> Optional[str]:
+    """
+    Create or update a product on Trendyol.
+    Returns the batch ID if successful, None otherwise.
+    """
+    client = get_api_client()
+    if not client:
+        product.batch_status = 'failed'
+        product.status_message = "No active Trendyol API configuration found"
+        product.save()
+        return None
+    
+    try:
+        # Prepare product data
+        product_data = prepare_product_data(product)
+        
+        # Create the product on Trendyol
+        response = client.products.create_products([product_data])
+        
+        if not response or 'batchRequestId' not in response:
+            logger.error(f"Failed to create product {product.id} on Trendyol")
+            product.batch_status = 'failed'
+            product.status_message = "Failed to create product on Trendyol: No batch request ID returned"
+            product.save()
+            return None
+        
+        batch_id = response.get('batchRequestId')
+        
+        # Update product with batch ID and status
         product.batch_id = batch_id
         product.batch_status = 'processing'
-        product.status_message = 'Product creation initiated'
-        product.last_check_time = timezone.now()
+        product.status_message = "Product creation initiated"
         product.save()
         
         return batch_id
-        
     except Exception as e:
-        logger.error(f"Failed to create product on Trendyol: {str(e)}")
-        product.set_batch_status('failed', f"Error: {str(e)}")
+        logger.error(f"Error creating product {product.id} on Trendyol: {str(e)}")
+        product.batch_status = 'failed'
+        product.status_message = f"Error creating product: {str(e)}"
+        product.save()
         return None
 
 
-def check_product_batch_status(product):
-    """Check the status of a product batch operation"""
+def check_product_batch_status(product: TrendyolProduct) -> str:
+    """
+    Check the status of a product batch on Trendyol.
+    Updates the product with the status and returns the status.
+    """
     if not product.batch_id:
-        return
+        product.batch_status = 'failed'
+        product.status_message = "No batch ID available to check status"
+        product.save()
+        return 'failed'
     
-    config = get_active_api_config()
-    if not config:
-        logger.error("No active Trendyol API config found")
-        return
+    client = get_api_client()
+    if not client:
+        product.batch_status = 'failed'
+        product.status_message = "No active Trendyol API configuration found"
+        product.save()
+        return 'failed'
     
     try:
-        api = TrendyolAPI(config)
-        product_manager = TrendyolProductManager(api)
+        # Check batch status
+        response = client.products.get_batch_request_status(product.batch_id)
         
-        status_data = product_manager.check_batch_status(product.batch_id)
+        if not response:
+            logger.error(f"Failed to check batch status for product {product.id} on Trendyol")
+            product.batch_status = 'failed'
+            product.status_message = "Failed to check batch status: No response from API"
+            product.save()
+            return 'failed'
         
-        items = status_data.get('items', [])
-        if not items:
-            product.set_batch_status('processing', 'Waiting for processing')
-            return
+        # Get batch status details
+        status = response.get('status', 'failed')
         
-        item = items[0]
-        status = item.get('status')
+        # Map Trendyol status to our status
+        status_mapping = {
+            'PROCESSING': 'processing',
+            'DONE': 'completed',
+            'FAILED': 'failed',
+        }
         
-        if status == 'SUCCESS':
-            product.set_batch_status('completed', 'Product created successfully')
-            # Try to get product ID from response
-            if 'productId' in item:
-                product.trendyol_id = item['productId']
-                product.trendyol_url = f"https://www.trendyol.com/brand/name-p-{item['productId']}"
-                product.save()
-        elif status == 'ERROR':
-            product.set_batch_status('failed', f"Error: {item.get('failureReasons', 'Unknown error')}")
-        else:
-            product.set_batch_status('processing', f"Status: {status}")
+        internal_status = status_mapping.get(status, 'failed')
         
-    except Exception as e:
-        logger.error(f"Failed to check batch status: {str(e)}")
+        # Get error message if any
+        error_message = ""
+        if 'items' in response:
+            items = response.get('items', [])
+            for item in items:
+                if item.get('status') in ['FAILED', 'INVALID']:
+                    errors = item.get('failureReasons', [])
+                    for error in errors:
+                        if error.get('message'):
+                            error_message += error.get('message') + ". "
+        
+        # If status is completed and no Trendyol ID, try to get it
+        if internal_status == 'completed' and not product.trendyol_id:
+            # Try to get the product ID from Trendyol
+            try:
+                products_response = client.products.get_product_by_barcode(product.barcode)
+                if products_response and 'content' in products_response and products_response['content']:
+                    trendyol_product = products_response['content'][0]
+                    product.trendyol_id = str(trendyol_product.get('id', ''))
+                    product.trendyol_url = f"https://www.trendyol.com/brand/name-p-{product.trendyol_id}"
+            except Exception as e:
+                logger.error(f"Error getting product ID from Trendyol: {str(e)}")
+        
+        # Update product status
+        product.batch_status = internal_status
+        product.status_message = error_message if error_message else f"Batch status: {status}"
         product.last_check_time = timezone.now()
-        product.save(update_fields=['last_check_time'])
+        
+        if internal_status == 'completed':
+            product.last_sync_time = timezone.now()
+        
+        product.save()
+        
+        return internal_status
+    except Exception as e:
+        logger.error(f"Error checking batch status for product {product.id} on Trendyol: {str(e)}")
+        product.batch_status = 'failed'
+        product.status_message = f"Error checking batch status: {str(e)}"
+        product.save()
+        return 'failed'
 
 
-def check_pending_products():
-    """Check all pending products"""
-    products = TrendyolProduct.objects.filter(
-        batch_id__isnull=False,
-        batch_status__in=['pending', 'processing']
-    )
+def sync_product_to_trendyol(product: TrendyolProduct) -> bool:
+    """
+    Sync a product to Trendyol.
+    Returns True if successful, False otherwise.
+    """
+    # If product already has a batch ID, check its status
+    if product.batch_id:
+        status = check_product_batch_status(product)
+        if status in ['completed', 'failed']:
+            # If already completed or failed, create a new batch
+            batch_id = create_trendyol_product(product)
+            return bool(batch_id)
+        elif status == 'processing':
+            # If still processing, do nothing
+            return True
+        else:
+            # Unknown status, try creating a new batch
+            batch_id = create_trendyol_product(product)
+            return bool(batch_id)
+    else:
+        # No batch ID, create a new one
+        batch_id = create_trendyol_product(product)
+        return bool(batch_id)
+
+
+def lcwaikiki_to_trendyol_product(lcw_product) -> Optional[TrendyolProduct]:
+    """
+    Convert an LCWaikiki product to a Trendyol product.
+    Returns the created or updated Trendyol product instance.
+    """
+    if not lcw_product:
+        return None
     
-    for product in products:
-        if product.needs_status_check():
-            logger.info(f"Checking status for product {product.id}: {product.title}")
-            check_product_batch_status(product)
-
-
-def update_product_from_lcwaikiki(lcw_product):
-    """
-    Update or create a Trendyol product from an LCWaikiki product.
-    Returns the Trendyol product.
-    """
     try:
-        # Try to find existing Trendyol product linked to this LCWaikiki product
-        trendyol_product = TrendyolProduct.objects.filter(lcwaikiki_product=lcw_product).first()
+        # Check if a Trendyol product already exists for this LCWaikiki product
+        trendyol_product = TrendyolProduct.objects.filter(
+            lcwaikiki_product=lcw_product
+        ).first()
         
-        # If not found, create a new one
         if not trendyol_product:
-            trendyol_product = TrendyolProduct()
-        
-        # Update from LCWaikiki product
-        trendyol_product.from_lcwaikiki_product(lcw_product)
-        trendyol_product.save()
+            # Create a new Trendyol product
+            barcode = lcw_product.product_code or f"LCW-{lcw_product.id}"
+            
+            # Get the price
+            price = lcw_product.price or Decimal('0.00')
+            if lcw_product.discount_ratio and lcw_product.discount_ratio > 0:
+                # Apply discount if available
+                discount = Decimal(lcw_product.discount_ratio) / Decimal('100')
+                price = price * (Decimal('1.00') - discount)
+            
+            # Get images
+            images = []
+            if lcw_product.images:
+                try:
+                    if isinstance(lcw_product.images, str):
+                        images = json.loads(lcw_product.images)
+                    elif isinstance(lcw_product.images, list):
+                        images = lcw_product.images
+                except json.JSONDecodeError:
+                    pass
+            
+            # Create Trendyol product
+            trendyol_product = TrendyolProduct.objects.create(
+                title=lcw_product.title,
+                description=lcw_product.description or lcw_product.title,
+                barcode=barcode,
+                product_main_id=lcw_product.product_code,
+                brand_name="LCW",
+                category_name=lcw_product.category or "",
+                price=price,
+                quantity=lcw_product.get_total_stock() if hasattr(lcw_product, 'get_total_stock') else 0,
+                image_url=images[0] if images else "",
+                additional_images=images[1:] if len(images) > 1 else [],
+                lcwaikiki_product=lcw_product,
+                batch_status='pending',
+                status_message="Created from LCWaikiki product"
+            )
+        else:
+            # Update existing Trendyol product with latest LCWaikiki data
+            price = lcw_product.price or Decimal('0.00')
+            if lcw_product.discount_ratio and lcw_product.discount_ratio > 0:
+                discount = Decimal(lcw_product.discount_ratio) / Decimal('100')
+                price = price * (Decimal('1.00') - discount)
+            
+            trendyol_product.title = lcw_product.title
+            trendyol_product.description = lcw_product.description or lcw_product.title
+            trendyol_product.price = price
+            trendyol_product.quantity = lcw_product.get_total_stock() if hasattr(lcw_product, 'get_total_stock') else 0
+            
+            # Update images if available
+            if lcw_product.images:
+                try:
+                    if isinstance(lcw_product.images, str):
+                        images = json.loads(lcw_product.images)
+                    elif isinstance(lcw_product.images, list):
+                        images = lcw_product.images
+                        
+                    if images:
+                        trendyol_product.image_url = images[0]
+                        trendyol_product.additional_images = images[1:] if len(images) > 1 else []
+                except json.JSONDecodeError:
+                    pass
+            
+            trendyol_product.save()
         
         return trendyol_product
-        
     except Exception as e:
-        logger.error(f"Error updating Trendyol product from LCWaikiki: {str(e)}")
+        logger.error(f"Error converting LCWaikiki product to Trendyol product: {str(e)}")
         return None
