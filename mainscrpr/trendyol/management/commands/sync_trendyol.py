@@ -6,7 +6,8 @@ from django.db import transaction
 from django.db.models import Q
 from tqdm import tqdm
 
-from lcwaikiki.models import Product
+# Fix the import to reference the correct module
+from lcwaikiki.product_models import Product
 from trendyol.models import TrendyolProduct
 from trendyol import api_client
 

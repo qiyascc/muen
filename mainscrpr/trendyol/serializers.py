@@ -51,7 +51,7 @@ class TrendyolProductSerializer(serializers.ModelSerializer):
         Create a new TrendyolProduct instance.
         If lcwaikiki_product_id is provided, link to that product.
         """
-        from lcwaikiki.models import Product
+        from lcwaikiki.product_models import Product
         
         lcwaikiki_product_id = None
         if 'lcwaikiki_product' in validated_data and validated_data['lcwaikiki_product']:
@@ -75,7 +75,7 @@ class TrendyolProductSerializer(serializers.ModelSerializer):
         Update a TrendyolProduct instance.
         Update lcwaikiki_product link if lcwaikiki_product_id is provided.
         """
-        from lcwaikiki.models import Product
+        from lcwaikiki.product_models import Product
         
         lcwaikiki_product_id = None
         if 'lcwaikiki_product' in validated_data:
