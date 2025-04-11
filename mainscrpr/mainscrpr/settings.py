@@ -20,14 +20,13 @@ INSTALLED_APPS = [
     # Unfold admin theme
     'unfold',
     'unfold.contrib.filters',  # Optional for enhanced filters
-    'unfold.contrib.forms',  # Optional for enhanced forms
+    'unfold.contrib.forms',    # Optional for enhanced forms
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'rest_wind',  # Optional for enhanced API views
     'rest_framework',
     'lcwaikiki',
     'django_apscheduler',  # Django APScheduler for scheduling tasks
@@ -37,17 +36,13 @@ INSTALLED_APPS = [
 UNFOLD = {
     "SITE_TITLE": "LCWaikiki Admin",
     "SITE_HEADER": "LCWaikiki Management",
-    "SITE_SYMBOL":
-    "settings",  # Use an icon name from https://fonts.google.com/icons
+    "SITE_SYMBOL": "settings",  # Use an icon name from https://fonts.google.com/icons
     "SIDEBAR": {
-        "show_search":
-        True,
-        "show_all_applications":
-        True,
+        "show_search": True,
+        "show_all_applications": True,
         "navigation": [
             {
-                "title":
-                "Dashboard",
+                "title": "Dashboard",
                 "items": [
                     {
                         "title": "Statistics Dashboard",
@@ -57,8 +52,7 @@ UNFOLD = {
                 ],
             },
             {
-                "title":
-                "Configurations",
+                "title": "Configurations",
                 "items": [
                     {
                         "title": "Brands Config",
@@ -68,8 +62,7 @@ UNFOLD = {
                 ],
             },
             {
-                "title":
-                "Products",
+                "title": "Products",
                 "items": [
                     {
                         "title": "Available URLs",
@@ -89,8 +82,7 @@ UNFOLD = {
                 ],
             },
             {
-                "title":
-                "Scraper",
+                "title": "Scraper",
                 "items": [
                     {
                         "title": "Scheduled Jobs",
@@ -100,8 +92,7 @@ UNFOLD = {
                     {
                         "title": "Job Executions",
                         "icon": "history",
-                        "link":
-                        "/admin/django_apscheduler/djangojobexecution/",
+                        "link": "/admin/django_apscheduler/djangojobexecution/",
                     },
                 ],
             },
@@ -162,20 +153,16 @@ DATABASES = {
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
     {
-        'NAME':
-        'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
+        'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
     },
     {
-        'NAME':
-        'django.contrib.auth.password_validation.MinimumLengthValidator',
+        'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
     },
     {
-        'NAME':
-        'django.contrib.auth.password_validation.CommonPasswordValidator',
+        'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
     },
     {
-        'NAME':
-        'django.contrib.auth.password_validation.NumericPasswordValidator',
+        'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
     },
 ]
 

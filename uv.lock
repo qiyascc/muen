@@ -191,45 +191,6 @@ wheels = [
 ]
 
 [[package]]
-name = "drf-material"
-version = "0.3.3"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "django" },
-    { name = "djangorestframework" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/18/3e/7e8630a3b4fa7d3e1f94e1c71911798d916e627a7c9b189a6316d1e54335/drf_material-0.3.3.tar.gz", hash = "sha256:6da6f0181fb9707c911c38f782cfd6b57eaa979ab1c8cae332def045a4bb2260", size = 15503 }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/da/87/90583b6ba7f89d48187864884ffe885baf29b1e76ea6d3437416889bd4eb/drf_material-0.3.3-py3-none-any.whl", hash = "sha256:3b5fe0c83deeae7d29fa793380afe7388fde86cb8356bcb15fc688b01a3e61c5", size = 35207 },
-]
-
-[[package]]
-name = "drf-redesign"
-version = "0.5.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "django" },
-    { name = "djangorestframework" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/8f/09/8bc26f270bb8a90964a32d5dabee8972e0b1ae69db9cc79f2015c1ed2fd2/drf_redesign-0.5.1.tar.gz", hash = "sha256:8f868abc804af09e3668900c9b31bf7077e89c93650a22e21f5b315f004e34eb", size = 15054 }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/fd/ee/7ee3e41b73fdf85a6f0f672664f9ef7067d5b1ea89e3788ecd19b73ad913/drf_redesign-0.5.1-py3-none-any.whl", hash = "sha256:bf7ddcc36f2b15b87dad2e1c91ca69ab551c926482e0d787a8066eddd11e9350", size = 35838 },
-]
-
-[[package]]
-name = "drf-restwind"
-version = "0.1.6"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "django" },
-    { name = "djangorestframework" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/5e/bb/ca59d6ed893d04629641fec1e4a3cb1bc67b75eb41680c1b0126a2648e1f/drf_restwind-0.1.6.tar.gz", hash = "sha256:7c1fb5cb43f8140ea153ba2120819ee15f178bd23341f122ab65eac45be95600", size = 19337 }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/d6/ee/60c0a2b4615b9a3284c896373bf62f6f9cff0eb8e424ae33ca134c3eecd9/drf_restwind-0.1.6-py3-none-any.whl", hash = "sha256:bc9f179f8061e5947a76da6dc317c4bced2b2e038939dbbc69f08fc96735a487", size = 32615 },
-]
-
-[[package]]
 name = "htmldate"
 version = "1.9.3"
 source = { registry = "https://pypi.org/simple" }
@@ -482,9 +443,6 @@ dependencies = [
     { name = "django-apscheduler" },
     { name = "django-unfold" },
     { name = "djangorestframework" },
-    { name = "drf-material" },
-    { name = "drf-redesign" },
-    { name = "drf-restwind" },
     { name = "loguru" },
     { name = "psycopg2-binary" },
     { name = "requests" },
@@ -499,9 +457,6 @@ requires-dist = [
     { name = "django-apscheduler", specifier = ">=0.7.0" },
     { name = "django-unfold", specifier = ">=0.54.0" },
     { name = "djangorestframework", specifier = ">=3.16.0" },
-    { name = "drf-material", specifier = ">=0.3.3" },
-    { name = "drf-redesign", specifier = ">=0.5.1" },
-    { name = "drf-restwind", specifier = ">=0.1.6" },
     { name = "loguru", specifier = ">=0.7.3" },
     { name = "psycopg2-binary", specifier = ">=2.9.10" },
     { name = "requests", specifier = ">=2.32.3" },
