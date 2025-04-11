@@ -12,7 +12,7 @@ class TrendyolAPIConfig(models.Model):
     seller_id = models.CharField(max_length=100, help_text="Trendyol Seller ID")
     api_key = models.CharField(max_length=255, help_text="Trendyol API Key")
     api_secret = models.CharField(max_length=255, help_text="Trendyol API Secret")
-    base_url = models.URLField(default="https://api.trendyol.com/sapigw", help_text="Trendyol API base URL")
+    base_url = models.URLField(default="https://apigw.trendyol.com/integration", help_text="Trendyol API base URL")
     is_active = models.BooleanField(default=True, help_text="Whether this configuration is active")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

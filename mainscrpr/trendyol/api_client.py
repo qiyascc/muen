@@ -545,7 +545,7 @@ def prepare_product_data(product: TrendyolProduct) -> Dict[str, Any]:
 
 def create_trendyol_product(product: TrendyolProduct) -> Optional[str]:
     """
-    Create or update a product on Trendyol.
+    Create a product on Trendyol using the new API structure.
     Returns the batch ID if successful, None otherwise.
     """
     client = get_api_client()
@@ -669,16 +669,95 @@ def check_product_batch_status(product: TrendyolProduct) -> str:
         return 'failed'
 
 
+def update_price_and_inventory(product: TrendyolProduct) -> Optional[str]:
+    """
+    Update only the price and inventory for an existing product on Trendyol.
+    This uses the dedicated price and inventory update endpoint.
+    
+    Returns:
+        The batch request ID if successful, None otherwise.
+    """
+    client = get_api_client()
+    if not client:
+        product.batch_status = 'failed'
+        product.status_message = "No active Trendyol API configuration found"
+        product.save()
+        return None
+    
+    try:
+        # Prepare price and inventory data
+        item_data = {
+            "barcode": product.barcode,
+            "quantity": product.quantity,
+            "salePrice": float(product.price),
+            "listPrice": float(product.price * Decimal('1.05'))  # 5% higher for list price
+        }
+        
+        # Update price and inventory on Trendyol
+        response = client.inventory.update_price_and_inventory([item_data])
+        
+        if not response or 'batchRequestId' not in response:
+            logger.error(f"Failed to update price and inventory for product {product.id} on Trendyol")
+            product.batch_status = 'failed'
+            product.status_message = "Failed to update price and inventory: No batch request ID returned"
+            product.save()
+            return None
+        
+        batch_id = response.get('batchRequestId')
+        
+        # Update product with batch ID and status
+        product.batch_id = batch_id
+        product.batch_status = 'processing'
+        product.status_message = "Price and inventory update initiated"
+        product.save()
+        
+        return batch_id
+    except Exception as e:
+        logger.error(f"Error updating price and inventory for product {product.id} on Trendyol: {str(e)}")
+        product.batch_status = 'failed'
+        product.status_message = f"Error updating price and inventory: {str(e)}"
+        product.save()
+        return None
+
+
 def sync_product_to_trendyol(product: TrendyolProduct) -> bool:
     """
     Sync a product to Trendyol.
     Returns True if successful, False otherwise.
+    
+    This function determines whether to create a new product or just update
+    price and inventory based on the product's status.
     """
-    # If product already has a batch ID, check its status
+    # First check if the product already exists on Trendyol
+    if product.trendyol_id:
+        # Product exists, just update price and inventory
+        batch_id = update_price_and_inventory(product)
+        return bool(batch_id)
+    
+    # If product has a batch ID, check its status
     if product.batch_id:
         status = check_product_batch_status(product)
-        if status in ['completed', 'failed']:
-            # If already completed or failed, create a new batch
+        if status == 'completed':
+            # Product was created successfully, update price and inventory
+            if not product.trendyol_id:
+                # Try to get the product ID one more time
+                try:
+                    client = get_api_client()
+                    if client:
+                        products_response = client.products.get_product_by_barcode(product.barcode)
+                        if products_response and 'content' in products_response and products_response['content']:
+                            trendyol_product = products_response['content'][0]
+                            product.trendyol_id = str(trendyol_product.get('id', ''))
+                            product.trendyol_url = f"https://www.trendyol.com/brand/name-p-{product.trendyol_id}"
+                            product.save()
+                except Exception as e:
+                    logger.error(f"Error getting product ID from Trendyol: {str(e)}")
+            
+            # Now update price and inventory
+            batch_id = update_price_and_inventory(product)
+            return bool(batch_id)
+        elif status == 'failed':
+            # Creation failed, try again
             batch_id = create_trendyol_product(product)
             return bool(batch_id)
         elif status == 'processing':
@@ -689,7 +768,7 @@ def sync_product_to_trendyol(product: TrendyolProduct) -> bool:
             batch_id = create_trendyol_product(product)
             return bool(batch_id)
     else:
-        # No batch ID, create a new one
+        # No batch ID, create a new product
         batch_id = create_trendyol_product(product)
         return bool(batch_id)
 
