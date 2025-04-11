@@ -190,28 +190,28 @@ class ProductsAPI:
 
   def create_products(self, products):
     """Create products on Trendyol"""
-    endpoint = f'/sellers/{self.client.supplier_id}/products'
+    endpoint = f'/integration/product/sellers/{self.client.supplier_id}/products'
     return self.client.make_request('POST', endpoint, data={"items": products})
 
   def update_products(self, products):
     """Update existing products on Trendyol"""
-    endpoint = f'/sellers/{self.client.supplier_id}/products'
+    endpoint = f'/integration/product/sellers/{self.client.supplier_id}/products'
     return self.client.make_request('PUT', endpoint, data={"items": products})
 
   def delete_products(self, barcodes):
     """Delete products from Trendyol"""
-    endpoint = f'/sellers/{self.client.supplier_id}/products'
+    endpoint = f'/integration/product/sellers/{self.client.supplier_id}/products'
     items = [{"barcode": barcode} for barcode in barcodes]
     return self.client.make_request('DELETE', endpoint, data={"items": items})
 
   def get_batch_request_status(self, batch_id):
     """Get the status of a batch request"""
-    endpoint = f'/sellers/{self.client.supplier_id}/products/batch-requests/{batch_id}'
+    endpoint = f'/integration/product/sellers/{self.client.supplier_id}/products/batch-requests/{batch_id}'
     return self.client.make_request('GET', endpoint)
 
   def get_products(self, barcode=None, approved=None, page=0, size=50):
     """Get products from Trendyol"""
-    endpoint = f'/sellers/{self.client.supplier_id}/products'
+    endpoint = f'/integration/product/sellers/{self.client.supplier_id}/products'
     params = {'page': page, 'size': size}
 
     if barcode:
@@ -244,7 +244,7 @@ class InventoryAPI:
         Returns:
             Dictionary with batchRequestId if successful
         """
-    endpoint = f'/sellers/{self.client.supplier_id}/products/price-and-inventory'
+    endpoint = f'/integration/inventory/sellers/{self.client.supplier_id}/products/price-and-inventory'
     return self.client.make_request('POST', endpoint, data={"items": items})
 
 
