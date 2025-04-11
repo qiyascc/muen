@@ -26,7 +26,12 @@ class TrendyolApi:
     self.api_key = api_key
     self.api_secret = api_secret
     self.supplier_id = supplier_id
+    
+    # Ensure consistent URL format
+    if api_url.endswith('/'):
+        api_url = api_url[:-1]
     self.api_url = api_url
+    
     self.user_agent = user_agent or f"{supplier_id} - SelfIntegration"
     self.brands = BrandsAPI(self)
     self.categories = CategoriesAPI(self)
@@ -35,6 +40,10 @@ class TrendyolApi:
 
   def make_request(self, method, endpoint, data=None, params=None):
     """Make a request to the Trendyol API"""
+    # Remove any duplicate /integration prefix from the endpoint
+    if endpoint.startswith('/integration') and '/integration/' in self.api_url:
+        endpoint = endpoint.replace('/integration', '', 1)
+        
     url = f"{self.api_url}{endpoint}"
 
     # Format the auth string and encode as Base64 for Basic Authentication
