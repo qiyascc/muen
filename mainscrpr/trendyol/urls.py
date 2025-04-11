@@ -12,9 +12,8 @@ router.register(r'brands', views.TrendyolBrandViewSet, basename='brand')
 router.register(r'categories', views.TrendyolCategoryViewSet, basename='category')
 
 urlpatterns = [
-    # Dashboard and sync status views
-    path('dashboard/', views.TrendyolDashboardView.as_view(), name='dashboard'),
-    path('sync-status/', views.SyncStatusView.as_view(), name='sync-status'),
+    # Batch status view
+    path('batch-status/<str:batch_id>/', views.BatchStatusView.as_view(), name='batch_status'),
     
     # API endpoints
     path('api/', include(router.urls)),

@@ -1,0 +1,118 @@
+{% extends "admin/base_site.html" %}
+{% load i18n static %}
+
+{% block title %}Trendyol Batch Durumu: {{ batch_id }}{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+    <a href="{% url 'admin:index' %}">{% trans 'Home' %}</a>
+    &rsaquo; <a href="{% url 'admin:app_list' app_label='trendyol' %}">Trendyol</a>
+    &rsaquo; <a href="{% url 'admin:trendyol_trendyolproduct_changelist' %}">Ürünler</a>
+    &rsaquo; Batch Durumu
+</div>
+{% endblock %}
+
+{% block content %}
+<div id="content-main">
+    <h1>Trendyol Batch Durumu</h1>
+    
+    <div class="module">
+        <h2>Batch ID: {{ batch_id }}</h2>
+        
+        {% if error %}
+            <div class="errornote">
+                <p>{{ error }}</p>
+            </div>
+        {% endif %}
+        
+        {% if status %}
+            <div class="results">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Parametre</th>
+                            <th>Değer</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>Durum</strong></td>
+                            <td>
+                                {% if status.status == 'FAILED' %}
+                                    <span style="color: red">{{ status.status }}</span>
+                                {% elif status.status == 'COMPLETED' %}
+                                    <span style="color: green">{{ status.status }}</span>
+                                {% else %}
+                                    <span>{{ status.status }}</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td><strong>Oluşturulma Tarihi</strong></td>
+                            <td>{{ status.creationDate|default:"Belirtilmemiş" }}</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Son Güncellenme</strong></td>
+                            <td>{{ status.lastModification|default:"Belirtilmemiş" }}</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Toplam Ürün</strong></td>
+                            <td>{{ status.itemCount|default:"0" }}</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Başarısız Ürün</strong></td>
+                            <td>{{ status.failedItemCount|default:"0" }}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            
+            {% if status.items %}
+                <h3>Detaylı Ürün Durumları</h3>
+                <div class="results">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Barkod</th>
+                                <th>Durum</th>
+                                <th>Mesaj</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in status.items %}
+                                <tr>
+                                    <td>{{ item.barcode }}</td>
+                                    <td>
+                                        {% if item.status == 'FAILED' or item.status == 'INVALID' %}
+                                            <span style="color: red">{{ item.status }}</span>
+                                        {% elif item.status == 'COMPLETED' or item.status == 'VALID' %}
+                                            <span style="color: green">{{ item.status }}</span>
+                                        {% else %}
+                                            <span>{{ item.status }}</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ item.message|default:"" }}</td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% endif %}
+            
+            {% if status.source %}
+                <h3>Orijinal Yanıt</h3>
+                <div class="form-row">
+                    <pre style="background-color: #f5f5f5; padding: 10px; overflow: auto;">{{ status.source }}</pre>
+                </div>
+            {% endif %}
+        {% else %}
+            <p>Durum bilgisi alınamadı.</p>
+        {% endif %}
+        
+        <div class="submit-row">
+            <a href="{% url 'trendyol:batch_status' batch_id %}" class="button default">Durumu Yenile</a>
+            <a href="{% url 'admin:trendyol_trendyolproduct_changelist' %}" class="button">Ürünlere Dön</a>
+        </div>
+    </div>
+</div>
+{% endblock %}

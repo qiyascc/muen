@@ -1,119 +1,44 @@
-from rest_framework import viewsets, status, filters
+import json
+from rest_framework import viewsets
 from rest_framework.response import Response
 from rest_framework.decorators import action
 from django.db.models import Q
 from django.utils.dateparse import parse_date
 from django.utils import timezone
-from django.shortcuts import render, get_object_or_404
+from django.shortcuts import render, get_object_or_404, redirect
 from django.views.generic import TemplateView
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.http import JsonResponse
-import logging
-import datetime
+from django.urls import reverse
+from django.contrib.admin.views.decorators import staff_member_required
+from django.utils.decorators import method_decorator
 
-from .models import TrendyolProduct, TrendyolBrand, TrendyolCategory
+from .models import TrendyolProduct, TrendyolBrand, TrendyolCategory, TrendyolAPIConfig
 from .serializers import TrendyolProductSerializer, TrendyolBrandSerializer, TrendyolCategorySerializer
-from . import api_client
-
-logger = logging.getLogger(__name__)
-
-
-class TrendyolDashboardView(LoginRequiredMixin, TemplateView):
-    """
-    Dashboard view for Trendyol integration.
-    Shows statistics and summary data.
-    """
-    template_name = 'trendyol/dashboard.html'
-    
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        
-        # Get statistics
-        products_count = TrendyolProduct.objects.count()
-        brands_count = TrendyolBrand.objects.count()
-        categories_count = TrendyolCategory.objects.count()
-        
-        pending_count = TrendyolProduct.objects.filter(batch_status='pending').count()
-        processing_count = TrendyolProduct.objects.filter(batch_status='processing').count()
-        completed_count = TrendyolProduct.objects.filter(batch_status='completed').count()
-        failed_count = TrendyolProduct.objects.filter(batch_status='failed').count()
-        
-        # Recent products
-        recent_products = TrendyolProduct.objects.order_by('-created_at')[:10]
-        
-        context.update({
-            'products_count': products_count,
-            'brands_count': brands_count,
-            'categories_count': categories_count,
-            'pending_count': pending_count,
-            'processing_count': processing_count,
-            'completed_count': completed_count,
-            'failed_count': failed_count,
-            'recent_products': recent_products,
-        })
-        
-        return context
-
-
-class SyncStatusView(LoginRequiredMixin, TemplateView):
-    """
-    View to display synchronization status.
-    """
-    template_name = 'trendyol/sync_status.html'
-    
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        
-        # Get products by status
-        pending_products = TrendyolProduct.objects.filter(batch_status='pending').order_by('-created_at')[:20]
-        processing_products = TrendyolProduct.objects.filter(batch_status='processing').order_by('-last_check_time')[:20]
-        completed_products = TrendyolProduct.objects.filter(batch_status='completed').order_by('-last_sync_time')[:20]
-        failed_products = TrendyolProduct.objects.filter(batch_status='failed').order_by('-last_check_time')[:20]
-        
-        context.update({
-            'pending_products': pending_products,
-            'processing_products': processing_products,
-            'completed_products': completed_products,
-            'failed_products': failed_products,
-        })
-        
-        return context
+from .api_client import get_api_client, check_product_batch_status
 
 
 class TrendyolProductViewSet(viewsets.ModelViewSet):
     """
-    API endpoint for TrendyolProduct.
+    API endpoint for Trendyol products.
     """
     queryset = TrendyolProduct.objects.all().order_by('-created_at')
     serializer_class = TrendyolProductSerializer
-    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
-    search_fields = ['title', 'barcode', 'product_main_id', 'stock_code', 'brand_name', 'category_name']
-    ordering_fields = ['title', 'price', 'created_at', 'last_sync_time', 'batch_status']
     
     def get_queryset(self):
-        """
-        Filter queryset based on query parameters.
-        Supports:
-        - ?q=search_term (searches all search_fields)
-        - ?date=YYYY-MM-DD (filters by created_at date)
-        - ?status=status_value (filters by batch_status)
-        - ?synced=true|false (filters by whether the product has been synced)
-        """
-        queryset = super().get_queryset()
+        queryset = TrendyolProduct.objects.all().order_by('-created_at')
         
-        # Search query
+        # Filter by search query
         query = self.request.query_params.get('q', None)
         if query:
             queryset = queryset.filter(
-                Q(title__icontains=query) | 
+                Q(title__icontains=query) |
                 Q(barcode__icontains=query) |
                 Q(product_main_id__icontains=query) |
-                Q(stock_code__icontains=query) |
-                Q(brand_name__icontains=query) |
-                Q(category_name__icontains=query)
+                Q(stock_code__icontains=query)
             )
         
-        # Date filter
+        # Filter by date
         date_str = self.request.query_params.get('date', None)
         if date_str:
             try:
@@ -122,188 +47,118 @@ class TrendyolProductViewSet(viewsets.ModelViewSet):
                     queryset = queryset.filter(
                         created_at__date=date
                     )
-            except ValueError:
+            except:
                 pass
         
-        # Status filter
-        status_value = self.request.query_params.get('status', None)
-        if status_value:
-            queryset = queryset.filter(batch_status=status_value)
-        
-        # Synced filter
-        synced = self.request.query_params.get('synced', None)
-        if synced:
-            if synced.lower() == 'true':
-                queryset = queryset.filter(last_sync_time__isnull=False)
-            elif synced.lower() == 'false':
-                queryset = queryset.filter(last_sync_time__isnull=True)
+        # Pagination parameters
+        page = self.request.query_params.get('page', None)
+        in_page = self.request.query_params.get('in_page', None)
         
         return queryset
     
     @action(detail=True, methods=['post'])
     def sync(self, request, pk=None):
         """
-        Sync a product with Trendyol.
+        Sync a product to Trendyol.
         """
+        from .api_client import sync_product_to_trendyol
+        
         product = self.get_object()
+        result = sync_product_to_trendyol(product)
         
-        try:
-            success = api_client.sync_product_to_trendyol(product)
-            if success:
-                return Response({'status': 'sync initiated'}, status=status.HTTP_200_OK)
-            else:
-                return Response({'status': 'sync failed'}, status=status.HTTP_400_BAD_REQUEST)
-        except Exception as e:
-            return Response(
-                {'status': 'error', 'message': str(e)},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-    
-    @action(detail=True, methods=['get'])
-    def check_status(self, request, pk=None):
-        """
-        Check the synchronization status of a product.
-        """
-        product = self.get_object()
-        
-        if not product.batch_id:
-            return Response(
-                {'status': 'error', 'message': 'No batch ID available'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        try:
-            batch_status = api_client.check_product_batch_status(product)
-            return Response({
-                'batch_id': product.batch_id,
-                'status': batch_status,
-                'message': product.status_message,
-                'last_check': product.last_check_time,
-                'last_sync': product.last_sync_time
-            })
-        except Exception as e:
-            return Response(
-                {'status': 'error', 'message': str(e)},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+        return Response({
+            'success': result,
+            'message': f"Product {'synced' if result else 'failed to sync'} to Trendyol",
+            'product_id': product.id,
+            'batch_id': product.batch_id,
+            'batch_status': product.batch_status
+        })
 
 
-class TrendyolBrandViewSet(viewsets.ReadOnlyModelViewSet):
+class TrendyolBrandViewSet(viewsets.ModelViewSet):
     """
-    API endpoint for TrendyolBrand (read-only).
+    API endpoint for Trendyol brands.
     """
-    queryset = TrendyolBrand.objects.all().order_by('name')
+    queryset = TrendyolBrand.objects.all()
     serializer_class = TrendyolBrandSerializer
-    filter_backends = [filters.SearchFilter]
-    search_fields = ['name', 'brand_id']
-    
-    def get_queryset(self):
-        """
-        Filter queryset based on query parameters.
-        """
-        queryset = super().get_queryset()
-        
-        # Search query
-        query = self.request.query_params.get('q', None)
-        if query:
-            queryset = queryset.filter(
-                Q(name__icontains=query) | 
-                Q(brand_id__icontains=query)
-            )
-        
-        # Active filter
-        active = self.request.query_params.get('active', None)
-        if active:
-            if active.lower() == 'true':
-                queryset = queryset.filter(is_active=True)
-            elif active.lower() == 'false':
-                queryset = queryset.filter(is_active=False)
-        
-        return queryset
-    
-    @action(detail=False, methods=['post'])
-    def refresh(self, request):
-        """
-        Refresh all brands from Trendyol.
-        """
-        try:
-            brands = api_client.fetch_brands()
-            return Response({'status': 'success', 'count': len(brands)})
-        except Exception as e:
-            return Response(
-                {'status': 'error', 'message': str(e)},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
 
 
-class TrendyolCategoryViewSet(viewsets.ReadOnlyModelViewSet):
+class TrendyolCategoryViewSet(viewsets.ModelViewSet):
     """
-    API endpoint for TrendyolCategory (read-only).
+    API endpoint for Trendyol categories.
     """
-    queryset = TrendyolCategory.objects.all().order_by('name')
+    queryset = TrendyolCategory.objects.all()
     serializer_class = TrendyolCategorySerializer
-    filter_backends = [filters.SearchFilter]
-    search_fields = ['name', 'category_id', 'path']
+
+
+@method_decorator(staff_member_required, name='dispatch')
+class BatchStatusView(TemplateView):
+    """
+    View to check the status of a batch request.
+    """
+    template_name = 'trendyol/batch_status.html'
     
-    def get_queryset(self):
-        """
-        Filter queryset based on query parameters.
-        """
-        queryset = super().get_queryset()
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
         
-        # Search query
-        query = self.request.query_params.get('q', None)
-        if query:
-            queryset = queryset.filter(
-                Q(name__icontains=query) | 
-                Q(category_id__icontains=query) |
-                Q(path__icontains=query)
-            )
+        batch_id = kwargs.get('batch_id')
+        context['batch_id'] = batch_id
         
-        # Parent filter
-        parent_id = self.request.query_params.get('parent', None)
-        if parent_id:
-            if parent_id == 'null':
-                queryset = queryset.filter(parent_id__isnull=True)
+        # Get the API client
+        client = get_api_client()
+        if not client:
+            context['error'] = "Aktif bir Trendyol API yapılandırması bulunamadı. Lütfen önce API yapılandırmasını ayarlayın."
+            return context
+        
+        try:
+            # Clean batch ID if it has any prefix
+            if '-' in batch_id:
+                parts = batch_id.split('-')
+                if len(parts) > 1:
+                    batch_id = parts[-1]
+            
+            # Get batch status from API
+            response = client.products.get_batch_request_status(batch_id)
+            
+            # Process the response to build a structured status object
+            if response:
+                status = {}
+                
+                # If the response is a dictionary, extract the relevant fields
+                if isinstance(response, dict):
+                    status = {
+                        'source': json.dumps(response, indent=2),
+                        'status': response.get('status', 'UNKNOWN'),
+                        'creationDate': response.get('creationDate'),
+                        'lastModification': response.get('lastModification'),
+                        'itemCount': response.get('itemCount', 0),
+                        'failedItemCount': response.get('failedItemCount', 0),
+                        'items': response.get('items', [])
+                    }
+                # If the response is a string, try to parse it as JSON
+                elif isinstance(response, str):
+                    try:
+                        resp_data = json.loads(response)
+                        status = {
+                            'source': response,
+                            'status': resp_data.get('status', 'UNKNOWN'),
+                            'creationDate': resp_data.get('creationDate'),
+                            'lastModification': resp_data.get('lastModification'),
+                            'itemCount': resp_data.get('itemCount', 0),
+                            'failedItemCount': resp_data.get('failedItemCount', 0),
+                            'items': resp_data.get('items', [])
+                        }
+                    except json.JSONDecodeError:
+                        status = {
+                            'source': response,
+                            'status': 'RAW_RESPONSE',
+                            'message': response
+                        }
+                
+                context['status'] = status
             else:
-                queryset = queryset.filter(parent_id=parent_id)
-        
-        # Active filter
-        active = self.request.query_params.get('active', None)
-        if active:
-            if active.lower() == 'true':
-                queryset = queryset.filter(is_active=True)
-            elif active.lower() == 'false':
-                queryset = queryset.filter(is_active=False)
-        
-        return queryset
-    
-    @action(detail=False, methods=['post'])
-    def refresh(self, request):
-        """
-        Refresh all categories from Trendyol.
-        """
-        try:
-            categories = api_client.fetch_categories()
-            return Response({'status': 'success', 'count': len(categories)})
+                context['error'] = "API'den yanıt alınamadı. Batch ID geçerli olmayabilir veya API erişim sorunu olabilir."
         except Exception as e:
-            return Response(
-                {'status': 'error', 'message': str(e)},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-    
-    @action(detail=True, methods=['get'])
-    def attributes(self, request, pk=None):
-        """
-        Get attributes for a specific category.
-        """
-        category = self.get_object()
+            context['error'] = f"Batch durumu kontrol edilirken hata oluştu: {str(e)}"
         
-        try:
-            attributes = api_client.get_required_attributes_for_category(category.category_id)
-            return Response(attributes)
-        except Exception as e:
-            return Response(
-                {'status': 'error', 'message': str(e)},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+        return context

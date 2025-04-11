@@ -1337,7 +1337,8 @@ def prepare_product_data(product: TrendyolProduct) -> Dict[str, Any]:
       'Bej': 1012,
       'Lacivert': 1013,
       'Turuncu': 1014,
-      'Krem': 1015
+      'Krem': 1015,
+      'Petrol': 1016   # Petrol rengini ekledik
   }
       
   if product.attributes:

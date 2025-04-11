@@ -110,19 +110,13 @@ class TrendyolProductAdmin(ModelAdmin):
     
     def display_batch_id(self, obj):
         """
-        Display batch ID as a clickable link to Trendyol Seller Panel.
+        Display batch ID as a clickable link to custom batch status page.
         """
         if obj.batch_id:
-            # Extract just the UUID part if it contains a timestamp
-            import re
-            batch_uuid = obj.batch_id
-            match = re.search(r'([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})', obj.batch_id)
-            if match:
-                batch_uuid = match.group(1)
-            
-            # Create link to seller panel batch status page
-            seller_panel_url = f"https://partner.trendyol.com/integration/products/upload/status?batchId={batch_uuid}"
-            return format_html('<a href="{}" target="_blank">{}</a>', seller_panel_url, obj.batch_id)
+            # Create link to our custom batch status page
+            from django.urls import reverse
+            batch_status_url = reverse('trendyol:batch_status', args=[obj.batch_id])
+            return format_html('<a href="{}" target="_blank">{}</a>', batch_status_url, obj.batch_id)
         return "Not available"
     display_batch_id.short_description = "Batch ID"
     
@@ -197,7 +191,8 @@ class TrendyolProductAdmin(ModelAdmin):
             'Bej': 1012,
             'Lacivert': 1013,
             'Turuncu': 1014,
-            'Krem': 1015
+            'Krem': 1015,
+            'Petrol': 1016   # Petrol rengini ekledik
         }
         
         for product in queryset:
@@ -210,7 +205,7 @@ class TrendyolProductAdmin(ModelAdmin):
                 # Step 1: Fix product attributes (extract color from title if possible)
                 color = None
                 if product.title:
-                    color_match = re.search(r'(Beyaz|Siyah|Mavi|Kirmizi|Pembe|Yeşil|Sarı|Mor|Gri|Kahverengi|Ekru|Bej|Lacivert|Turuncu|Krem)', 
+                    color_match = re.search(r'(Beyaz|Siyah|Mavi|Kirmizi|Pembe|Yeşil|Sarı|Mor|Gri|Kahverengi|Ekru|Bej|Lacivert|Turuncu|Krem|Petrol)', 
                                             product.title, re.IGNORECASE)
                     if color_match:
                         color = color_match.group(1)
@@ -302,7 +297,8 @@ class TrendyolProductAdmin(ModelAdmin):
             'Bej': 1012,
             'Lacivert': 1013,
             'Turuncu': 1014,
-            'Krem': 1015
+            'Krem': 1015,
+            'Petrol': 1016   # Petrol rengini ekledik
         }
         
         for product in queryset:
@@ -345,7 +341,7 @@ class TrendyolProductAdmin(ModelAdmin):
                     # Fix color attribute
                     color = lcw_product.color or None
                     if not color and product.title:
-                        color_match = re.search(r'(Beyaz|Siyah|Mavi|Kirmizi|Pembe|Yeşil|Sarı|Mor|Gri|Kahverengi|Ekru|Bej|Lacivert|Turuncu|Krem)', 
+                        color_match = re.search(r'(Beyaz|Siyah|Mavi|Kirmizi|Pembe|Yeşil|Sarı|Mor|Gri|Kahverengi|Ekru|Bej|Lacivert|Turuncu|Krem|Petrol)', 
                                                product.title, re.IGNORECASE)
                         if color_match:
                             color = color_match.group(1)
