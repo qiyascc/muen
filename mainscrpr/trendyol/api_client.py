@@ -1593,29 +1593,51 @@ def check_product_batch_status(product: TrendyolProduct) -> str:
         if not status and 'batchRequestId' in response:
             logger.info(f"Found batch ID {response.get('batchRequestId')} but no status field")
             
-            # Check if there are items to analyze
-            items = response.get('items', [])
-            if not items:
-                # Empty items list could mean the batch is still processing
-                # Since we're getting a valid response with the batch ID, we'll assume it's in progress
-                logger.info("Empty items list, assuming batch is still processing")
-                internal_status = 'processing'
-            else:
-                # Check if any items failed
-                failed_items = [item for item in items if item.get('status') in ['FAILED', 'INVALID']]
-                if failed_items:
-                    logger.info(f"Found {len(failed_items)} failed items")
+            # Check for dates - if we have creation or modification dates, the batch exists in the system
+            creation_date = response.get('creationDate')
+            last_modification = response.get('lastModification')
+            item_count = response.get('itemCount')
+            failed_item_count = response.get('failedItemCount')
+            
+            # Log the details we found
+            logger.info(f"Batch details: creation_date={creation_date}, last_modification={last_modification}, item_count={item_count}, failed_item_count={failed_item_count}")
+            
+            # If we have item counts, use them to determine status
+            if failed_item_count is not None:
+                if failed_item_count > 0:
+                    logger.info(f"Batch has {failed_item_count} failed items")
                     internal_status = 'failed'
-                else:
-                    # If we have items and none failed, assume completed
-                    logger.info("No failed items found, assuming batch completed")
+                elif item_count is not None and item_count > 0:
+                    logger.info(f"Batch has {item_count} items with no failures")
                     internal_status = 'completed'
+                else:
+                    logger.info("Batch has no items yet, assuming processing")
+                    internal_status = 'processing'
+            else:
+                # Check if there are items to analyze
+                items = response.get('items', [])
+                if not items:
+                    # Empty items list could mean the batch is still processing
+                    # Since we're getting a valid response with the batch ID, we'll assume it's in progress
+                    logger.info("Empty items list, assuming batch is still processing")
+                    internal_status = 'processing'
+                else:
+                    # Check if any items failed
+                    failed_items = [item for item in items if item.get('status') in ['FAILED', 'INVALID']]
+                    if failed_items:
+                        logger.info(f"Found {len(failed_items)} failed items")
+                        internal_status = 'failed'
+                    else:
+                        # If we have items and none failed, assume completed
+                        logger.info("No failed items found, assuming batch completed")
+                        internal_status = 'completed'
         else:
             # Map Trendyol status to our status
             status_mapping = {
                 'PROCESSING': 'processing',
                 'DONE': 'completed',
                 'FAILED': 'failed',
+                'SUCCESS': 'completed'
             }
             
             # If we don't have a standard status value, assume processing
