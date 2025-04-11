@@ -60,7 +60,7 @@ def fix_product_payload(product):
             
             # Try to extract color from the title - common in LCW product titles
             if product.title:
-                color_match = re.search(r'(Beyaz|Siyah|Mavi|Kirmizi|Pembe|Yeşil|Sarı|Mor|Gri|Kahverengi)', 
+                color_match = re.search(r'(Beyaz|Siyah|Mavi|Kirmizi|Pembe|Yeşil|Sarı|Mor|Gri|Kahverengi|Ekru|Bej|Lacivert|Turuncu|Krem)', 
                                        product.title, re.IGNORECASE)
                 if color_match:
                     color = color_match.group(1)
@@ -80,7 +80,12 @@ def fix_product_payload(product):
                 'Sarı': 1007,
                 'Mor': 1008,
                 'Gri': 1009,
-                'Kahverengi': 1010
+                'Kahverengi': 1010,
+                'Ekru': 1011,
+                'Bej': 1012,
+                'Lacivert': 1013,
+                'Turuncu': 1014,
+                'Krem': 1015
             }
             
             if color and color in color_id_map:

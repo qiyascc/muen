@@ -1396,15 +1396,11 @@ def prepare_product_data(product: TrendyolProduct) -> Dict[str, Any]:
   if image_urls:
     product_data["images"] = [{"url": url} for url in image_urls if url]
 
-  # Add color attribute if it exists in the attributes
-  color_from_attributes = None
-  if product.attributes and isinstance(product.attributes,
-                                       dict) and 'color' in product.attributes:
-    color_from_attributes = product.attributes.get('color')
-
-  if color_from_attributes and not any(
-      attr.get("attributeName") == "Renk" for attr in attributes):
-    product_data["color"] = color_from_attributes
+  # We no longer add a separate "color" field - it should only be in attributes
+  # This was previously causing validation errors
+  # Color should only be in attributes with attributeId: 348 (numeric)
+  # See updated implementation in admin.py and retry_failed_trendyol_products.py
+  pass
 
   # Ensure all numeric values are proper floats/ints
   for key in [
