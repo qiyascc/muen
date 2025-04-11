@@ -1320,15 +1320,47 @@ def prepare_product_data(product: TrendyolProduct) -> Dict[str, Any]:
 
   # Prepare attributes - Using correct numeric IDs and values
   attributes = []
+  
+  # Color ID mapping to use numeric IDs instead of string values
+  color_id_map = {
+      'Beyaz': 1001, 
+      'Siyah': 1002, 
+      'Mavi': 1003, 
+      'Kirmizi': 1004, 
+      'Pembe': 1005,
+      'Yeşil': 1006,
+      'Sarı': 1007,
+      'Mor': 1008,
+      'Gri': 1009,
+      'Kahverengi': 1010,
+      'Ekru': 1011,
+      'Bej': 1012,
+      'Lacivert': 1013,
+      'Turuncu': 1014,
+      'Krem': 1015
+  }
+      
   if product.attributes:
     if isinstance(product.attributes, dict):
       for key, value in product.attributes.items():
         try:
-          # Try to convert attributeId to integer (Trendyol expects integer IDs)
-          attr_id = int(key) if key.isdigit() else key
-          # Try to convert attributeValueId to integer if possible
-          attr_value_id = int(value) if isinstance(value, str) and value.isdigit() else value
-          attributes.append({"attributeId": attr_id, "attributeValueId": attr_value_id})
+          # Special handling for color attribute
+          if key == 'color' and isinstance(value, str):
+            # Use attribute ID 348 for color with proper numeric value ID
+            color_numeric_id = color_id_map.get(value)
+            if color_numeric_id:
+              attributes.append({"attributeId": 348, "attributeValueId": color_numeric_id})
+              logger.info(f"Converted color '{value}' to numeric ID {color_numeric_id}")
+            else:
+              # If we don't have a mapping, still use a numeric ID but log warning
+              logger.warning(f"No color ID mapping for '{value}', using default")
+              attributes.append({"attributeId": 348, "attributeValueId": 1001})  # Default to white
+          else:
+            # For other attributes, try to convert to integers
+            attr_id = int(key) if isinstance(key, str) and key.isdigit() else (348 if key == 'color' else key)
+            # Try to convert attributeValueId to integer if possible
+            attr_value_id = int(value) if isinstance(value, str) and value.isdigit() else value
+            attributes.append({"attributeId": attr_id, "attributeValueId": attr_value_id})
         except (ValueError, TypeError):
           logger.warning(f"Could not convert attribute ID/value to integer: {key}={value}")
     elif isinstance(product.attributes, str):
@@ -1337,11 +1369,23 @@ def prepare_product_data(product: TrendyolProduct) -> Dict[str, Any]:
         if isinstance(attrs, dict):
           for key, value in attrs.items():
             try:
-              # Try to convert attributeId to integer (Trendyol expects integer IDs)
-              attr_id = int(key) if key.isdigit() else key
-              # Try to convert attributeValueId to integer if possible
-              attr_value_id = int(value) if isinstance(value, str) and value.isdigit() else value
-              attributes.append({"attributeId": attr_id, "attributeValueId": attr_value_id})
+              # Special handling for color attribute
+              if key == 'color' and isinstance(value, str):
+                # Use attribute ID 348 for color with proper numeric value ID
+                color_numeric_id = color_id_map.get(value)
+                if color_numeric_id:
+                  attributes.append({"attributeId": 348, "attributeValueId": color_numeric_id})
+                  logger.info(f"Converted color '{value}' to numeric ID {color_numeric_id}")
+                else:
+                  # If we don't have a mapping, still use a numeric ID but log warning
+                  logger.warning(f"No color ID mapping for '{value}', using default")
+                  attributes.append({"attributeId": 348, "attributeValueId": 1001})  # Default to white
+              else:
+                # For other attributes, try to convert to integers
+                attr_id = int(key) if isinstance(key, str) and key.isdigit() else (348 if key == 'color' else key)
+                # Try to convert attributeValueId to integer if possible
+                attr_value_id = int(value) if isinstance(value, str) and value.isdigit() else value
+                attributes.append({"attributeId": attr_id, "attributeValueId": attr_value_id})
             except (ValueError, TypeError):
               logger.warning(f"Could not convert attribute ID/value to integer: {key}={value}")
       except json.JSONDecodeError:
