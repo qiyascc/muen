@@ -1,70 +1,98 @@
-# Trendyol API Endpoint Update Documentation
+# Trendyol API Endpoint Updates
 
-## Overview
-This document outlines updates made to the Trendyol API integration endpoints to align with the latest API documentation.
+This document outlines the changes made to the Trendyol API endpoints to align with the latest Trendyol API documentation.
 
-## Changes Made
+## Base URL Change
 
-### Base URL Update
-- Updated from: `https://apigw.trendyol.com/integration`
-- To: `https://api.trendyol.com/sapigw`
+The base URL has been updated from `apigw.trendyol.com/integration` to `api.trendyol.com/sapigw`:
 
-### Endpoints Updated
+- **Old Base URL**: `https://apigw.trendyol.com/integration`
+- **New Base URL**: `https://api.trendyol.com/sapigw` 
 
-#### Product Operations
-1. **Create Products**
-   - Old: `/sellers/{sellerId}/products`
-   - New: `/integration/product/sellers/{sellerId}/products`
-   - Method: POST
+## Product API Endpoints
 
-2. **Update Products**
-   - Old: `/sellers/{sellerId}/products`
-   - New: `/integration/product/sellers/{sellerId}/products`
-   - Method: PUT
+The product-related endpoints have been modified to include the proper path structure:
 
-3. **Delete Products**
-   - Old: `/sellers/{sellerId}/products`
-   - New: `/integration/product/sellers/{sellerId}/products`
-   - Method: DELETE
+- **Old Path Pattern**: `/product/suppliers/{supplierId}/...`
+- **New Path Pattern**: `/integration/product/sellers/{supplierId}/...`
 
-4. **Get Batch Request Status**
-   - Old: `/sellers/{sellerId}/products/batch-requests/{batchId}`
-   - New: `/integration/product/sellers/{sellerId}/products/batch-requests/{batchId}`
-   - Method: GET
+### Specific Product Endpoint Changes:
 
-5. **Get Products**
-   - Old: `/sellers/{sellerId}/products`
-   - New: `/integration/product/sellers/{sellerId}/products`
-   - Method: GET
-   - Params: barcode, approved, page, size
+1. **Create Products**:
+   - Old: `/product/suppliers/{supplierId}/products`
+   - New: `/integration/product/sellers/{supplierId}/products`
 
-#### Inventory Operations
-1. **Update Price and Inventory**
-   - Old: `/sellers/{sellerId}/products/price-and-inventory`
-   - New: `/integration/inventory/sellers/{sellerId}/products/price-and-inventory`
-   - Method: POST
+2. **Update Products**:
+   - Old: `/product/suppliers/{supplierId}/products`
+   - New: `/integration/product/sellers/{supplierId}/products`
 
-## Authentication
-- Added required User-Agent header: `{sellerId} - SelfIntegration`
-- Basic authentication remains unchanged (uses API key and secret)
+3. **Delete Products**:
+   - Old: `/product/suppliers/{supplierId}/products`
+   - New: `/integration/product/sellers/{supplierId}/products`
 
-## Testing and Verification
-The API update includes comprehensive testing to ensure all endpoints are functioning correctly with the new URL structure. The following tests were performed:
+4. **Get Products**:
+   - Old: `/product/suppliers/{supplierId}/products`
+   - New: `/integration/product/sellers/{supplierId}/products`
 
-1. API connection and authentication verification
-2. Product operations (create, update, delete, get)
-3. Batch request status checks
-4. Price and inventory updates
+5. **Get Batch Request Status**:
+   - Old: `/product/suppliers/{supplierId}/products/batch-requests/{batchRequestId}`
+   - New: `/integration/product/sellers/{supplierId}/products/batch-requests/{batchRequestId}`
 
-## Migration Impact
-- No database schema changes were required
-- Existing product data remains compatible with the new API structure
-- API configuration was updated in the database
+## Inventory API Endpoints
 
-## Troubleshooting
-If you encounter API errors after this update, check the following:
+The inventory-related endpoints have been updated to include the correct path structure:
 
-1. Verify the API configuration in the admin panel has the correct base URL
-2. Check that the User-Agent header is correctly set
-3. Review the logs for any detailed error messages from the API
-4. Ensure supplier ID/seller ID is correctly configured
+- **Old Path Pattern**: `/inventory/suppliers/{supplierId}/...`
+- **New Path Pattern**: `/integration/inventory/sellers/{supplierId}/...`
+
+### Specific Inventory Endpoint Changes:
+
+1. **Update Price and Inventory**:
+   - Old: `/inventory/suppliers/{supplierId}/price-and-inventory`
+   - New: `/integration/inventory/sellers/{supplierId}/products/price-and-inventory`
+
+## Brands API Endpoints
+
+The brands endpoints have been updated to follow the current API structure:
+
+1. **Get Brands**:
+   - Old: `/brands`
+   - New: `/brands/suppliers`
+
+2. **Get Brand by Name**:
+   - Old: `/brands/by-name`
+   - New: `/brands/suppliers/by-name`
+
+## Categories API Endpoints 
+
+The categories endpoints remain the same as they were already correct:
+
+1. **Get Categories**:
+   - Path: `/product-categories`
+
+2. **Get Category Attributes**:
+   - Path: `/product-categories/{categoryId}/attributes`
+
+## Refactoring for Maintainability
+
+All API client classes have been enhanced with helper methods to standardize endpoint generation:
+
+- `_get_products_endpoint()`
+- `_get_batch_request_endpoint(batch_id)`
+- `_get_price_inventory_endpoint()`
+- `_get_brands_endpoint()`
+- `_get_categories_endpoint()`
+- `_get_category_attributes_endpoint(category_id)`
+
+These helper methods make it easier to maintain the endpoint paths and provide a single place to update endpoint patterns if needed in the future.
+
+## Verification
+
+A comprehensive verification system has been added to test all API endpoints and ensure they match the expected patterns. The verification checks:
+
+1. Product API endpoints
+2. Inventory API endpoints
+3. Brands API endpoints
+4. Categories API endpoints
+
+This verification helps confirm that all endpoints are correctly configured and aligned with Trendyol's API documentation.

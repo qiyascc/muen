@@ -151,16 +151,20 @@ class BrandsAPI:
 
   def __init__(self, client):
     self.client = client
-
+    
+  def _get_brands_endpoint(self):
+    """Get the brands endpoint for verification"""
+    return '/brands/suppliers'
+    
   def get_brands(self, page=0, size=1000):
     """Get all brands from Trendyol"""
-    endpoint = '/brands'
+    endpoint = '/brands/suppliers'
     params = {'page': page, 'size': size}
     return self.client.make_request('GET', endpoint, params=params)
 
   def get_brand_by_name(self, name):
     """Get brand by name"""
-    endpoint = '/brands/by-name'
+    endpoint = '/brands/suppliers/by-name'
     params = {'name': name}
     return self.client.make_request('GET', endpoint, params=params)
 
@@ -170,15 +174,23 @@ class CategoriesAPI:
 
   def __init__(self, client):
     self.client = client
+    
+  def _get_categories_endpoint(self):
+    """Get the categories endpoint for verification"""
+    return '/product-categories'
+    
+  def _get_category_attributes_endpoint(self, category_id):
+    """Get the category attributes endpoint for verification"""
+    return f'/product-categories/{category_id}/attributes'
 
   def get_categories(self):
     """Get all categories from Trendyol"""
-    endpoint = '/product-categories'
+    endpoint = self._get_categories_endpoint()
     return self.client.make_request('GET', endpoint)
 
   def get_category_attributes(self, category_id):
     """Get attributes for a specific category"""
-    endpoint = f'/product-categories/{category_id}/attributes'
+    endpoint = self._get_category_attributes_endpoint(category_id)
     return self.client.make_request('GET', endpoint)
 
 

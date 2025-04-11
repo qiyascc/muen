@@ -205,6 +205,33 @@ def test_api_endpoints(client) -> bool:
         
         logger.info(f"Batch request endpoint correctly configured: {batch_endpoint}")
         
+        # Test brands endpoint
+        brands_endpoint = client.brands._get_brands_endpoint()
+        if not brands_endpoint.startswith('/brands/suppliers'):
+            logger.error(f"Brands endpoint has incorrect path: {brands_endpoint}")
+            logger.error("Expected path to start with: /brands/suppliers")
+            return False
+            
+        logger.info(f"Brands endpoint correctly configured: {brands_endpoint}")
+        
+        # Test categories endpoints
+        categories_endpoint = client.categories._get_categories_endpoint()
+        if not categories_endpoint.startswith('/product-categories'):
+            logger.error(f"Categories endpoint has incorrect path: {categories_endpoint}")
+            logger.error("Expected path to start with: /product-categories")
+            return False
+            
+        logger.info(f"Categories endpoint correctly configured: {categories_endpoint}")
+        
+        # Test category attributes endpoint with a dummy ID
+        category_attributes_endpoint = client.categories._get_category_attributes_endpoint(123)
+        if not category_attributes_endpoint.startswith('/product-categories/'):
+            logger.error(f"Category attributes endpoint has incorrect path: {category_attributes_endpoint}")
+            logger.error("Expected path to start with: /product-categories/")
+            return False
+            
+        logger.info(f"Category attributes endpoint correctly configured: {category_attributes_endpoint}")
+        
         return True
     except Exception as e:
         logger.error(f"Error testing API endpoints: {str(e)}")
