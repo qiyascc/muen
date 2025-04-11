@@ -17,11 +17,12 @@ logger = logging.getLogger(__name__)
 class TrendyolApi:
     """Custom Trendyol API client implementation"""
     
-    def __init__(self, api_key, api_secret, supplier_id, api_url='https://api.trendyol.com/sapigw'):
+    def __init__(self, api_key, api_secret, supplier_id, api_url='https://api.trendyol.com/sapigw', user_agent=None):
         self.api_key = api_key
         self.api_secret = api_secret
         self.supplier_id = supplier_id
         self.api_url = api_url
+        self.user_agent = user_agent or f"{supplier_id} - SelfIntegration"
         self.brands = BrandsAPI(self)
         self.categories = CategoriesAPI(self)
         self.products = ProductsAPI(self)
@@ -35,13 +36,10 @@ class TrendyolApi:
         auth_string = f"{self.api_key}:{self.api_secret}"
         auth_encoded = base64.b64encode(auth_string.encode()).decode()
         
-        # Create User-Agent header with supplier ID
-        user_agent = f"{self.supplier_id} - SelfIntegration"
-        
         headers = {
             'Authorization': f"Basic {auth_encoded}",
             'Content-Type': 'application/json',
-            'User-Agent': user_agent,
+            'User-Agent': self.user_agent,
         }
         
         logger.info(f"Making {method} request to {url}")
@@ -242,7 +240,7 @@ class InventoryAPI:
         Returns:
             Dictionary with batchRequestId if successful
         """
-        endpoint = f'/inventory/sellers/{self.client.supplier_id}/products/price-and-inventory'
+        endpoint = f'/suppliers/{self.client.supplier_id}/products/price-and-inventory'
         return self.client.make_request('POST', endpoint, data={"items": items})
 
 
@@ -257,12 +255,18 @@ def get_api_client() -> Optional[TrendyolApi]:
             logger.error("No active Trendyol API configuration found")
             return None
         
+        # Get the user_agent from the config, or create a default one
+        user_agent = config.user_agent
+        if not user_agent:
+            user_agent = f"{config.seller_id} - SelfIntegration"
+            
         # Initialize the Trendyol API client
         client = TrendyolApi(
             api_key=config.api_key,
             api_secret=config.api_secret,
-            supplier_id=config.seller_id,
-            api_url=config.base_url
+            supplier_id=config.supplier_id or config.seller_id,  # Use supplier_id if set, otherwise fall back to seller_id
+            api_url=config.base_url,
+            user_agent=user_agent
         )
         
         return client
