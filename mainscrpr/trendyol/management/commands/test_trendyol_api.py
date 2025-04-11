@@ -1,41 +1,74 @@
+"""
+Command to test Trendyol API connectivity and functionality.
+This is a simple wrapper around the run_trendyol_verification.py script
+for convenient access from the command line.
+"""
+import os
+import sys
+import subprocess
 from django.core.management.base import BaseCommand
 from django.utils import timezone
-from trendyol.test_connection import (
-    test_trendyol_api_connection,
-    test_categories_api,
-    test_fetch_and_store
-)
 from loguru import logger
 
 class Command(BaseCommand):
-    help = 'Test the Trendyol API connection'
+    help = 'Test Trendyol API connectivity and functionality'
+
+    def add_arguments(self, parser):
+        parser.add_argument(
+            '--verbose',
+            action='store_true',
+            help='Display detailed test output'
+        )
+        parser.add_argument(
+            '--include-product-ops',
+            action='store_true',
+            help='Include product operations tests'
+        )
 
     def handle(self, *args, **options):
-        logger.info("Starting Trendyol API connection tests...")
+        script_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), 
+                                 'run_trendyol_verification.py')
         
-        # Test API connection
-        connection_ok = test_trendyol_api_connection()
-        if connection_ok:
-            self.stdout.write(self.style.SUCCESS('Successfully connected to Trendyol API'))
-        else:
-            self.stdout.write(self.style.ERROR('Failed to connect to Trendyol API'))
+        if not os.path.exists(script_path):
+            self.stderr.write(self.style.ERROR(f"Verification script not found at {script_path}"))
+            return
+            
+        cmd = [sys.executable, script_path]
         
-        # Test categories API
-        categories_ok = test_categories_api()
-        if categories_ok:
-            self.stdout.write(self.style.SUCCESS('Successfully fetched categories from Trendyol API'))
-        else:
-            self.stdout.write(self.style.ERROR('Failed to fetch categories from Trendyol API'))
+        if options['verbose']:
+            cmd.append('--verbose')
+            
+        if options['include_product_ops']:
+            cmd.append('--include-product-ops')
+            
+        self.stdout.write(self.style.SUCCESS(f"Running Trendyol API tests at {timezone.now()}"))
+        self.stdout.write(self.style.SUCCESS(f"Command: {' '.join(cmd)}"))
+        self.stdout.write(self.style.SUCCESS('-' * 80))
         
-        # Test fetch and store functionality
-        fetch_ok = test_fetch_and_store()
-        if fetch_ok:
-            self.stdout.write(self.style.SUCCESS('Successfully fetched and stored data in the database'))
-        else:
-            self.stdout.write(self.style.ERROR('Failed to fetch and store data'))
-        
-        # Overall status
-        if connection_ok and categories_ok and fetch_ok:
-            self.stdout.write(self.style.SUCCESS('All tests passed! API connection is working correctly.'))
-        else:
-            self.stdout.write(self.style.ERROR('Some tests failed. Check logs for details.'))
+        try:
+            # Run the command and stream output to console
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1  # Line buffered
+            )
+            
+            # Stream output
+            for line in process.stdout:
+                self.stdout.write(line.rstrip())
+                
+            # Wait for process to complete
+            exit_code = process.wait()
+            
+            if exit_code == 0:
+                self.stdout.write(self.style.SUCCESS("\nAll tests passed successfully!"))
+            else:
+                self.stdout.write(self.style.ERROR(f"\nTests failed with exit code {exit_code}"))
+                
+            return exit_code
+                
+        except Exception as e:
+            self.stderr.write(self.style.ERROR(f"Error running tests: {str(e)}"))
+            return 1

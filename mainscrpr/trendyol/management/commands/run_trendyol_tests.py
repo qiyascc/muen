@@ -72,8 +72,8 @@ class Command(BaseCommand):
                 f'trendyol.tests.{options["test_module"]}.{options["test_case"]}'
             )
         else:
-            # Run all discovered tests
-            suite = loader.discover('mainscrpr', pattern='test_*.py')
+            # Run all discovered tests in the trendyol.tests package
+            suite = loader.discover('mainscrpr/trendyol/tests', pattern='test_*.py')
         
         # Filter out product sync tests if not explicitly included
         if not options['include_product_sync']:
