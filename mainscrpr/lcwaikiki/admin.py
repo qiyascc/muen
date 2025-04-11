@@ -7,6 +7,86 @@ from unfold.forms import AdminPasswordChangeForm, UserChangeForm, UserCreationFo
 from .models import Config, ProductAvailableUrl, ProductDeletedUrl, ProductNewUrl
 from .product_models import Product, ProductSize, City, Store, SizeStoreStock
 
+# Product Models Admin Configuration
+
+class ProductSizeInline(TabularInline):
+    """
+    Inline admin for ProductSize model.
+    """
+    model = ProductSize
+    extra = 0
+    fields = ('size_name', 'size_id', 'size_general_stock', 'product_option_size_reference')
+
+
+@admin.register(Product)
+class ProductAdmin(ModelAdmin):
+    """
+    Admin configuration for the Product model.
+    """
+    model = Product
+    list_display = ('title', 'product_code', 'color', 'price', 'in_stock', 'status', 'timestamp')
+    list_filter = ('in_stock', 'status', 'timestamp')
+    search_fields = ('title', 'product_code', 'url')
+    readonly_fields = ('timestamp',)
+    list_per_page = 20
+    inlines = [ProductSizeInline]
+    
+    # Unfold specific configurations
+    fieldsets = (
+        ("Product Information", {"fields": ("title", "product_code", "category", "color")}),
+        ("Details", {"fields": ("description", "price", "discount_ratio", "in_stock", "status")}),
+        ("URL and Images", {"fields": ("url", "images")}),
+        ("Metadata", {"fields": ("timestamp",)}),
+    )
+    
+    date_hierarchy = 'timestamp'
+    empty_value_display = 'N/A'
+
+
+@admin.register(City)
+class CityAdmin(ModelAdmin):
+    """
+    Admin configuration for the City model.
+    """
+    model = City
+    list_display = ('city_id', 'name')
+    search_fields = ('city_id', 'name')
+    list_per_page = 20
+    
+    # Unfold specific configurations
+    fieldsets = (
+        ("City Information", {"fields": ("city_id", "name")}),
+    )
+
+
+class SizeStoreStockInline(TabularInline):
+    """
+    Inline admin for SizeStoreStock model.
+    """
+    model = SizeStoreStock
+    extra = 0
+    fields = ('product_size', 'stock')
+
+
+@admin.register(Store)
+class StoreAdmin(ModelAdmin):
+    """
+    Admin configuration for the Store model.
+    """
+    model = Store
+    list_display = ('store_name', 'city', 'store_county', 'store_phone')
+    list_filter = ('city',)
+    search_fields = ('store_name', 'store_code', 'address')
+    list_per_page = 20
+    inlines = [SizeStoreStockInline]
+    
+    # Unfold specific configurations
+    fieldsets = (
+        ("Store Information", {"fields": ("store_code", "store_name", "city")}),
+        ("Contact Information", {"fields": ("store_county", "store_phone", "address")}),
+        ("Location", {"fields": ("latitude", "longitude")}),
+    )
+
 @admin.register(Config)
 class ConfigAdmin(ModelAdmin):
     """
