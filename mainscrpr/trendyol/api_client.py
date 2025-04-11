@@ -406,11 +406,14 @@ class TrendyolCategoryFinder:
                 )
                 
                 # Process subcategories
-                self._cache_categories_in_db(
-                    category.get('subCategories', []),
-                    parent_id=cat_id,
-                    path=new_path
-                )
+                subcategories = category.get('subCategories', [])
+                if subcategories:
+                    logger.info(f"Processing {len(subcategories)} subcategories for {name} (ID: {cat_id})")
+                    self._cache_categories_in_db(
+                        subcategories,
+                        parent_id=cat_id,
+                        path=new_path
+                    )
             except Exception as e:
                 logger.error(f"Error caching category {name} (ID: {cat_id}): {str(e)}")
     
