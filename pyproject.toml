@@ -14,4 +14,5 @@ dependencies = [
     "tqdm>=4.67.1",
     "trafilatura>=2.0.0",
     "psycopg2-binary>=2.9.10",
+    "trendyol-api-python-sdk>=0.0.8",
 ]
