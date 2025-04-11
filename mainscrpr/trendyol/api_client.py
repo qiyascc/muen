@@ -1409,9 +1409,12 @@ def prepare_product_data(product: TrendyolProduct) -> Dict[str, Any]:
           })
 
   # Prepare product data
+  # Limit title to 100 characters to avoid "Ürün Adı 100 karakterden fazla olamaz" error
+  title = product.title[:100] if product.title and len(product.title) > 100 else product.title
+  
   product_data = {
       "barcode": product.barcode,
-      "title": product.title,
+      "title": title,
       "productMainId": product.product_main_id or product.barcode,
       "brandId": brand_id,
       "categoryId": category_id,
