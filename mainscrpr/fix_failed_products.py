@@ -9,6 +9,7 @@ Run this script with: python manage.py shell < fix_failed_products.py
 
 import os
 import sys
+import re
 import django
 from loguru import logger
 
@@ -49,31 +50,35 @@ def fix_product_payload(product):
             changed = True
             logger.info(f"Fixed price for product {product.id} to default 99.99")
     
-    # 4. Fix attributes with numeric IDs
+    # 4. Fix attributes based on color and size
     if product.attributes:
         # Check if attributes are in the right format
         try:
-            # Check the structure of attributes
-            if isinstance(product.attributes, dict):
-                # Convert to list format if it's a dict
-                product.attributes = [{'attributeId': k, 'attributeValueId': v} 
-                                    for k, v in product.attributes.items()]
+            # Best format is a simple array with proper attributeId/attributeValueId pairs
+            # For LCW products with color, use this simplified format that matches Trendyol's expectations
+            color = None
+            
+            # Try to extract color from the title - common in LCW product titles
+            if product.title:
+                color_match = re.search(r'(Beyaz|Siyah|Mavi|Kirmizi|Pembe|Yeşil|Sarı|Mor|Gri|Kahverengi)', 
+                                       product.title, re.IGNORECASE)
+                if color_match:
+                    color = color_match.group(1)
+            
+            # If a TrendyolProduct is linked to an LCWaikiki product, get the color from there
+            if not color and product.lcwaikiki_product and hasattr(product.lcwaikiki_product, 'color'):
+                color = product.lcwaikiki_product.color
+            
+            if color:
+                # Simple attribute format for Trendyol - just color as an attributeId
+                product.attributes = [{"attributeId": "color", "attributeValueId": color}]
                 changed = True
-                logger.info(f"Converted attributes from dict to list for product {product.id}")
-            elif isinstance(product.attributes, list):
-                # Fix any string attributeValueId that should be numeric
-                for attr in product.attributes:
-                    if isinstance(attr, dict) and 'attributeValueId' in attr:
-                        val = attr['attributeValueId']
-                        if isinstance(val, str) and val.isdigit():
-                            attr['attributeValueId'] = int(val)
-                            changed = True
-                            logger.info(f"Fixed attribute value ID format for product {product.id}")
+                logger.info(f"Simplified attributes with color: {color} for product {product.id}")
             else:
-                # Reset attributes if format is completely wrong
+                # If we can't determine color, use empty attributes
                 product.attributes = []
                 changed = True
-                logger.info(f"Reset invalid attributes format for product {product.id}")
+                logger.info(f"Reset attributes (no color found) for product {product.id}")
         except Exception as e:
             # If there's any error processing attributes, reset them
             logger.error(f"Error fixing attributes for product {product.id}: {str(e)}")
