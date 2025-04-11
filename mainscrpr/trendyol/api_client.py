@@ -127,6 +127,10 @@ class ProductsAPI:
             params['approved'] = approved
             
         return self.client.make_request('GET', endpoint, params=params)
+        
+    def get_product_by_barcode(self, barcode):
+        """Get product by barcode"""
+        return self.get_products(barcode=barcode, page=0, size=1)
 
 
 def get_api_client() -> Optional[TrendyolApi]:
