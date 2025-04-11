@@ -2,12 +2,11 @@ import logging
 import json
 import time
 import requests
+import base64
 from decimal import Decimal
 from typing import Dict, List, Optional, Any, Tuple, Union
 
-import json
 from django.utils import timezone
-# We'll implement our own API client class
 
 from .models import TrendyolAPIConfig, TrendyolBrand, TrendyolCategory, TrendyolProduct
 
@@ -17,7 +16,7 @@ logger = logging.getLogger(__name__)
 class TrendyolApi:
     """Custom Trendyol API client implementation"""
     
-    def __init__(self, api_key, api_secret, supplier_id, api_url='https://api.trendyol.com/sapigw'):
+    def __init__(self, api_key, api_secret, supplier_id, api_url='https://apigw.trendyol.com/integration'):
         self.api_key = api_key
         self.api_secret = api_secret
         self.supplier_id = supplier_id
@@ -25,20 +24,28 @@ class TrendyolApi:
         self.brands = BrandsAPI(self)
         self.categories = CategoriesAPI(self)
         self.products = ProductsAPI(self)
+        self.inventory = InventoryAPI(self)
         
     def make_request(self, method, endpoint, data=None, params=None):
         """Make a request to the Trendyol API"""
-        import base64
-        import hmac
-        import hashlib
-        import time
-        
         url = f"{self.api_url}{endpoint}"
+        
+        # Format the auth string and encode as Base64 for Basic Authentication
+        auth_string = f"{self.api_key}:{self.api_secret}"
+        auth_encoded = base64.b64encode(auth_string.encode()).decode()
+        
+        # Create User-Agent header with supplier ID
+        user_agent = f"{self.supplier_id} - SelfIntegration"
+        
         headers = {
-            'Authorization': f"Basic {base64.b64encode(f'{self.api_key}:{self.api_secret}'.encode()).decode()}",
+            'Authorization': f"Basic {auth_encoded}",
             'Content-Type': 'application/json',
-            'User-Agent': 'Trendyol-Python-SDK/1.0',
+            'User-Agent': user_agent,
         }
+        
+        logger.debug(f"Making {method} request to {url}")
+        if data:
+            logger.debug(f"Request data: {json.dumps(data)}")
         
         try:
             response = requests.request(
@@ -50,18 +57,27 @@ class TrendyolApi:
                 timeout=30
             )
             
+            # Log response status
+            logger.debug(f"Response status: {response.status_code}")
+            
             # Check if the request was successful
             response.raise_for_status()
             
             # Parse the response JSON
             try:
-                return response.json()
+                result = response.json()
+                logger.debug(f"Response data: {json.dumps(result)}")
+                return result
             except ValueError:
                 # If the response is not JSON, return the response text
+                logger.debug(f"Response text: {response.text}")
                 return {"response": response.text}
                 
         except requests.exceptions.RequestException as e:
             logger.error(f"Error making request to Trendyol API: {str(e)}")
+            if hasattr(e, 'response') and e.response:
+                logger.error(f"Response status: {e.response.status_code}")
+                logger.error(f"Response content: {e.response.text}")
             return None
 
 
@@ -71,10 +87,22 @@ class BrandsAPI:
     def __init__(self, client):
         self.client = client
         
-    def get_brands(self):
+    def get_brands(self, page=0, size=1000):
         """Get all brands from Trendyol"""
-        endpoint = '/brands'
-        return self.client.make_request('GET', endpoint)
+        endpoint = '/product/brands'
+        params = {
+            'page': page,
+            'size': size
+        }
+        return self.client.make_request('GET', endpoint, params=params)
+    
+    def get_brand_by_name(self, name):
+        """Get brand by name"""
+        endpoint = '/product/brands/by-name'
+        params = {
+            'name': name
+        }
+        return self.client.make_request('GET', endpoint, params=params)
 
 
 class CategoriesAPI:
@@ -85,12 +113,12 @@ class CategoriesAPI:
         
     def get_categories(self):
         """Get all categories from Trendyol"""
-        endpoint = '/product-categories'
+        endpoint = '/product/product-categories'
         return self.client.make_request('GET', endpoint)
         
     def get_category_attributes(self, category_id):
         """Get attributes for a specific category"""
-        endpoint = f'/product-categories/{category_id}/attributes'
+        endpoint = f'/product/product-categories/{category_id}/attributes'
         return self.client.make_request('GET', endpoint)
 
 
@@ -102,19 +130,28 @@ class ProductsAPI:
         
     def create_products(self, products):
         """Create products on Trendyol"""
-        endpoint = '/suppliers/{}/v2/products'.format(self.client.supplier_id)
+        endpoint = f'/product/sellers/{self.client.supplier_id}/products'
         return self.client.make_request('POST', endpoint, data={"items": products})
+        
+    def update_products(self, products):
+        """Update existing products on Trendyol"""
+        endpoint = f'/product/sellers/{self.client.supplier_id}/products'
+        return self.client.make_request('PUT', endpoint, data={"items": products})
+        
+    def delete_products(self, barcodes):
+        """Delete products from Trendyol"""
+        endpoint = f'/product/sellers/{self.client.supplier_id}/products'
+        items = [{"barcode": barcode} for barcode in barcodes]
+        return self.client.make_request('DELETE', endpoint, data={"items": items})
         
     def get_batch_request_status(self, batch_id):
         """Get the status of a batch request"""
-        endpoint = '/suppliers/{}/products/batch-requests/{}'.format(
-            self.client.supplier_id, batch_id
-        )
+        endpoint = f'/product/sellers/{self.client.supplier_id}/products/batch-requests/{batch_id}'
         return self.client.make_request('GET', endpoint)
         
     def get_products(self, barcode=None, approved=None, page=0, size=50):
         """Get products from Trendyol"""
-        endpoint = '/suppliers/{}/products'.format(self.client.supplier_id)
+        endpoint = f'/product/sellers/{self.client.supplier_id}/products'
         params = {
             'page': page,
             'size': size
@@ -131,6 +168,27 @@ class ProductsAPI:
     def get_product_by_barcode(self, barcode):
         """Get product by barcode"""
         return self.get_products(barcode=barcode, page=0, size=1)
+
+
+class InventoryAPI:
+    """Trendyol Inventory API for price and stock updates"""
+    
+    def __init__(self, client):
+        self.client = client
+        
+    def update_price_and_inventory(self, items):
+        """
+        Update price and inventory for products
+        
+        Args:
+            items: List of dictionaries with barcode, quantity, salePrice, and listPrice
+                  Example: [{"barcode": "123456", "quantity": 10, "salePrice": 100.0, "listPrice": 120.0}]
+        
+        Returns:
+            Dictionary with batchRequestId if successful
+        """
+        endpoint = f'/inventory/sellers/{self.client.supplier_id}/products/price-and-inventory'
+        return self.client.make_request('POST', endpoint, data={"items": items})
 
 
 def get_api_client() -> Optional[TrendyolApi]:

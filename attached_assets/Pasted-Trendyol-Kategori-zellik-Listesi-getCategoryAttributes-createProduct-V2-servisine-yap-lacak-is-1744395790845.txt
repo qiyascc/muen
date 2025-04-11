@@ -1,0 +1,97 @@
+Trendyol Kategori - Özellik Listesi (getCategoryAttributes)
+createProduct V2 servisine yapılacak isteklerde gönderilecek attributes bilgileri ve bu bilgilere ait detaylar bu servis kullanılarak alınacaktır.
+
+createProduct yapmak için en alt seviyedeki kategori ID bilgisi kullanılmalıdır. Seçtiğiniz kategorinin alt kategorileri var ise bu kategori bilgisi ile ürün aktarımı yapamazsınız.
+Yeni kategorileri özellikleri eklenebileceği sebebiyle güncel kategori özellik listesini haftalık olarak almanızı öneririz.
+ipucu
+Ürün kategori ağacı belirli aralıklarla güncellenmektedir. Güncel olmayan bir kategori ağacı kullanmanız durumunda eksik veya hatalı veri girişi yapabilirsiniz. Bu sebep ile her işlem öncesinde en güncel kategori ağacını kullanmanız gerekmektedir.
+
+GET getCategoryAttributes
+PROD
+https://apigw.trendyol.com/integration/product/product-categories/{categoriId}/attributes
+STAGE
+https://stageapigw.trendyol.com/integration/product/product-categories/{categoriId}/attributes
+Örnek Servis Cevabı
+
+{
+    "id": 411,
+    "name": "Casual Ayakkabı",
+    "displayName": "Casual Ayakkabı",
+    "categoryAttributes": [
+        {
+        "categoryId": 411,
+        "attribute": {
+            "id": 14,
+            "name": "Materyal"
+        },
+        "required": false,
+        "allowCustom": false,
+        "varianter": false,
+        "slicer": false,
+        "attributeValues": [
+            {
+            "id": 82,
+            "name": "Deri"
+            },
+            {
+            "id": 85,
+            "name": "Hakiki Deri"
+            },
+            {
+            "id": 105,
+            "name": "Suni Deri"
+            },
+            {
+            "id": 107,
+            "name": "Süet"
+            },
+            {
+            "id": 109,
+            "name": "Tekstil"
+            },
+            {
+            "id": 685,
+            "name": "Rugan"
+            },
+            {
+            "id": 715,
+            "name": "Nubuk"
+            }
+        ]
+        },
+        {
+        "categoryId": 411,
+        "attribute": {
+            "id": 207,
+            "name": "Malzeme Tipi"
+        },
+        "required": false,
+        "allowCustom": false,
+        "varianter": false,
+        "slicer": false,
+        "attributeValues": [
+            {
+            "id": 2214,
+            "name": "Hakiki"
+            },
+            {
+            "id": 2215,
+            "name": "Suni"
+            }
+        ]
+    },
+}
+
+Filtre Parametreleri
+
+Parametre	Açıklama
+name	Kategorinin Trendyol sistemindeki Adı
+displayName	Kategorinin Trendyol sistemindeki Adı- Önyüzde görünen
+attribute.id	Kategorideki özellik ID bilgisi
+attribute.name	Kategorideki özellik adı
+allowCustom	true ise createProduct yapılırken ID yerine freetext-string gönderim yapılmalıdır.
+required	true ise createProduct yapılırken ilgili attributes, attributeValues alanında gönderilmesi gerekmektedir.
+slicer	true ise trendyol.com üzerinde ayrı bir ürün kartı oluşturulur.
+varianter	Trendyol.com'da ürünü görünürken bu özellik bilgisi bir varyant bilgisi olup olmadığını ifade eder
+attributeValues.id	Kategorideki özelliği için girilebilecek değer ID bilgisi
+attributeValues.name	Kategorideki özelliği için girilebileek değer adı
