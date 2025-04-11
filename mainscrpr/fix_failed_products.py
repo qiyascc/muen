@@ -51,7 +51,7 @@ def fix_product_payload(product):
             logger.info(f"Fixed price for product {product.id} to default 99.99")
     
     # 4. Fix attributes based on color and size
-    if product.attributes:
+    if product.attributes is not None:
         # Check if attributes are in the right format
         try:
             # Best format is a simple array with proper attributeId/attributeValueId pairs
@@ -66,19 +66,34 @@ def fix_product_payload(product):
                     color = color_match.group(1)
             
             # If a TrendyolProduct is linked to an LCWaikiki product, get the color from there
-            if not color and product.lcwaikiki_product and hasattr(product.lcwaikiki_product, 'color'):
+            if not color and hasattr(product, 'lcwaikiki_product') and product.lcwaikiki_product and hasattr(product.lcwaikiki_product, 'color'):
                 color = product.lcwaikiki_product.color
             
-            if color:
-                # Simple attribute format for Trendyol - just color as an attributeId
-                product.attributes = [{"attributeId": "color", "attributeValueId": color}]
+            # Get color ID mapping for Trendyol
+            color_id_map = {
+                'Beyaz': 1001, 
+                'Siyah': 1002, 
+                'Mavi': 1003, 
+                'Kirmizi': 1004, 
+                'Pembe': 1005,
+                'Yeşil': 1006,
+                'Sarı': 1007,
+                'Mor': 1008,
+                'Gri': 1009,
+                'Kahverengi': 1010
+            }
+            
+            if color and color in color_id_map:
+                # Format with numeric attributeValueId as expected by Trendyol API
+                color_id = color_id_map[color]
+                product.attributes = [{"attributeId": 348, "attributeValueId": color_id}]
                 changed = True
-                logger.info(f"Simplified attributes with color: {color} for product {product.id}")
+                logger.info(f"Applied color attribute with ID mapping: {color} => {color_id} for product {product.id}")
             else:
-                # If we can't determine color, use empty attributes
+                # If we can't determine color or don't have its ID, use empty attributes
                 product.attributes = []
                 changed = True
-                logger.info(f"Reset attributes (no color found) for product {product.id}")
+                logger.info(f"Reset attributes (no color ID mapping found) for product {product.id}")
         except Exception as e:
             # If there's any error processing attributes, reset them
             logger.error(f"Error fixing attributes for product {product.id}: {str(e)}")
@@ -126,21 +141,58 @@ def main():
         try:
             logger.info(f"Retrying product {product.id}: {product.title}")
             
-            # Reset batch ID and status
-            product.batch_id = None
-            product.batch_status = None
-            product.status_message = None
+            # Keep the existing batch_id if it exists (to meet the not-null constraint)
+            # Only reset the status and set a placeholder message (because the field can't be null)
+            original_batch_id = product.batch_id
+            product.batch_status = 'pending'  # Reset to pending instead of None
+            product.status_message = 'Pending retry'  # Set a placeholder status message
             product.save()
             
-            # Retry product creation
-            batch_id = create_trendyol_product(product)
-            retried_count += 1
-            
-            if batch_id:
-                success_count += 1
-                logger.info(f"Successfully created product {product.id} with batch ID {batch_id}")
+            # Directly call API client to prepare and send the product
+            # This bypasses the create_trendyol_product function which might be resetting the batch_id
+            client = get_api_client()
+            if client:
+                # Prepare data
+                api_data = prepare_product_data(product)
+                if api_data:
+                    try:
+                        # Print API data for debugging
+                        logger.info("Submitting product data to Trendyol:")
+                        logger.info(f"Product title: {product.title}")
+                        logger.info(f"Category ID: {product.category_id}")
+                        logger.info(f"Barcode: {product.barcode}")
+                        logger.info(f"Attributes: {product.attributes}")
+                        
+                        # Submit to API manually
+                        response = client.products.create_products([api_data])
+                        logger.info(f"API Response: {response}")
+                        
+                        # Log detailed response info
+                        if isinstance(response, dict):
+                            logger.info(f"Response keys: {list(response.keys())}")
+                            if 'batchId' in response:
+                                logger.info(f"Batch ID in response: {response['batchId']}")
+                        else:
+                            logger.warning(f"Unexpected response type: {type(response)}")
+                        
+                        # Update status based on response
+                        if response and isinstance(response, dict) and 'batchId' in response:
+                            batch_id = response['batchId']
+                            product.batch_id = batch_id
+                            product.batch_status = 'processing'
+                            product.save()
+                            
+                            success_count += 1
+                            logger.info(f"Successfully created product {product.id} with batch ID {batch_id}")
+                            retried_count += 1
+                        else:
+                            logger.error(f"Invalid response from Trendyol API: {response}")
+                    except Exception as e:
+                        logger.error(f"API error during product creation: {str(e)}")
+                else:
+                    logger.error(f"Failed to prepare product data for {product.id}")
             else:
-                logger.error(f"Failed to create product {product.id}")
+                logger.error("Failed to get API client")
         
         except Exception as e:
             logger.error(f"Error retrying product {product.id}: {str(e)}")
