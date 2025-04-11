@@ -2,13 +2,17 @@ from django.apps import AppConfig
 from django.conf import settings
 
 
-def run_refresh_products_command():
+def run_sync_products_command():
     """
-    Function to run the refresh_product_list management command.
+    Function to run the sync_products management command that handles:
+    - Checking for new products and adding them
+    - Checking for deleted products and updating their status
+    - Checking for data changes in existing products
+    
     This needs to be defined as a module-level function for proper serialization.
     """
     from django.core.management import call_command
-    call_command('refresh_product_list')
+    call_command('sync_products', '--all')
 
 
 class LcwaikikiConfig(AppConfig):
@@ -18,7 +22,7 @@ class LcwaikikiConfig(AppConfig):
     def ready(self):
         """
         Set up scheduled tasks when the application starts.
-        This will run the refresh_product_list command on startup and every 12 hours.
+        This will run the sync_products command on startup and every 4 hours.
         """
         # Avoid running scheduler in management commands like migrate
         import sys
@@ -36,28 +40,40 @@ class LcwaikikiConfig(AppConfig):
             scheduler = BackgroundScheduler(timezone=settings.TIME_ZONE)
             scheduler.add_jobstore(DjangoJobStore(), "default")
             
-            # Add the job to run every 12 hours
+            # Schedule the main sync job to run every 4 hours
+            # This runs all sync operations (new, deleted, and updates)
             scheduler.add_job(
-                run_refresh_products_command,
-                trigger=IntervalTrigger(hours=12),
-                id='refresh_product_list',
-                name='Refresh LC Waikiki product list',
+                run_sync_products_command,
+                trigger=IntervalTrigger(hours=4),
+                id='sync_products_full',
+                name='Sync all LC Waikiki product data',
                 replace_existing=True,
                 next_run_time=datetime.datetime.now() + datetime.timedelta(seconds=60),
             )
             
-            # Run once on startup (in 60 seconds to allow Django to fully initialize)
+            # Schedule specialized jobs that run at different intervals:
+            
+            # Check for new products every hour (lightweight)
             scheduler.add_job(
-                run_refresh_products_command,
-                id='refresh_product_list_startup',
-                name='Refresh LC Waikiki product list on startup',
+                lambda: call_command('sync_products', '--check-new'),
+                trigger=IntervalTrigger(hours=1),
+                id='sync_products_new',
+                name='Check for new LC Waikiki products',
                 replace_existing=True,
-                next_run_time=datetime.datetime.now() + datetime.timedelta(seconds=60),
+            )
+            
+            # Check for deleted products every 2 hours (lightweight)
+            scheduler.add_job(
+                lambda: call_command('sync_products', '--check-deleted'),
+                trigger=IntervalTrigger(hours=2),
+                id='sync_products_deleted',
+                name='Check for deleted LC Waikiki products',
+                replace_existing=True,
             )
             
             # Start the scheduler
             scheduler.start()
-            print("Scheduled jobs successfully!")
+            print("Scheduled product sync jobs successfully!")
             
         except Exception as e:
             print(f"Scheduler setup error: {e}")
