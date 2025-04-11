@@ -448,6 +448,7 @@ dependencies = [
     { name = "requests" },
     { name = "tqdm" },
     { name = "trafilatura" },
+    { name = "trendyol-api-python-sdk" },
 ]
 
 [package.metadata]
@@ -462,6 +463,7 @@ requires-dist = [
     { name = "requests", specifier = ">=2.32.3" },
     { name = "tqdm", specifier = ">=4.67.1" },
     { name = "trafilatura", specifier = ">=2.0.0" },
+    { name = "trendyol-api-python-sdk", specifier = ">=0.0.8" },
 ]
 
 [[package]]
@@ -543,6 +545,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/06/25/e3ebeefdebfdfae8c4a4396f5a6ea51fc6fa0831d63ce338e5090a8003dc/trafilatura-2.0.0.tar.gz", hash = "sha256:ceb7094a6ecc97e72fea73c7dba36714c5c5b577b6470e4520dca893706d6247", size = 253404 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/8a/b6/097367f180b6383a3581ca1b86fcae284e52075fa941d1232df35293363c/trafilatura-2.0.0-py3-none-any.whl", hash = "sha256:77eb5d1e993747f6f20938e1de2d840020719735690c840b9a1024803a4cd51d", size = 132557 },
+]
+
+[[package]]
+name = "trendyol-api-python-sdk"
+version = "0.0.8"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "requests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/e9/45/d229b74533bc97fe86100519bb53014f4f4a4a86a65717d5b8a9e8d68dac/trendyol_api_python_sdk-0.0.8.tar.gz", hash = "sha256:27ccf04fe51c016e64ba2ee668a01a2eab503b0b1d55b558400227d6788dbed6", size = 4934 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a4/06/752f918ac96e6dbe7f3d30ab87081c296093d83b2210159ad03a075516d2/trendyol_api_python_sdk-0.0.8-py3-none-any.whl", hash = "sha256:f02df4ca9b048ed623e6fe7cb0c3202a7f984653a30c9e3bf10b27c7a97649a9", size = 5740 },
 ]
 
 [[package]]
