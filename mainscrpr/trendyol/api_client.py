@@ -111,6 +111,15 @@ class TrendyolApi:
                       f"Product {i+1} attribute missing required fields: {attr}"
                   )
 
+      # Log complete request details before sending
+      logger.info(f"Making request: {method} {url}")
+      logger.info(f"Request headers: {headers}")
+      if params:
+          logger.info(f"Request params: {params}")
+      if data:
+          logger.info(f"Request data: {json.dumps(data, default=str, indent=2)}")
+      
+      # Make the request
       response = requests.request(method=method,
                                   url=url,
                                   headers=headers,
@@ -122,8 +131,20 @@ class TrendyolApi:
       logger.info(f"Response status: {response.status_code}")
       logger.info(f"Response headers: {dict(response.headers)}")
       
-      # Log the response body if it exists
-      if response.text:
+      # Log the full response body for 400 errors to help debugging
+      if response.status_code == 400:
+          logger.error(f"400 BAD REQUEST ERROR")
+          logger.error(f"Request URL: {url}")
+          logger.error(f"Request method: {method}")
+          logger.error(f"Request headers: {headers}")
+          if data:
+              logger.error(f"Request data: {json.dumps(data, default=str, indent=2)}")
+          if params:
+              logger.error(f"Request params: {params}")
+          logger.error(f"Response headers: {dict(response.headers)}")
+          logger.error(f"Response body: {response.text}")
+      # For non-400 responses, just log the first part
+      elif response.text:
           try:
               logger.info(f"Response text: {response.text[:1000]}...")  # Show first 1000 chars
           except Exception as e:
@@ -1264,18 +1285,32 @@ def prepare_product_data(product: TrendyolProduct) -> Dict[str, Any]:
       except json.JSONDecodeError:
         pass
 
-  # Prepare attributes
+  # Prepare attributes - Using correct numeric IDs and values
   attributes = []
   if product.attributes:
     if isinstance(product.attributes, dict):
       for key, value in product.attributes.items():
-        attributes.append({"attributeId": key, "attributeValueId": value})
+        try:
+          # Try to convert attributeId to integer (Trendyol expects integer IDs)
+          attr_id = int(key) if key.isdigit() else key
+          # Try to convert attributeValueId to integer if possible
+          attr_value_id = int(value) if isinstance(value, str) and value.isdigit() else value
+          attributes.append({"attributeId": attr_id, "attributeValueId": attr_value_id})
+        except (ValueError, TypeError):
+          logger.warning(f"Could not convert attribute ID/value to integer: {key}={value}")
     elif isinstance(product.attributes, str):
       try:
         attrs = json.loads(product.attributes)
         if isinstance(attrs, dict):
           for key, value in attrs.items():
-            attributes.append({"attributeId": key, "attributeValueId": value})
+            try:
+              # Try to convert attributeId to integer (Trendyol expects integer IDs)
+              attr_id = int(key) if key.isdigit() else key
+              # Try to convert attributeValueId to integer if possible
+              attr_value_id = int(value) if isinstance(value, str) and value.isdigit() else value
+              attributes.append({"attributeId": attr_id, "attributeValueId": attr_value_id})
+            except (ValueError, TypeError):
+              logger.warning(f"Could not convert attribute ID/value to integer: {key}={value}")
       except json.JSONDecodeError:
         pass
 
@@ -1288,9 +1323,12 @@ def prepare_product_data(product: TrendyolProduct) -> Dict[str, Any]:
         # Use the first value as a default
         value_id = attr.get('values', [])[0].get('id')
         if value_id:
+          # Make sure we're using integer IDs
+          attr_id_int = int(attr_id) if isinstance(attr_id, str) and attr_id.isdigit() else attr_id
+          value_id_int = int(value_id) if isinstance(value_id, str) and value_id.isdigit() else value_id
           attributes.append({
-              "attributeId": attr_id,
-              "attributeValueId": value_id
+              "attributeId": attr_id_int,
+              "attributeValueId": value_id_int
           })
 
   # Prepare product data
@@ -1523,17 +1561,26 @@ def check_product_batch_status(product: TrendyolProduct) -> str:
       product.save()
       return 'failed'
 
-    # Get batch status details
-    status = response.get('status', 'failed')
+    # Check if response is a dictionary or string
+    if isinstance(response, dict):
+        # Get batch status details
+        status = response.get('status', 'failed')
 
-    # Map Trendyol status to our status
-    status_mapping = {
-        'PROCESSING': 'processing',
-        'DONE': 'completed',
-        'FAILED': 'failed',
-    }
+        # Map Trendyol status to our status
+        status_mapping = {
+            'PROCESSING': 'processing',
+            'DONE': 'completed',
+            'FAILED': 'failed',
+        }
 
-    internal_status = status_mapping.get(status, 'failed')
+        internal_status = status_mapping.get(status, 'failed')
+    else:
+        # If it's not a dictionary, handle it as a raw response (like string)
+        logger.info(f"Received non-dictionary response: {response}")
+        
+        # Assume 'processing' status since we got a response but it's not in the expected format
+        # This is likely during the initial processing phase
+        internal_status = 'processing'
 
     # Get error message if any
     error_message = ""
