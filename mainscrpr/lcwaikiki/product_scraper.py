@@ -406,10 +406,22 @@ class ProductScraper:
             # Extract price information
             price_elem = soup.select_one('.price-regular')
             if price_elem:
-                price_text = price_elem.text.strip()
-                price_match = re.search(r'(\d+[.,]\d+)', price_text.replace('.', '').replace(',', '.'))
-                if price_match:
-                    product_data['price'] = float(price_match.group(1))
+                try:
+                    price_text = price_elem.text.strip()
+                    # Remove TL (Turkish Lira) and any other currency symbols
+                    price_text = re.sub(r'[^0-9,.]', '', price_text)
+                    # For Turkish format: Replace dots used as thousand separators and commas as decimal points
+                    # Handle numbers like 1.299,99 
+                    if ',' in price_text:
+                        # If comma is used as decimal separator
+                        price_text = price_text.replace('.', '') # Remove thousand separators
+                        price_text = price_text.replace(',', '.') # Convert comma to dot for decimal
+                    
+                    product_data['price'] = float(price_text)
+                except ValueError as e:
+                    logger.warning(f"Could not parse price from '{price_elem.text.strip()}': {str(e)}")
+                    # Use a default value as fallback if parsing fails
+                    product_data['price'] = 0
             
             # Extract discount ratio
             discount_elem = soup.select_one('.discount-rate')
