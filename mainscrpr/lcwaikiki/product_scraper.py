@@ -5,8 +5,8 @@ import time
 import random
 import requests
 import threading
-from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime, timedelta
 from urllib.parse import urlparse
 from bs4 import BeautifulSoup
 
@@ -15,8 +15,9 @@ from django.utils import timezone
 from django.db import transaction
 
 from .product_models import Product, ProductSize, City, Store, SizeStoreStock
-from .models import ProductAvailableUrl, ProductDeletedUrl, ProductNewUrl
+from .models import ProductAvailableUrl, ProductDeletedUrl, ProductNewUrl, Config
 
+# Configure logging for better readability
 logger = logging.getLogger(__name__)
 
 class ProductScraper:
@@ -36,8 +37,41 @@ class ProductScraper:
     
     def __init__(self):
         self.session = requests.Session()
-        self.max_retries = 5
-        self.retry_delay = 5
+        # Get active configuration
+        try:
+            self.config = Config.objects.filter(is_active=True).first()
+            if not self.config:
+                self.config = Config.objects.first()  # Fallback to any config
+                
+            # Get scraper configuration from Config model if available
+            if self.config and 'scraper_config' in self.config.brands:
+                scraper_config = self.config.brands.get('scraper_config', {})
+                self.max_retries = scraper_config.get('max_retries', 5)
+                self.retry_delay = scraper_config.get('retry_delay', 5)
+                self.default_timeout = scraper_config.get('timeout', 30)
+                self.max_proxy_attempts = scraper_config.get('max_proxy_attempts', 3)
+            else:
+                # Default values
+                self.max_retries = 5
+                self.retry_delay = 5
+                self.default_timeout = 30
+                self.max_proxy_attempts = 3
+                
+            # Get city configuration
+            if self.config:
+                self.default_city_id = self.config.default_city_id
+            else:
+                self.default_city_id = self.DEFAULT_CITY_ID
+        except Exception as e:
+            logger.error(f"Error loading configuration: {str(e)}")
+            # Default values if configuration loading fails
+            self.max_retries = 5
+            self.retry_delay = 5
+            self.default_timeout = 30
+            self.max_proxy_attempts = 3
+            self.default_city_id = self.DEFAULT_CITY_ID
+            self.config = None
+            
         self.proxy_list = getattr(settings, 'PROXY_LIST', [])
         
     def _get_random_proxy(self):
@@ -184,6 +218,132 @@ class ProductScraper:
         logger.error("All proxy attempts failed")
         return None
 
+    def fetch_inventory(self, product_option_size_ref, referer_url, city_id=None):
+        """
+        Fetch inventory information for a specific product size reference.
+        This method uses the store inventory API to get stock information for all stores.
+        
+        Args:
+            product_option_size_ref: The product option size reference ID
+            referer_url: The product URL to use as referer
+            city_id: The city ID to check inventory for (defaults to self.default_city_id)
+            
+        Returns:
+            dict: The JSON response from the inventory API, or None if the request failed
+        """
+        if not city_id:
+            city_id = self.default_city_id
+            
+        try:
+            headers = {
+                'User-Agent': random.choice(self.USER_AGENTS),
+                'Content-Type': 'application/json',
+                'Referer': referer_url
+            }
+            
+            data = {
+                "cityId": str(city_id),
+                "countyIds": [],
+                "urunOptionSizeRef": str(product_option_size_ref)
+            }
+            
+            logger.info(f"Fetching inventory for product_option_size_ref={product_option_size_ref}, city_id={city_id}")
+            response = self.post(self.INVENTORY_API_URL, data, headers)
+            
+            if response and response.status_code == 200:
+                try:
+                    result = response.json()
+                    if result:
+                        logger.info(f"Successfully fetched inventory: {len(result.get('storeInventoryInfos', []))} stores found")
+                        return result
+                except Exception as e:
+                    logger.error(f"Error parsing inventory JSON: {str(e)}")
+            else:
+                logger.warning(f"Failed to fetch inventory: HTTP {response.status_code if response else 'No response'}")
+                
+            return None
+        except Exception as e:
+            logger.error(f"Error fetching inventory: {str(e)}")
+            return None
+    
+    def process_inventory_data(self, product_size, inventory_data):
+        """
+        Process inventory data from the API and update the database.
+        This method will create or update City and Store records as needed.
+        
+        Args:
+            product_size: The ProductSize model instance to update
+            inventory_data: The inventory data from the API
+            
+        Returns:
+            bool: True if the inventory was successfully processed, False otherwise
+        """
+        try:
+            if not inventory_data or 'storeInventoryInfos' not in inventory_data:
+                logger.warning("No store inventory information found")
+                return False
+                
+            # Get active cities from configuration
+            active_cities = self.config.active_cities if self.config else ['865']
+            
+            # Dictionary to track cities and their total stock
+            city_stocks = {}
+            
+            # Process each store
+            for store_data in inventory_data.get('storeInventoryInfos', []):
+                city_id = str(store_data.get('StoreCityId'))
+                city_name = store_data.get('StoreCityName')
+                
+                # Skip cities that are not in the active list
+                if city_id not in active_cities:
+                    continue
+                
+                # Create or get city
+                city, _ = City.objects.get_or_create(
+                    city_id=city_id,
+                    defaults={'name': city_name}
+                )
+                
+                # Create or update store
+                store, _ = Store.objects.update_or_create(
+                    store_code=store_data.get('StoreCode', ''),
+                    defaults={
+                        'store_name': store_data.get('StoreName', ''),
+                        'city': city,
+                        'store_county': store_data.get('StoreCountyName', ''),
+                        'store_phone': store_data.get('StorePhone', ''),
+                        'address': store_data.get('Address', ''),
+                        'latitude': store_data.get('Lattitude', ''),
+                        'longitude': store_data.get('Longitude', '')
+                    }
+                )
+                
+                # Store stock quantity
+                stock_quantity = store_data.get('Quantity', 0)
+                
+                # Create or update store stock
+                SizeStoreStock.objects.update_or_create(
+                    product_size=product_size,
+                    store=store,
+                    defaults={'stock': stock_quantity}
+                )
+                
+                # Track city stock
+                if city_id not in city_stocks:
+                    city_stocks[city_id] = 0
+                city_stocks[city_id] += stock_quantity
+            
+            # Update product size total stock based on city stocks
+            total_stock = sum(city_stocks.values())
+            if total_stock > 0:
+                product_size.size_general_stock = total_stock
+                product_size.save(update_fields=['size_general_stock'])
+                
+            return True
+        except Exception as e:
+            logger.error(f"Error processing inventory data: {str(e)}")
+            return False
+            
     def extract_json_data(self, response):
         """Extract product JSON data from the response"""
         try:
@@ -350,18 +510,88 @@ class ProductScraper:
                 logger.error(f"Failed to fetch product URL: {url}")
                 return False
                 
+            # Try to extract JSON data first for better product information
+            json_data = self.extract_json_data(response)
+            
+            # Extract product data from HTML
             product_data = self.extract_product_data(response)
             
             if not product_data:
                 logger.error(f"Failed to extract product data from URL: {url}")
                 return False
+            
+            # Use JSON data if available to enrich product information
+            if json_data:
+                # Enhance product data with JSON information
+                if 'ModelName' in json_data:
+                    product_data['product']['title'] = json_data['ModelName']
                 
+                if 'CategoryName' in json_data:
+                    product_data['product']['category'] = json_data['CategoryName']
+                
+                if 'ProductId' in json_data:
+                    product_data['product']['product_code'] = json_data['ProductId']
+                
+                if 'Color' in json_data:
+                    product_data['product']['color'] = json_data['Color']
+                
+                # Update pricing information
+                product_prices = json_data.get('ProductPrices', {})
+                if product_prices:
+                    if 'Price' in product_prices:
+                        product_data['product']['price'] = float(product_prices['Price'] or 0)
+                    if 'DiscountRatio' in product_prices:
+                        product_data['product']['discount_ratio'] = float(product_prices['DiscountRatio'] or 0) / 100
+                
+                # Add size and stock information
+                if 'ProductSizes' in json_data and json_data['ProductSizes']:
+                    # Reset sizes array with more accurate data
+                    product_data['sizes'] = []
+                    
+                    for size_info in json_data['ProductSizes']:
+                        size_obj = {
+                            'size_name': size_info.get('Size', {}).get('Value', ''),
+                            'size_id': size_info.get('Size', {}).get('SizeId', ''),
+                            'size_general_stock': size_info.get('Stock', 0),
+                            'product_option_size_reference': size_info.get('UrunOptionSizeRef', ''),
+                            'barcode_list': size_info.get('BarcodeList', []),
+                            'in_stock': size_info.get('Stock', 0) > 0
+                        }
+                        product_data['sizes'].append(size_obj)
+            
+            # Save the product data
             product = self.save_product_data(product_data)
             
             if not product:
                 logger.error(f"Failed to save product data for URL: {url}")
                 return False
-                
+            
+            # Check if we need to fetch inventory data for sizes
+            if self.config and self.config.use_stores:
+                try:
+                    # Fetch inventory data for each size with stock
+                    for size_data in product_data['sizes']:
+                        if size_data.get('in_stock') and size_data.get('product_option_size_reference'):
+                            # Get ProductSize object
+                            product_size = ProductSize.objects.filter(
+                                product=product,
+                                size_name=size_data['size_name']
+                            ).first()
+                            
+                            if product_size:
+                                # Fetch inventory data for this size
+                                inventory_data = self.fetch_inventory(
+                                    product_option_size_ref=size_data['product_option_size_reference'],
+                                    referer_url=url
+                                )
+                                
+                                if inventory_data:
+                                    # Process inventory data to update city and store stock
+                                    self.process_inventory_data(product_size, inventory_data)
+                except Exception as e:
+                    logger.error(f"Error fetching inventory data for {url}: {str(e)}")
+                    # Continue processing even if inventory fetch fails
+            
             logger.info(f"Successfully processed product URL: {url}")
             return True
             

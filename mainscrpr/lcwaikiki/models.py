@@ -21,12 +21,21 @@ class Config(models.Model):
             "above_multiplier": 1.2
         },
         "city_config": {
-            "active_cities": ["865", "34"],
+            "default_city_id": "865",
+            "active_cities": ["865", "34", "6", "35", "1"],
             "use_stores": true
         },
         "stock_config": {
             "min_stock_level": 1,
-            "check_store_stock": true
+            "check_store_stock": true,
+            "max_concurrent_requests": 5,
+            "batch_size": 100
+        },
+        "scraper_config": {
+            "max_retries": 3,
+            "retry_delay": 5,
+            "timeout": 30,
+            "max_proxy_attempts": 3
         }
     }
     """
@@ -45,6 +54,46 @@ class Config(models.Model):
     is_active = models.BooleanField(default=True, help_text="Whether this config is active")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    
+    @property
+    def default_city_id(self):
+        """Get the default city ID from the configuration"""
+        try:
+            return self.brands.get('city_config', {}).get('default_city_id', '865')
+        except (AttributeError, KeyError):
+            return '865'  # Default fallback
+    
+    @property
+    def active_cities(self):
+        """Get the list of active cities from the configuration"""
+        try:
+            return self.brands.get('city_config', {}).get('active_cities', ['865'])
+        except (AttributeError, KeyError):
+            return ['865']  # Default fallback
+    
+    @property
+    def use_stores(self):
+        """Check if store stock checking is enabled"""
+        try:
+            return self.brands.get('city_config', {}).get('use_stores', True)
+        except (AttributeError, KeyError):
+            return True  # Default fallback
+    
+    @property
+    def max_concurrent_requests(self):
+        """Get the maximum number of concurrent requests"""
+        try:
+            return self.brands.get('stock_config', {}).get('max_concurrent_requests', 5)
+        except (AttributeError, KeyError):
+            return 5  # Default fallback
+    
+    @property
+    def batch_size(self):
+        """Get the batch size for processing URLs"""
+        try:
+            return self.brands.get('stock_config', {}).get('batch_size', 100)
+        except (AttributeError, KeyError):
+            return 100  # Default fallback
 
     def __str__(self):
         return self.name
