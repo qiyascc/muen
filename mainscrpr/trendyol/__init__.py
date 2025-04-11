@@ -1,0 +1,1 @@
+# Trendyol app initialization
