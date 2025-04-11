@@ -4,75 +4,84 @@ Script to test batch status checking with enhanced logging.
 This script tests the batch status checking functionality and logs the responses
 to help diagnose issues with the API interaction.
 
-Run this script with: python test_batch_status.py
+Run this script with: python manage.py shell < test_batch_status.py
 """
 
 import os
 import sys
-import django
 import logging
-import json
-
-# Configure logging
-logging.basicConfig(level=logging.INFO, 
-                   format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+import django
+from loguru import logger
 
 # Setup Django
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "mainscrpr.settings")
 django.setup()
 
-# Import required modules
 from trendyol.models import TrendyolProduct
-from trendyol.api_client import get_api_client
+from trendyol.api_client import check_product_batch_status, get_api_client
 
 def test_batch_request(batch_id):
     """Test batch request status endpoint with a specific batch ID"""
-    logger.info(f"Testing batch request status for batch ID: {batch_id}")
-    
     client = get_api_client()
     if not client:
-        logger.error("No API client available")
+        print("No API client available")
         return
     
-    # Log the endpoint
-    endpoint = client.products._get_batch_request_endpoint(batch_id)
-    logger.info(f"Endpoint: {endpoint}")
+    # Configure logger to print to console
+    logger.remove()
+    logger.add(sys.stdout, level="INFO")
     
-    # Make the request and log the raw response
-    try:
-        response = client.products.get_batch_request_status(batch_id)
-        logger.info(f"Response type: {type(response)}")
-        logger.info(f"Raw response: {response}")
-        
-        # Try to parse as JSON if it's a string
-        if isinstance(response, str):
-            try:
-                parsed = json.loads(response)
-                logger.info(f"Parsed response: {parsed}")
-            except json.JSONDecodeError:
-                logger.info("Response is not valid JSON")
-    except Exception as e:
-        logger.error(f"Error making request: {str(e)}")
+    print(f"Testing batch status for ID: {batch_id}")
+    
+    # Test direct API request first
+    response = client.products.get_batch_request_status(batch_id)
+    print(f"Raw API response: {response}")
+    
+    # Create a temporary product for testing
+    product = TrendyolProduct(
+        batch_id=batch_id,
+        title="Test Product",
+        barcode=f"TESTBARCODE{batch_id}",
+        batch_status="processing"
+    )
+    
+    # Test the status checking function
+    status = check_product_batch_status(product)
+    print(f"Status after checking: {status}")
+    print(f"Product batch_status: {product.batch_status}")
+    print(f"Product status_message: {product.status_message}")
 
 def main():
     """Main test function"""
-    # Get product with a batch ID
-    product = TrendyolProduct.objects.filter(batch_id__isnull=False).first()
-    if not product:
-        logger.error("No product with batch ID found")
-        return
+    # Configure logger
+    logger.remove()
+    logger.add(sys.stdout, level="INFO")
     
-    logger.info(f"Found product ID {product.id} with batch ID {product.batch_id}")
+    print("Starting batch status test")
     
-    # Test with the product's batch ID
-    test_batch_request(product.batch_id)
+    # Get all products with batch IDs
+    products_with_batch = TrendyolProduct.objects.exclude(batch_id__isnull=True).exclude(batch_id='')
+    print(f"Found {products_with_batch.count()} products with batch IDs")
     
-    # If the batch ID contains a timestamp suffix, try with just the UUID part
-    if '-' in product.batch_id:
-        uuid_part = product.batch_id.split('-')[0]
-        logger.info(f"Testing with just the UUID part: {uuid_part}")
-        test_batch_request(uuid_part)
+    # Check and show status for all products with batch IDs
+    for product in products_with_batch:
+        print(f"\nChecking product {product.id}: {product.title}")
+        print(f"Current status: {product.batch_status}, Batch ID: {product.batch_id}")
+        
+        # Check status
+        status = check_product_batch_status(product)
+        
+        print(f"Status after checking: {status}")
+        print(f"Product status message: {product.status_message}")
+    
+    # Get all failed products
+    failed_products = TrendyolProduct.objects.filter(batch_status='failed')
+    print(f"\nFound {failed_products.count()} failed products")
+    
+    # Show details for failed products
+    for product in failed_products:
+        print(f"Failed product {product.id}: {product.title}")
+        print(f"Error message: {product.status_message}")
 
 if __name__ == "__main__":
     main()

@@ -298,13 +298,30 @@ class ProductsAPI:
 
   def get_batch_request_status(self, batch_id):
     """Get the status of a batch request"""
-    endpoint = self._get_batch_request_endpoint(batch_id)
+    # Make sure we have a valid batch ID before making request
+    if not batch_id:
+      logger.warning("Attempted to check batch status with empty batch ID")
+      return None
+      
+    # Clean up the batch ID format if necessary (in case of combined IDs)
+    clean_batch_id = batch_id
+    if '-' in batch_id:
+      # Handle format like "uuid-timestamp" 
+      clean_batch_id = batch_id.split('-')[0]
+    elif '/' in batch_id:
+      # Handle potential URL format
+      clean_batch_id = batch_id.split('/')[-1]
+      
+    # Trim any whitespace
+    clean_batch_id = clean_batch_id.strip()
+    
+    logger.info(f"Checking batch status for ID: {batch_id} (cleaned: {clean_batch_id})")
+      
+    endpoint = self._get_batch_request_endpoint(clean_batch_id)
     response = self.client.make_request('GET', endpoint)
     
     # Log the response for debugging
-    import logging
-    logger = logging.getLogger(__name__)
-    logger.info(f"Batch status response for {batch_id}: {response}")
+    logger.info(f"Batch status response for {clean_batch_id}: {response}")
     
     return response
 

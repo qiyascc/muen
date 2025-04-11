@@ -24,9 +24,19 @@ def main():
     """Retry failed Trendyol products with the improved API client"""
     print("Starting retry_trendyol_products.py script...")
     
+    # Configure loguru to print to console
+    import sys
+    logger.remove()
+    logger.add(sys.stdout, level="INFO")
+    
     # Get all products with failed status
     failed_products = TrendyolProduct.objects.filter(batch_status='failed')
     print(f"Found {failed_products.count()} failed products to retry")
+    
+    # Print info about the failed products
+    for product in failed_products:
+        print(f"Failed product: ID={product.id}, Title={product.title}, Error={product.status_message}")
+    
     logger.info(f"Found {failed_products.count()} failed products to retry")
     
     if not failed_products:
