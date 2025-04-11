@@ -118,9 +118,17 @@ class TrendyolApi:
                                   json=data,
                                   timeout=30)
 
-      # Log response status
+      # Log response status and headers
       logger.info(f"Response status: {response.status_code}")
-
+      logger.info(f"Response headers: {dict(response.headers)}")
+      
+      # Log the response body if it exists
+      if response.text:
+          try:
+              logger.info(f"Response text: {response.text[:1000]}...")  # Show first 1000 chars
+          except Exception as e:
+              logger.error(f"Error logging response text: {str(e)}")
+      
       # Check if the request was successful
       response.raise_for_status()
 
