@@ -503,6 +503,53 @@ class TrendyolCategoryFinder:
                 logger.info(f"Found category match from API: ID {category_id}")
                 return category_id
         
+        # Strategy 5: Use default categories based on keywords in product title/category
+        default_categories = {
+            'giyim': 522,      # Giyim (Clothing)
+            'erkek': 2356,     # Erkek Giyim (Men's Clothing)
+            'kadin': 41,       # Kadın Giyim (Women's Clothing)
+            'çocuk': 674,      # Çocuk Gereçleri (Children's Items)
+            'cocuk': 674,      # Çocuk Gereçleri (Children's Items)
+            'bebek': 2164,     # Bebek Hediyelik (Baby Items)
+            'ayakkabi': 403,   # Ayakkabı (Shoes)
+            'ayakkabı': 403,   # Ayakkabı (Shoes)
+            'aksesuar': 368,   # Aksesuar (Accessories)
+            'tisort': 384,     # T-shirt
+            'tişört': 384,     # T-shirt
+            'pantolon': 383,   # Pants
+            'gömlek': 385,     # Shirt
+            'gomlek': 385,     # Shirt
+            'elbise': 1032,    # Dress
+            'bluz': 1027       # Blouse
+        }
+        
+        search_text = ' '.join(filter(None, [
+            product.title and product.title.lower() or '',
+            product.category_name and product.category_name.lower() or '',
+            lcw_category and lcw_category.lower() or ''
+        ]))
+        
+        for keyword, category_id in default_categories.items():
+            if keyword in search_text:
+                try:
+                    category = TrendyolCategory.objects.get(category_id=category_id)
+                    logger.info(f"Using default category based on keyword '{keyword}': {category.name} (ID: {category_id})")
+                    return category_id
+                except TrendyolCategory.DoesNotExist:
+                    continue
+        
+        # Final fallback: Use "Giyim" (Clothing) category as default
+        try:
+            giyim_category = TrendyolCategory.objects.get(category_id=522)  # Giyim
+            logger.info(f"Using fallback category: {giyim_category.name} (ID: 522)")
+            return 522
+        except TrendyolCategory.DoesNotExist:
+            # If even the default category is not found, try any available top-level category
+            top_category = TrendyolCategory.objects.filter(parent_id__isnull=True).first()
+            if top_category:
+                logger.info(f"Using any available top-level category: {top_category.name} (ID: {top_category.category_id})")
+                return top_category.category_id
+        
         # No matching category found
         logger.error(f"No matching category found for product: {product.title}")
         return None
@@ -647,7 +694,50 @@ class TrendyolCategoryFinder:
             
         attributes = self.get_category_attributes(category_id)
         if not attributes:
-            return []
+            # Try to fetch the attributes directly if they're not in the cache
+            try:
+                response = self.api_client.categories.get_category_attributes(category_id)
+                if response and 'categoryAttributes' in response:
+                    attributes = response.get('categoryAttributes', [])
+                    logger.info(f"Successfully fetched {len(attributes)} attributes for category {category_id}")
+                    # Update cache
+                    self._attributes_cache[category_id] = attributes
+                else:
+                    logger.warning(f"No attributes found for category {category_id}")
+                    return []
+            except Exception as e:
+                logger.error(f"Error fetching attributes for category {category_id}: {str(e)}")
+                return []
+        
+        # Log the attribute information for debugging
+        logger.info(f"Processing {len(attributes)} attributes for category {category_id}")
+        
+        # Default required attributes for clothing products if none found
+        default_attributes = [
+            {
+                "attribute": {"id": 338, "name": "Beden"},  # Size
+                "required": True,
+                "varianter": True,
+                "attributeValues": [
+                    {"id": 4294, "name": "XS"},
+                    {"id": 4295, "name": "S"},
+                    {"id": 4296, "name": "M"},
+                    {"id": 4297, "name": "L"},
+                    {"id": 4298, "name": "XL"}
+                ]
+            },
+            {
+                "attribute": {"id": 347, "name": "Renk"},  # Color
+                "required": True,
+                "varianter": True,
+                "attributeValues": [
+                    {"id": 4525, "name": "Beyaz"},
+                    {"id": 4531, "name": "Siyah"},
+                    {"id": 4532, "name": "Kırmızı"},
+                    {"id": 4538, "name": "Mavi"}
+                ]
+            }
+        ]
         
         required_attributes = []
         for attr in attributes:
@@ -655,11 +745,18 @@ class TrendyolCategoryFinder:
             attribute_name = attribute_info.get('name', '').lower()
             is_required = attr.get('required', False)
             is_variant = attribute_name in ('beden', 'renk')  # Size, Color
+            is_varianter = attr.get('varianter', False)
             allow_custom = attr.get('allowCustom', False)
             
             # Add attribute if it's required, a variant, or has values
-            if is_required or is_variant or attr.get('attributeValues'):
+            if is_required or is_variant or is_varianter or attr.get('attributeValues'):
                 required_attributes.append(attr)
+                logger.debug(f"Added attribute: {attribute_name} (Required: {is_required}, Variant: {is_variant})")
+        
+        # If no attributes found, use default attributes
+        if not required_attributes and category_id in (522, 2356, 41, 674, 383, 384, 385, 1032):
+            logger.warning(f"No attributes found for category {category_id}, using defaults")
+            return default_attributes
         
         return required_attributes
 
