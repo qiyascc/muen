@@ -306,59 +306,369 @@ def fetch_categories() -> List[Dict[str, Any]]:
         return []
 
 
+class TrendyolCategoryFinder:
+    """
+    Enhanced category finder with better search capabilities.
+    This class handles finding the appropriate product category from Trendyol API
+    and manages attribute mapping.
+    """
+    
+    def __init__(self, api_client=None):
+        self.api_client = api_client or get_api_client()
+        self._categories_cache = None
+        self._attributes_cache = {}
+    
+    @property
+    def categories(self):
+        """Get or fetch categories with caching"""
+        if self._categories_cache is None:
+            self._categories_cache = self._fetch_all_categories()
+        return self._categories_cache
+    
+    def _fetch_all_categories(self):
+        """Fetch the complete category tree from Trendyol API"""
+        if not self.api_client:
+            logger.error("No API client available")
+            return []
+        
+        try:
+            # First check database for cached categories
+            all_categories = list(TrendyolCategory.objects.filter(is_active=True).values('category_id', 'name', 'parent_id'))
+            if all_categories:
+                logger.info(f"Found {len(all_categories)} categories in database cache")
+                return self._transform_db_categories(all_categories)
+                
+            # If not in database, fetch from API
+            logger.info("Fetching categories from Trendyol API")
+            response = self.api_client.categories.get_categories()
+            if not response or 'categories' not in response:
+                logger.error("Failed to fetch categories from API")
+                return []
+            
+            # Cache categories in the database for future use
+            self._cache_categories_in_db(response.get('categories', []))
+            
+            return response.get('categories', [])
+        except Exception as e:
+            logger.error(f"Error fetching categories: {str(e)}")
+            return []
+    
+    def _transform_db_categories(self, db_categories):
+        """Transform flat DB categories into a tree structure"""
+        # This is a simplified transformation - in a real implementation 
+        # you'd construct a full tree structure
+        categories = []
+        id_to_category = {}
+        
+        # First pass: create category objects
+        for cat in db_categories:
+            category = {
+                'id': cat['category_id'],
+                'name': cat['name'],
+                'parentId': cat['parent_id'],
+                'subCategories': []
+            }
+            id_to_category[cat['category_id']] = category
+            
+            # Top-level categories have no parent
+            if not cat['parent_id']:
+                categories.append(category)
+        
+        # Second pass: build hierarchy
+        for category_id, category in id_to_category.items():
+            parent_id = category['parentId']
+            if parent_id and parent_id in id_to_category:
+                id_to_category[parent_id]['subCategories'].append(category)
+        
+        return categories
+    
+    def _cache_categories_in_db(self, categories, parent_id=None, path=''):
+        """Cache categories in the database"""
+        for category in categories:
+            cat_id = category.get('id')
+            name = category.get('name', '')
+            
+            if not cat_id or not name:
+                continue
+                
+            # Update or create category
+            try:
+                new_path = f"{path} > {name}" if path else name
+                TrendyolCategory.objects.update_or_create(
+                    category_id=cat_id,
+                    defaults={
+                        'name': name,
+                        'parent_id': parent_id,
+                        'path': new_path,
+                        'is_active': True
+                    }
+                )
+                
+                # Process subcategories
+                self._cache_categories_in_db(
+                    category.get('subCategories', []),
+                    parent_id=cat_id,
+                    path=new_path
+                )
+            except Exception as e:
+                logger.error(f"Error caching category {name} (ID: {cat_id}): {str(e)}")
+    
+    def get_category_attributes(self, category_id):
+        """Get attributes for a specific category with caching"""
+        if not self.api_client or not category_id:
+            return []
+        
+        if category_id in self._attributes_cache:
+            return self._attributes_cache[category_id]
+        
+        try:
+            response = self.api_client.categories.get_category_attributes(category_id)
+            
+            if not response or 'categoryAttributes' not in response:
+                logger.error(f"Failed to fetch attributes for category {category_id}")
+                return []
+            
+            attributes = response.get('categoryAttributes', [])
+            self._attributes_cache[category_id] = attributes
+            return attributes
+        except Exception as e:
+            logger.error(f"Error fetching category attributes: {str(e)}")
+            return []
+    
+    def find_category_id(self, product):
+        """Find the most appropriate category ID for a product"""
+        # Strategy 1: Use existing category ID if available
+        if product.category_id:
+            try:
+                # Verify the category exists
+                TrendyolCategory.objects.get(category_id=product.category_id)
+                logger.info(f"Using existing category ID: {product.category_id}")
+                return product.category_id
+            except TrendyolCategory.DoesNotExist:
+                pass
+        
+        # Strategy 2: Search by category name from database
+        if product.category_name:
+            try:
+                # Try exact match first
+                category = TrendyolCategory.objects.filter(
+                    name__iexact=product.category_name,
+                    is_active=True
+                ).first()
+                
+                if category:
+                    logger.info(f"Found exact category match in DB: {category.name} (ID: {category.category_id})")
+                    return category.category_id
+                
+                # Try partial match
+                category = TrendyolCategory.objects.filter(
+                    name__icontains=product.category_name,
+                    is_active=True
+                ).first()
+                
+                if category:
+                    logger.info(f"Found partial category match in DB: {category.name} (ID: {category.category_id})")
+                    return category.category_id
+                    
+            except Exception as e:
+                logger.error(f"Error finding category by name in DB: {str(e)}")
+        
+        # Strategy 3: If product has LCWaikiki category, use it
+        lcw_category = None
+        if product.lcwaikiki_product and product.lcwaikiki_product.category:
+            lcw_category = product.lcwaikiki_product.category
+            
+            try:
+                # Try to find similar category in DB
+                category = TrendyolCategory.objects.filter(
+                    name__icontains=lcw_category,
+                    is_active=True
+                ).first()
+                
+                if category:
+                    logger.info(f"Found category match from LCWaikiki category in DB: {category.name} (ID: {category.category_id})")
+                    return category.category_id
+            except Exception as e:
+                logger.error(f"Error finding category from LCWaikiki category in DB: {str(e)}")
+        
+        # Strategy 4: Search API categories with advanced matching
+        search_term = product.category_name or lcw_category
+        if search_term:
+            category_id = self._find_category_in_api(search_term)
+            if category_id:
+                logger.info(f"Found category match from API: ID {category_id}")
+                return category_id
+        
+        # No matching category found
+        logger.error(f"No matching category found for product: {product.title}")
+        return None
+    
+    def _find_category_in_api(self, search_term):
+        """Find a category by searching the API data with multiple strategies"""
+        if not search_term or not self.categories:
+            return None
+            
+        search_term = search_term.lower()
+        
+        # Strategy 1: Look for exact match
+        for category in self.categories:
+            # Check top level
+            if category.get('name', '').lower() == search_term:
+                return category.get('id')
+            
+            # Check subcategories recursively
+            result = self._search_subcategories_exact(category.get('subCategories', []), search_term)
+            if result:
+                return result
+        
+        # Strategy 2: Look for contains match
+        for category in self.categories:
+            # Check if category name contains search term
+            cat_name = category.get('name', '').lower()
+            if search_term in cat_name or cat_name in search_term:
+                return category.get('id')
+            
+            # Check subcategories recursively
+            result = self._search_subcategories_contains(category.get('subCategories', []), search_term)
+            if result:
+                return result
+        
+        # Strategy 3: Find the best partial match
+        best_match = None
+        best_match_score = 0.5  # Threshold
+        
+        for category in self.categories:
+            score = self._calculate_similarity(category.get('name', ''), search_term)
+            if score > best_match_score:
+                best_match = category
+                best_match_score = score
+            
+            # Check subcategories
+            subcategory_match, subcategory_score = self._search_subcategories_partial(
+                category.get('subCategories', []), search_term, best_match_score
+            )
+            
+            if subcategory_match and subcategory_score > best_match_score:
+                best_match = subcategory_match
+                best_match_score = subcategory_score
+        
+        if best_match:
+            return best_match.get('id')
+            
+        # No match found
+        return None
+    
+    def _search_subcategories_exact(self, subcategories, search_term):
+        """Recursively search subcategories for exact name match"""
+        for subcategory in subcategories:
+            if subcategory.get('name', '').lower() == search_term:
+                return subcategory.get('id')
+            
+            result = self._search_subcategories_exact(subcategory.get('subCategories', []), search_term)
+            if result:
+                return result
+                
+        return None
+    
+    def _search_subcategories_contains(self, subcategories, search_term):
+        """Recursively search subcategories for containing match"""
+        for subcategory in subcategories:
+            subcat_name = subcategory.get('name', '').lower()
+            if search_term in subcat_name or subcat_name in search_term:
+                return subcategory.get('id')
+            
+            result = self._search_subcategories_contains(subcategory.get('subCategories', []), search_term)
+            if result:
+                return result
+                
+        return None
+    
+    def _search_subcategories_partial(self, subcategories, search_term, threshold):
+        """Recursively search subcategories for partial match using similarity score"""
+        best_match = None
+        best_match_score = threshold
+        
+        for subcategory in subcategories:
+            score = self._calculate_similarity(subcategory.get('name', ''), search_term)
+            if score > best_match_score:
+                best_match = subcategory
+                best_match_score = score
+            
+            # Search deeper
+            deeper_match, deeper_score = self._search_subcategories_partial(
+                subcategory.get('subCategories', []), search_term, best_match_score
+            )
+            
+            if deeper_match and deeper_score > best_match_score:
+                best_match = deeper_match
+                best_match_score = deeper_score
+        
+        return best_match, best_match_score
+    
+    def _calculate_similarity(self, str1: str, str2: str) -> float:
+        """
+        Calculate similarity between two strings.
+        Uses a combination of exact match, contains, and word overlap metrics.
+        """
+        str1 = str1.lower()
+        str2 = str2.lower()
+        
+        # Perfect match
+        if str1 == str2:
+            return 1.0
+        
+        # Contains match
+        if str1 in str2:
+            return 0.9
+        if str2 in str1:
+            return 0.8
+        
+        # Word overlap
+        words1 = set(str1.split())
+        words2 = set(str2.split())
+        common_words = words1.intersection(words2)
+        
+        if common_words:
+            return 0.5 + (len(common_words) / max(len(words1), len(words2)) * 0.4)
+        
+        return 0.0
+    
+    def get_required_attributes(self, category_id):
+        """
+        Get all required attributes for a category with proper filtering.
+        Includes attributes that are required or part of variants like size and color.
+        """
+        if not category_id:
+            return []
+            
+        attributes = self.get_category_attributes(category_id)
+        if not attributes:
+            return []
+        
+        required_attributes = []
+        for attr in attributes:
+            attribute_info = attr.get('attribute', {})
+            attribute_name = attribute_info.get('name', '').lower()
+            is_required = attr.get('required', False)
+            is_variant = attribute_name in ('beden', 'renk')  # Size, Color
+            allow_custom = attr.get('allowCustom', False)
+            
+            # Add attribute if it's required, a variant, or has values
+            if is_required or is_variant or attr.get('attributeValues'):
+                required_attributes.append(attr)
+        
+        return required_attributes
+
+
 def find_best_category_match(product: TrendyolProduct) -> Optional[int]:
     """
     Find the best matching category for a product.
     Returns the category ID if found, None otherwise.
+    
+    Enhanced implementation that uses the TrendyolCategoryFinder class.
     """
-    # If we already have a category ID, use it
-    if product.category_id:
-        # Verify the category exists
-        try:
-            TrendyolCategory.objects.get(category_id=product.category_id)
-            return product.category_id
-        except TrendyolCategory.DoesNotExist:
-            pass
-    
-    # Try to find by category name
-    if product.category_name:
-        try:
-            # Try exact match first
-            category = TrendyolCategory.objects.filter(
-                name__iexact=product.category_name,
-                is_active=True
-            ).first()
-            
-            if category:
-                return category.category_id
-            
-            # Try partial match
-            category = TrendyolCategory.objects.filter(
-                name__icontains=product.category_name,
-                is_active=True
-            ).first()
-            
-            if category:
-                return category.category_id
-        except Exception as e:
-            logger.error(f"Error finding category by name: {str(e)}")
-    
-    # If we have a related LCWaikiki product, use its category
-    if product.lcwaikiki_product and product.lcwaikiki_product.category:
-        try:
-            # Try to find similar category
-            category = TrendyolCategory.objects.filter(
-                name__icontains=product.lcwaikiki_product.category,
-                is_active=True
-            ).first()
-            
-            if category:
-                return category.category_id
-        except Exception as e:
-            logger.error(f"Error finding category from LCWaikiki product: {str(e)}")
-    
-    # If all else fails, return None or a default category ID
-    return None
+    finder = TrendyolCategoryFinder(get_api_client())
+    return finder.find_category_id(product)
 
 
 def find_best_brand_match(product: TrendyolProduct) -> Optional[int]:
@@ -419,31 +729,11 @@ def get_required_attributes_for_category(category_id: int) -> List[Dict[str, Any
     """
     Get required attributes for a specific category.
     Returns a list of attribute dictionaries.
-    """
-    client = get_api_client()
-    if not client or not category_id:
-        return []
     
-    try:
-        # Fetch category attributes from Trendyol
-        response = client.categories.get_category_attributes(category_id)
-        
-        if not response or 'categoryAttributes' not in response:
-            logger.error(f"Failed to fetch attributes for category {category_id}")
-            return []
-        
-        category_attributes = response.get('categoryAttributes', [])
-        
-        # Filter required attributes
-        required_attributes = [
-            attr for attr in category_attributes 
-            if attr.get('required', False) and attr.get('allowCustom', False)
-        ]
-        
-        return required_attributes
-    except Exception as e:
-        logger.error(f"Error fetching category attributes: {str(e)}")
-        return []
+    This is a wrapper for the enhanced TrendyolCategoryFinder's method.
+    """
+    finder = TrendyolCategoryFinder(get_api_client())
+    return finder.get_required_attributes(category_id)
 
 
 def prepare_product_data(product: TrendyolProduct) -> Dict[str, Any]:
