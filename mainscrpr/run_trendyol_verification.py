@@ -172,6 +172,43 @@ def test_products_api(client) -> bool:
     except Exception as e:
         logger.error(f"Error testing Products API: {str(e)}")
         return False
+        
+def test_api_endpoints(client) -> bool:
+    """Test the updated API endpoints to ensure they match Trendyol's documentation"""
+    logger.info("Testing API endpoint paths...")
+    
+    try:
+        # Test product-related endpoints
+        products_endpoint = client.products._get_products_endpoint()
+        if not products_endpoint.startswith('/integration/product/sellers/'):
+            logger.error(f"Products endpoint has incorrect path: {products_endpoint}")
+            logger.error("Expected path to start with: /integration/product/sellers/")
+            return False
+        
+        logger.info(f"Products endpoint correctly configured: {products_endpoint}")
+        
+        # Test price and inventory endpoint
+        inventory_endpoint = client.inventory._get_price_inventory_endpoint()
+        if not inventory_endpoint.startswith('/integration/inventory/sellers/'):
+            logger.error(f"Inventory endpoint has incorrect path: {inventory_endpoint}")
+            logger.error("Expected path to start with: /integration/inventory/sellers/")
+            return False
+        
+        logger.info(f"Inventory endpoint correctly configured: {inventory_endpoint}")
+        
+        # Test batch request endpoint with a dummy ID
+        batch_endpoint = client.products._get_batch_request_endpoint("test-id")
+        if not batch_endpoint.startswith('/integration/product/sellers/'):
+            logger.error(f"Batch request endpoint has incorrect path: {batch_endpoint}")
+            logger.error("Expected path to start with: /integration/product/sellers/")
+            return False
+        
+        logger.info(f"Batch request endpoint correctly configured: {batch_endpoint}")
+        
+        return True
+    except Exception as e:
+        logger.error(f"Error testing API endpoints: {str(e)}")
+        return False
 
 def test_category_finder() -> bool:
     """Test the TrendyolCategoryFinder"""
@@ -276,6 +313,9 @@ def main():
     categories_ok = test_categories_api(client)
     products_ok = test_products_api(client)
     
+    # Test API endpoint paths
+    endpoints_ok = test_api_endpoints(client)
+    
     # Test helper components
     category_finder_ok = test_category_finder()
     model_structure_ok = verify_model_structure()
@@ -289,11 +329,12 @@ def main():
     print(f"Brands API: {'✅ PASS' if brands_ok else '❌ FAIL'}")
     print(f"Categories API: {'✅ PASS' if categories_ok else '❌ FAIL'}")
     print(f"Products API (list): {'✅ PASS' if products_ok else '❌ FAIL'}")
+    print(f"API Endpoints: {'✅ PASS' if endpoints_ok else '❌ FAIL'}")
     print(f"Category Finder: {'✅ PASS' if category_finder_ok else '❌ FAIL'}")
     print(f"Model Structure: {'✅ PASS' if model_structure_ok else '❌ FAIL'}")
     
     # Overall result
-    all_ok = config_ok and client_ok and brands_ok and categories_ok and products_ok and category_finder_ok and model_structure_ok
+    all_ok = config_ok and client_ok and brands_ok and categories_ok and products_ok and endpoints_ok and category_finder_ok and model_structure_ok
     
     print("\n" + "=" * 80)
     if all_ok:
