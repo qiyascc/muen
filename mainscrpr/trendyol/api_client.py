@@ -171,7 +171,7 @@ class BrandsAPI:
     
   def _get_brands_endpoint(self):
     """Get the brands endpoint for verification"""
-    return '/suppliers/brands'
+    return '/product/brands'
     
   def get_brands(self, page=0, size=1000):
     """Get all brands from Trendyol"""
@@ -181,7 +181,7 @@ class BrandsAPI:
 
   def _get_brand_by_name_endpoint(self):
     """Get the brand by name endpoint for verification"""
-    return '/suppliers/brands/by-name'
+    return '/product/brands/by-name'
     
   def get_brand_by_name(self, name):
     """Get brand by name"""
@@ -328,6 +328,8 @@ def fetch_brands() -> List[Dict[str, Any]]:
   """
     Fetch all brands from Trendyol and update the local database.
     Returns a list of brand dictionaries.
+    
+    If the API connection fails, it will check the database for existing brands.
     """
   client = get_api_client()
   if not client:
@@ -339,6 +341,20 @@ def fetch_brands() -> List[Dict[str, Any]]:
 
     if not response or 'brands' not in response:
       logger.error("Failed to fetch brands from Trendyol API")
+      logger.warning("Using cached brands from database instead")
+      
+      # Get existing brands from database
+      cached_brands = list(TrendyolBrand.objects.filter(is_active=True).values('brand_id', 'name'))
+      if cached_brands:
+        logger.info(f"Found {len(cached_brands)} brands in database cache")
+        # Convert to expected format
+        formatted_brands = [
+          {'id': brand['brand_id'], 'name': brand['name']} 
+          for brand in cached_brands
+        ]
+        return formatted_brands
+      
+      logger.error("No cached brands found in database")
       return []
 
     brands = response.get('brands', [])
@@ -358,6 +374,19 @@ def fetch_brands() -> List[Dict[str, Any]]:
     return brands
   except Exception as e:
     logger.error(f"Error fetching brands from Trendyol: {str(e)}")
+    
+    # Get existing brands from database in case of error
+    logger.warning("Using cached brands from database instead")
+    cached_brands = list(TrendyolBrand.objects.filter(is_active=True).values('brand_id', 'name'))
+    if cached_brands:
+      logger.info(f"Found {len(cached_brands)} brands in database cache")
+      # Convert to expected format
+      formatted_brands = [
+        {'id': brand['brand_id'], 'name': brand['name']} 
+        for brand in cached_brands
+      ]
+      return formatted_brands
+    
     return []
 
 
@@ -365,6 +394,8 @@ def fetch_categories() -> List[Dict[str, Any]]:
   """
     Fetch all categories from Trendyol and update the local database.
     Returns a list of category dictionaries.
+    
+    If the API connection fails, it will check the database for existing categories.
     """
   client = get_api_client()
   if not client:
@@ -376,6 +407,20 @@ def fetch_categories() -> List[Dict[str, Any]]:
 
     if not response or 'categories' not in response:
       logger.error("Failed to fetch categories from Trendyol API")
+      logger.warning("Using cached categories from database instead")
+      
+      # Get existing categories from database
+      cached_categories = list(TrendyolCategory.objects.filter(is_active=True).values('category_id', 'name', 'parent_id', 'path'))
+      if cached_categories:
+        logger.info(f"Found {len(cached_categories)} categories in database cache")
+        # Convert to expected format
+        formatted_categories = [
+          {'id': cat['category_id'], 'name': cat['name'], 'parentId': cat['parent_id']} 
+          for cat in cached_categories
+        ]
+        return formatted_categories
+      
+      logger.error("No cached categories found in database")
       return []
 
     categories = response.get('categories', [])
@@ -407,6 +452,19 @@ def fetch_categories() -> List[Dict[str, Any]]:
     return categories
   except Exception as e:
     logger.error(f"Error fetching categories from Trendyol: {str(e)}")
+    
+    # Get existing categories from database in case of error
+    logger.warning("Using cached categories from database instead")
+    cached_categories = list(TrendyolCategory.objects.filter(is_active=True).values('category_id', 'name', 'parent_id', 'path'))
+    if cached_categories:
+      logger.info(f"Found {len(cached_categories)} categories in database cache")
+      # Convert to expected format
+      formatted_categories = [
+        {'id': cat['category_id'], 'name': cat['name'], 'parentId': cat['parent_id']} 
+        for cat in cached_categories
+      ]
+      return formatted_categories
+    
     return []
 
 
