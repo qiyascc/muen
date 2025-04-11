@@ -39,7 +39,12 @@ class Command(BaseCommand):
             'Sarı': 1007,
             'Mor': 1008,
             'Gri': 1009,
-            'Kahverengi': 1010
+            'Kahverengi': 1010,
+            'Ekru': 1011,
+            'Bej': 1012,
+            'Lacivert': 1013,
+            'Turuncu': 1014,
+            'Krem': 1015
         }
         
         # Get products to retry
@@ -71,7 +76,7 @@ class Command(BaseCommand):
                     # Step 1: Fix product attributes (extract color from title if possible)
                     color = None
                     if product.title:
-                        color_match = re.search(r'(Beyaz|Siyah|Mavi|Kirmizi|Pembe|Yeşil|Sarı|Mor|Gri|Kahverengi)', 
+                        color_match = re.search(r'(Beyaz|Siyah|Mavi|Kirmizi|Pembe|Yeşil|Sarı|Mor|Gri|Kahverengi|Ekru|Bej|Lacivert|Turuncu|Krem)', 
                                                 product.title, re.IGNORECASE)
                         if color_match:
                             color = color_match.group(1)
