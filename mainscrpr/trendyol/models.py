@@ -98,6 +98,7 @@ class TrendyolProduct(models.Model):
     brand_id = models.IntegerField(null=True, blank=True)
     category_name = models.CharField(max_length=255, blank=True)
     category_id = models.IntegerField(null=True, blank=True)
+    pim_category_id = models.IntegerField(null=True, blank=True, help_text="Product Information Management Category ID (optional)")
     
     # Price and stock
     price = models.DecimalField(max_digits=10, decimal_places=2)
