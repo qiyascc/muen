@@ -269,6 +269,12 @@ class ProductsAPI:
     
   def _get_batch_request_endpoint(self, batch_id):
     """Get the batch request endpoint for verification"""
+    # Extract the actual batch ID from the full response if needed
+    # Trendyol sometimes returns combined IDs with timestamps
+    if '-' in batch_id:
+      # Extract just the UUID part before the timestamp
+      batch_id = batch_id.split('-')[0]
+      
     return f'/integration/product/sellers/{self.client.supplier_id}/products/batch-requests/{batch_id}'
 
   def create_products(self, products):
@@ -290,7 +296,14 @@ class ProductsAPI:
   def get_batch_request_status(self, batch_id):
     """Get the status of a batch request"""
     endpoint = self._get_batch_request_endpoint(batch_id)
-    return self.client.make_request('GET', endpoint)
+    response = self.client.make_request('GET', endpoint)
+    
+    # Log the response for debugging
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"Batch status response for {batch_id}: {response}")
+    
+    return response
 
   def get_products(self, barcode=None, approved=None, page=0, size=50):
     """Get products from Trendyol"""
@@ -1584,7 +1597,7 @@ def check_product_batch_status(product: TrendyolProduct) -> str:
 
     # Get error message if any
     error_message = ""
-    if 'items' in response:
+    if isinstance(response, dict) and 'items' in response:
       items = response.get('items', [])
       for item in items:
         if item.get('status') in ['FAILED', 'INVALID']:
@@ -1609,7 +1622,14 @@ def check_product_batch_status(product: TrendyolProduct) -> str:
 
     # Update product status
     product.batch_status = internal_status
-    product.status_message = error_message if error_message else f"Batch status: {status}"
+    # Use a default status message if no error and we received a non-dictionary response
+    if error_message:
+        product.status_message = error_message
+    elif isinstance(response, dict):
+        status = response.get('status', 'unknown')
+        product.status_message = f"Batch status: {status}"
+    else:
+        product.status_message = f"Batch status: processing (raw response)"
     product.last_check_time = timezone.now()
 
     if internal_status == 'completed':
