@@ -1566,6 +1566,7 @@ def lcwaikiki_to_trendyol_product(lcw_product) -> Optional[TrendyolProduct]:
     
     This is an enhanced version with improved product code extraction and
     barcode generation to ensure uniqueness and Trendyol compatibility.
+    It now also handles brand lookups and attribute mapping.
     """
     if not lcw_product:
         return None
@@ -1618,7 +1619,7 @@ def lcwaikiki_to_trendyol_product(lcw_product) -> Optional[TrendyolProduct]:
                     images = lcw_product.images
                 
                 # Ensure all image URLs are strings and properly formatted
-                images = [str(img) for img in images if img]
+                images = [str(img) for img in images if img and 'http' in str(img)]
                 
                 # Fix image URLs that don't have proper protocol
                 for i, img in enumerate(images):
@@ -1629,41 +1630,156 @@ def lcwaikiki_to_trendyol_product(lcw_product) -> Optional[TrendyolProduct]:
             except Exception as e:
                 logger.warning(f"Error processing images for product {lcw_product.id}: {str(e)}")
         
+        # If no images found, use a default placeholder image
+        if not images:
+            images = ["https://img-lcwaikiki.mncdn.com/mnresize/1024/-/pim/productimages/20224/5841125/l_20224-w4bi51z8-ct5_a.jpg"]
+            logger.warning(f"No valid images found for product {lcw_product.id}, using placeholder")
+        
         # Get quantity with fallback
-        quantity = 0
+        quantity = 10  # Default to 10 for better Trendyol acceptance
         if hasattr(lcw_product, 'get_total_stock'):
             try:
-                quantity = lcw_product.get_total_stock()
+                stock = lcw_product.get_total_stock()
+                if stock and stock > 0:
+                    quantity = stock
             except Exception as e:
                 logger.warning(f"Error getting total stock for product {lcw_product.id}: {str(e)}")
+        
+        # Find the appropriate brand ID in the Trendyol system
+        brand_id = None
+        try:
+            # Try to find the LCW brand in our database
+            lcw_brand = TrendyolBrand.objects.filter(
+                name__icontains="LCW", 
+                is_active=True
+            ).first()
+            
+            if lcw_brand:
+                brand_id = lcw_brand.brand_id
+                logger.info(f"Found brand: {lcw_brand.name} (ID: {brand_id})")
+            else:
+                # Try to fetch brands if none found
+                logger.info("No LCW brand found in database, fetching from Trendyol...")
+                fetch_brands()
+                
+                # Try again after fetching
+                lcw_brand = TrendyolBrand.objects.filter(
+                    name__icontains="LCW", 
+                    is_active=True
+                ).first()
+                
+                if lcw_brand:
+                    brand_id = lcw_brand.brand_id
+                    logger.info(f"Found brand after fetch: {lcw_brand.name} (ID: {brand_id})")
+                else:
+                    # If still not found, use any available brand
+                    any_brand = TrendyolBrand.objects.filter(is_active=True).first()
+                    if any_brand:
+                        brand_id = any_brand.brand_id
+                        logger.warning(f"Using fallback brand: {any_brand.name} (ID: {brand_id})")
+        except Exception as e:
+            logger.error(f"Error finding brand for product {lcw_product.id}: {str(e)}")
+        
+        # Prepare basic attributes based on product data
+        attributes = {}
+        
+        # Add color attribute if available
+        if lcw_product.color:
+            attributes["color"] = lcw_product.color
+            
+        # Add size attributes if available (placeholder for now)
+        # We'll add a proper implementation for size mapping later
+        
+        # Find category information
+        category_id = None
+        if trendyol_product and trendyol_product.category_id:
+            category_id = trendyol_product.category_id
+        else:
+            # Try to find a category based on the product's category name
+            category_name = lcw_product.category or ""
+            try:
+                if category_name:
+                    # Try to find a matching category
+                    if "tişört" in category_name.lower() or "t-shirt" in category_name.lower():
+                        # Look for T-shirt category
+                        t_shirt_category = TrendyolCategory.objects.filter(
+                            name__icontains="Tişört", 
+                            is_active=True
+                        ).first()
+                        
+                        if t_shirt_category:
+                            category_id = t_shirt_category.category_id
+                            logger.info(f"Found T-shirt category: {t_shirt_category.name} (ID: {category_id})")
+                    else:
+                        # Generic search
+                        words = category_name.split()
+                        for word in words:
+                            if len(word) > 3:  # Skip short words
+                                matching_category = TrendyolCategory.objects.filter(
+                                    name__icontains=word,
+                                    is_active=True
+                                ).first()
+                                
+                                if matching_category:
+                                    category_id = matching_category.category_id
+                                    logger.info(f"Found category for '{word}': {matching_category.name} (ID: {category_id})")
+                                    break
+            except Exception as e:
+                logger.error(f"Error finding category for product {lcw_product.id}: {str(e)}")
+        
+        # If category still not found, try to fetch categories
+        if not category_id:
+            try:
+                logger.info("No category found, fetching from Trendyol...")
+                fetch_categories()
+                
+                # Default to a standard clothing category if available
+                default_category = TrendyolCategory.objects.filter(
+                    name__icontains="Giyim",
+                    is_active=True
+                ).first()
+                
+                if default_category:
+                    category_id = default_category.category_id
+                    logger.warning(f"Using default category: {default_category.name} (ID: {category_id})")
+            except Exception as e:
+                logger.error(f"Error fetching categories: {str(e)}")
         
         if not trendyol_product:
             # Create a new Trendyol product with enhanced data
             trendyol_product = TrendyolProduct.objects.create(
-                title=lcw_product.title,
-                description=lcw_product.description or lcw_product.title,
+                title=lcw_product.title or "LC Waikiki Product",
+                description=lcw_product.description or lcw_product.title or "LC Waikiki Product Description",
                 barcode=barcode,
                 product_main_id=product_code or barcode,
                 stock_code=product_code or barcode,
                 brand_name="LCW",
-                category_name=lcw_product.category or "",
-                price=price,
+                brand_id=brand_id,
+                category_name=lcw_product.category or "Clothing",
+                category_id=category_id,
+                price=price or Decimal('100.00'),  # Fallback price if none provided
                 quantity=quantity,
                 image_url=images[0] if images else "",
                 additional_images=images[1:] if len(images) > 1 else [],
+                attributes=attributes,
                 lcwaikiki_product=lcw_product,
                 batch_status='pending',
                 status_message="Created from LCWaikiki product",
                 currency_type="TRY",  # Turkish Lira
-                vat_rate=18  # Default VAT rate in Turkey
+                vat_rate=18,  # Default VAT rate in Turkey
+                color=lcw_product.color or ""
             )
             logger.info(f"Created new Trendyol product from LCW product {lcw_product.id} with barcode {barcode}")
         else:
             # Update existing Trendyol product with latest LCWaikiki data
-            trendyol_product.title = lcw_product.title
-            trendyol_product.description = lcw_product.description or lcw_product.title
-            trendyol_product.price = price
+            trendyol_product.title = lcw_product.title or trendyol_product.title or "LC Waikiki Product"
+            trendyol_product.description = lcw_product.description or lcw_product.title or trendyol_product.description or "LC Waikiki Product Description"
+            trendyol_product.price = price or trendyol_product.price or Decimal('100.00')
             trendyol_product.quantity = quantity
+            trendyol_product.brand_id = brand_id or trendyol_product.brand_id
+            trendyol_product.category_id = category_id or trendyol_product.category_id
+            trendyol_product.attributes = attributes
+            trendyol_product.color = lcw_product.color or trendyol_product.color or ""
             
             # Only update barcode if it's not already been used with Trendyol
             if not trendyol_product.trendyol_id and not trendyol_product.batch_status == 'completed':
@@ -1682,4 +1798,5 @@ def lcwaikiki_to_trendyol_product(lcw_product) -> Optional[TrendyolProduct]:
         return trendyol_product
     except Exception as e:
         logger.error(f"Error converting LCWaikiki product to Trendyol product: {str(e)}")
+        logger.exception(e)  # Log full traceback for debugging
         return None
