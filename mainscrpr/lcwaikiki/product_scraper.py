@@ -408,20 +408,35 @@ class ProductScraper:
             if price_elem:
                 try:
                     price_text = price_elem.text.strip()
-                    # Remove TL (Turkish Lira) and any other currency symbols
-                    price_text = re.sub(r'[^0-9,.]', '', price_text)
-                    # For Turkish format: Replace dots used as thousand separators and commas as decimal points
-                    # Handle numbers like 1.299,99 
-                    if ',' in price_text:
-                        # If comma is used as decimal separator
-                        price_text = price_text.replace('.', '') # Remove thousand separators
-                        price_text = price_text.replace(',', '.') # Convert comma to dot for decimal
-                    
-                    product_data['price'] = float(price_text)
-                except ValueError as e:
+                    # First try to find the numeric pattern directly
+                    price_match = re.search(r'(\d+(?:[.,]\d+)?)', price_text.replace('.', ''))
+                    if price_match:
+                        # Extract the price without currency symbol
+                        price_text = price_match.group(1)
+                        # If comma is used as decimal separator (Turkish format)
+                        if ',' in price_text:
+                            price_text = price_text.replace(',', '.')
+                        product_data['price'] = float(price_text)
+                    else:
+                        # Fallback: try more aggressive cleaning
+                        price_text = re.sub(r'[^0-9,.]', '', price_text)
+                        # For Turkish format: Replace dots used as thousand separators and commas as decimal points
+                        if ',' in price_text:
+                            # If comma is used as decimal separator
+                            price_text = price_text.replace('.', '') # Remove thousand separators
+                            price_text = price_text.replace(',', '.') # Convert comma to dot for decimal
+                        
+                        product_data['price'] = float(price_text or 0)
+                except (ValueError, TypeError) as e:
                     logger.warning(f"Could not parse price from '{price_elem.text.strip()}': {str(e)}")
                     # Use a default value as fallback if parsing fails
                     product_data['price'] = 0
+                
+                # Log successful price extraction for debugging
+                if product_data['price'] > 0:
+                    logger.debug(f"Successfully extracted price: {product_data['price']} from '{price_elem.text.strip()}'")
+                else:
+                    logger.warning(f"Zero price extracted from '{price_elem.text.strip()}'") 
             
             # Extract discount ratio
             discount_elem = soup.select_one('.discount-rate')
@@ -551,9 +566,35 @@ class ProductScraper:
                 product_prices = json_data.get('ProductPrices', {})
                 if product_prices:
                     if 'Price' in product_prices:
-                        product_data['product']['price'] = float(product_prices['Price'] or 0)
+                        try:
+                            price_value = product_prices['Price']
+                            # Handle string values (with potential formatting)
+                            if isinstance(price_value, str):
+                                # Clean the price string
+                                price_value = re.sub(r'[^0-9,.]', '', price_value)
+                                # If comma is used as decimal separator (Turkish format)
+                                if ',' in price_value:
+                                    price_value = price_value.replace('.', '')  # Remove thousand separators
+                                    price_value = price_value.replace(',', '.')  # Convert comma to dot for decimal
+                            product_data['product']['price'] = float(price_value or 0)
+                        except (ValueError, TypeError) as e:
+                            logger.warning(f"Could not parse price from JSON data: {str(e)}")
+                            # Keep the price from HTML parsing if it exists
+                            if 'price' not in product_data['product'] or product_data['product']['price'] == 0:
+                                product_data['product']['price'] = 0
+                    
                     if 'DiscountRatio' in product_prices:
-                        product_data['product']['discount_ratio'] = float(product_prices['DiscountRatio'] or 0) / 100
+                        try:
+                            discount_value = product_prices['DiscountRatio']
+                            if isinstance(discount_value, str):
+                                discount_value = re.sub(r'[^0-9,.]', '', discount_value)
+                                if ',' in discount_value:
+                                    discount_value = discount_value.replace(',', '.')
+                            product_data['product']['discount_ratio'] = float(discount_value or 0) / 100
+                        except (ValueError, TypeError) as e:
+                            logger.warning(f"Could not parse discount ratio: {str(e)}")
+                            if 'discount_ratio' not in product_data['product']:
+                                product_data['product']['discount_ratio'] = 0
                 
                 # Add size and stock information
                 if 'ProductSizes' in json_data and json_data['ProductSizes']:
