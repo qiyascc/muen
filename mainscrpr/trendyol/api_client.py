@@ -1,6 +1,7 @@
 import logging
 import json
 import time
+import re
 import requests
 import base64
 from decimal import Decimal
@@ -1239,6 +1240,9 @@ def lcwaikiki_to_trendyol_product(lcw_product) -> Optional[TrendyolProduct]:
     """
     Convert an LCWaikiki product to a Trendyol product.
     Returns the created or updated Trendyol product instance.
+    
+    This is an enhanced version with improved product code extraction and
+    barcode generation to ensure uniqueness and Trendyol compatibility.
     """
     if not lcw_product:
         return None
@@ -1249,71 +1253,108 @@ def lcwaikiki_to_trendyol_product(lcw_product) -> Optional[TrendyolProduct]:
             lcwaikiki_product=lcw_product
         ).first()
         
+        # Extract and format product code properly
+        product_code = None
+        if lcw_product.product_code:
+            # Clean up product code - only allow alphanumeric characters
+            product_code = re.sub(r'[^a-zA-Z0-9]', '', lcw_product.product_code)
+            # Ensure it's not empty after cleaning
+            if not product_code:
+                product_code = None
+        
+        # Generate a unique barcode that meets Trendyol requirements
+        # Trendyol requires unique barcode with alphanumeric chars
+        barcode = None
+        if product_code:
+            barcode = f"LCW{product_code}"
+        else:
+            # If no product code, create a unique identifier based on ID and timestamp
+            timestamp = int(time.time())
+            barcode = f"LCW{lcw_product.id}{timestamp}"
+        
+        # Ensure barcode is alphanumeric and meets Trendyol requirements
+        barcode = re.sub(r'[^a-zA-Z0-9]', '', barcode)
+        # Cap length to avoid potential issues with very long barcodes
+        barcode = barcode[:32]
+        
+        # Get the price with proper discount handling
+        price = lcw_product.price or Decimal('0.00')
+        if lcw_product.discount_ratio and lcw_product.discount_ratio > 0:
+            # Apply discount if available
+            discount = Decimal(lcw_product.discount_ratio) / Decimal('100')
+            price = price * (Decimal('1.00') - discount)
+        
+        # Process images with better error handling
+        images = []
+        if lcw_product.images:
+            try:
+                if isinstance(lcw_product.images, str):
+                    # Try to parse JSON string
+                    images = json.loads(lcw_product.images)
+                elif isinstance(lcw_product.images, list):
+                    images = lcw_product.images
+                
+                # Ensure all image URLs are strings and properly formatted
+                images = [str(img) for img in images if img]
+                
+                # Fix image URLs that don't have proper protocol
+                for i, img in enumerate(images):
+                    if img and not img.startswith(('http://', 'https://')):
+                        images[i] = f"https:{img}" if img.startswith('//') else f"https://{img}"
+            except json.JSONDecodeError:
+                logger.warning(f"Failed to decode images JSON for product {lcw_product.id}")
+            except Exception as e:
+                logger.warning(f"Error processing images for product {lcw_product.id}: {str(e)}")
+        
+        # Get quantity with fallback
+        quantity = 0
+        if hasattr(lcw_product, 'get_total_stock'):
+            try:
+                quantity = lcw_product.get_total_stock()
+            except Exception as e:
+                logger.warning(f"Error getting total stock for product {lcw_product.id}: {str(e)}")
+        
         if not trendyol_product:
-            # Create a new Trendyol product
-            barcode = lcw_product.product_code or f"LCW-{lcw_product.id}"
-            
-            # Get the price
-            price = lcw_product.price or Decimal('0.00')
-            if lcw_product.discount_ratio and lcw_product.discount_ratio > 0:
-                # Apply discount if available
-                discount = Decimal(lcw_product.discount_ratio) / Decimal('100')
-                price = price * (Decimal('1.00') - discount)
-            
-            # Get images
-            images = []
-            if lcw_product.images:
-                try:
-                    if isinstance(lcw_product.images, str):
-                        images = json.loads(lcw_product.images)
-                    elif isinstance(lcw_product.images, list):
-                        images = lcw_product.images
-                except json.JSONDecodeError:
-                    pass
-            
-            # Create Trendyol product
+            # Create a new Trendyol product with enhanced data
             trendyol_product = TrendyolProduct.objects.create(
                 title=lcw_product.title,
                 description=lcw_product.description or lcw_product.title,
                 barcode=barcode,
-                product_main_id=lcw_product.product_code,
+                product_main_id=product_code or barcode,
+                stock_code=product_code or barcode,
                 brand_name="LCW",
                 category_name=lcw_product.category or "",
                 price=price,
-                quantity=lcw_product.get_total_stock() if hasattr(lcw_product, 'get_total_stock') else 0,
+                quantity=quantity,
                 image_url=images[0] if images else "",
                 additional_images=images[1:] if len(images) > 1 else [],
                 lcwaikiki_product=lcw_product,
                 batch_status='pending',
-                status_message="Created from LCWaikiki product"
+                status_message="Created from LCWaikiki product",
+                currency_type="TRY",  # Turkish Lira
+                vat_rate=18  # Default VAT rate in Turkey
             )
+            logger.info(f"Created new Trendyol product from LCW product {lcw_product.id} with barcode {barcode}")
         else:
             # Update existing Trendyol product with latest LCWaikiki data
-            price = lcw_product.price or Decimal('0.00')
-            if lcw_product.discount_ratio and lcw_product.discount_ratio > 0:
-                discount = Decimal(lcw_product.discount_ratio) / Decimal('100')
-                price = price * (Decimal('1.00') - discount)
-            
             trendyol_product.title = lcw_product.title
             trendyol_product.description = lcw_product.description or lcw_product.title
             trendyol_product.price = price
-            trendyol_product.quantity = lcw_product.get_total_stock() if hasattr(lcw_product, 'get_total_stock') else 0
+            trendyol_product.quantity = quantity
+            
+            # Only update barcode if it's not already been used with Trendyol
+            if not trendyol_product.trendyol_id and not trendyol_product.batch_status == 'completed':
+                trendyol_product.barcode = barcode
+                trendyol_product.product_main_id = product_code or barcode
+                trendyol_product.stock_code = product_code or barcode
             
             # Update images if available
-            if lcw_product.images:
-                try:
-                    if isinstance(lcw_product.images, str):
-                        images = json.loads(lcw_product.images)
-                    elif isinstance(lcw_product.images, list):
-                        images = lcw_product.images
-                        
-                    if images:
-                        trendyol_product.image_url = images[0]
-                        trendyol_product.additional_images = images[1:] if len(images) > 1 else []
-                except json.JSONDecodeError:
-                    pass
+            if images:
+                trendyol_product.image_url = images[0]
+                trendyol_product.additional_images = images[1:] if len(images) > 1 else []
             
             trendyol_product.save()
+            logger.info(f"Updated Trendyol product {trendyol_product.id} from LCW product {lcw_product.id}")
         
         return trendyol_product
     except Exception as e:
