@@ -80,10 +80,10 @@ class TrendyolProductAdmin(ModelAdmin):
     Admin configuration for the TrendyolProduct model.
     """
     model = TrendyolProduct
-    list_display = ('title', 'barcode', 'brand_name', 'price', 'quantity', 'batch_status', 'last_sync_time')
+    list_display = ('title', 'barcode', 'brand_name', 'price', 'quantity', 'display_batch_id', 'batch_status', 'last_sync_time')
     list_filter = ('batch_status', 'last_sync_time', 'created_at')
-    search_fields = ('title', 'barcode', 'product_main_id', 'stock_code')
-    readonly_fields = ('created_at', 'updated_at', 'last_check_time', 'last_sync_time', 'display_trendyol_link')
+    search_fields = ('title', 'barcode', 'product_main_id', 'stock_code', 'batch_id')
+    readonly_fields = ('created_at', 'updated_at', 'last_check_time', 'last_sync_time', 'display_trendyol_link', 'display_batch_id')
     
     fieldsets = (
         ("Product Information", {"fields": ("title", "description", "barcode", "product_main_id", "stock_code")}),
@@ -92,7 +92,7 @@ class TrendyolProductAdmin(ModelAdmin):
         ("Images", {"fields": ("image_url", "additional_images")}),
         ("LCWaikiki Relation", {"fields": ("lcwaikiki_product",)}),
         ("Trendyol Information", {"fields": ("trendyol_id", "trendyol_url", "display_trendyol_link", "attributes")}),
-        ("Synchronization", {"fields": ("batch_id", "batch_status", "status_message", "last_check_time", "last_sync_time")}),
+        ("Synchronization", {"fields": ("display_batch_id", "batch_id", "batch_status", "status_message", "last_check_time", "last_sync_time")}),
         ("Metadata", {"fields": ("created_at", "updated_at")}),
     )
     
@@ -107,6 +107,24 @@ class TrendyolProductAdmin(ModelAdmin):
             return format_html('<a href="{}" target="_blank">Open in Trendyol</a>', obj.trendyol_url)
         return "Not available"
     display_trendyol_link.short_description = "Trendyol Link"
+    
+    def display_batch_id(self, obj):
+        """
+        Display batch ID as a clickable link to Trendyol Seller Panel.
+        """
+        if obj.batch_id:
+            # Extract just the UUID part if it contains a timestamp
+            import re
+            batch_uuid = obj.batch_id
+            match = re.search(r'([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})', obj.batch_id)
+            if match:
+                batch_uuid = match.group(1)
+            
+            # Create link to seller panel batch status page
+            seller_panel_url = f"https://partner.trendyol.com/integration/products/upload/status?batchId={batch_uuid}"
+            return format_html('<a href="{}" target="_blank">{}</a>', seller_panel_url, obj.batch_id)
+        return "Not available"
+    display_batch_id.short_description = "Batch ID"
     
     actions = ['sync_with_trendyol', 'check_sync_status', 'retry_failed_products', 'refresh_product_data']
     
