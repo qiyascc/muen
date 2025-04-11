@@ -5,6 +5,7 @@ from django.utils.html import format_html
 from unfold.admin import ModelAdmin, TabularInline
 from unfold.forms import AdminPasswordChangeForm, UserChangeForm, UserCreationForm
 from .models import Config, ProductAvailableUrl, ProductDeletedUrl, ProductNewUrl
+from .product_models import Product, ProductSize, City, Store, SizeStoreStock
 
 @admin.register(Config)
 class ConfigAdmin(ModelAdmin):

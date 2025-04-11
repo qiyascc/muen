@@ -7,12 +7,42 @@ from django.utils import timezone
 class Config(models.Model):
     """
     Config model to store configuration data for the application.
-    The brands field stores a list of brand identifiers in JSON format.
+    This consolidated model now stores both brand data and various configuration settings.
+    
+    The brands field can store a list of brand identifiers in JSON format
+    or a more complex JSON structure with additional configuration settings.
+    
+    Example structure:
+    {
+        "brands": ["lcw-classic", "lcw-abc"],
+        "price_config": {
+            "threshold": 500,
+            "below_multiplier": 1.1,
+            "above_multiplier": 1.2
+        },
+        "city_config": {
+            "active_cities": ["865", "34"],
+            "use_stores": true
+        },
+        "stock_config": {
+            "min_stock_level": 1,
+            "check_store_stock": true
+        }
+    }
     """
+    CITY_CHOICES = [
+        ('34', 'Istanbul'),
+        ('6', 'Ankara'),
+        ('35', 'Izmir'),
+        ('1', 'Adana'),
+        ('865', 'Default City'),
+    ]
+    
     name = models.CharField(max_length=100, unique=True, help_text="Configuration name")
     brands = models.JSONField(
-        help_text="List of brands in JSON format, e.g. ['lcw-classic', 'lcw-abc']"
+        help_text="Brand and configuration data in JSON format"
     )
+    is_active = models.BooleanField(default=True, help_text="Whether this config is active")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -21,20 +51,62 @@ class Config(models.Model):
 
     def clean(self):
         """
-        Validate that the brands field contains a list of strings.
+        Validate the brands field structure.
         """
-        if not isinstance(self.brands, list):
-            raise ValidationError({'brands': 'Brands must be a list'})
+        # Handle both legacy list format and new object format
+        if isinstance(self.brands, list):
+            # Convert legacy format to new format
+            self.brands = {
+                "brands": self.brands
+            }
         
-        for brand in self.brands:
-            if not isinstance(brand, str):
-                raise ValidationError({'brands': 'All brands must be strings'})
+        if not isinstance(self.brands, dict):
+            raise ValidationError({'brands': 'Configuration must be a JSON object'})
+        
+        # Validate brands if present
+        if "brands" in self.brands:
+            if not isinstance(self.brands["brands"], list):
+                raise ValidationError({'brands': 'Brands must be a list'})
+            
+            for brand in self.brands["brands"]:
+                if not isinstance(brand, str):
+                    raise ValidationError({'brands': 'All brands must be strings'})
+        
+        # Validate price config if present
+        if "price_config" in self.brands:
+            if not isinstance(self.brands["price_config"], dict):
+                raise ValidationError({'brands': 'Price config must be a dictionary'})
+            
+            if "threshold" in self.brands["price_config"] and not isinstance(self.brands["price_config"]["threshold"], (int, float)):
+                raise ValidationError({'brands': 'Price threshold must be a number'})
+                
+            if "below_multiplier" in self.brands["price_config"] and not isinstance(self.brands["price_config"]["below_multiplier"], (int, float)):
+                raise ValidationError({'brands': 'Below threshold multiplier must be a number'})
+                
+            if "above_multiplier" in self.brands["price_config"] and not isinstance(self.brands["price_config"]["above_multiplier"], (int, float)):
+                raise ValidationError({'brands': 'Above threshold multiplier must be a number'})
+        
+        # Validate city config if present
+        if "city_config" in self.brands:
+            if not isinstance(self.brands["city_config"], dict):
+                raise ValidationError({'brands': 'City config must be a dictionary'})
+            
+            if "active_cities" in self.brands["city_config"]:
+                if not isinstance(self.brands["city_config"]["active_cities"], list):
+                    raise ValidationError({'brands': 'Active cities must be a list'})
+                
+                for city in self.brands["city_config"]["active_cities"]:
+                    if not any(city == choice[0] for choice in self.CITY_CHOICES):
+                        raise ValidationError({'brands': f'Invalid city ID: {city}'})
 
     def save(self, *args, **kwargs):
         """
         Override save to validate data before saving.
+        If is_active is True, make sure other configs are set to inactive.
         """
         self.clean()
+        if self.is_active:
+            Config.objects.exclude(pk=self.pk).update(is_active=False)
         super().save(*args, **kwargs)
 
     class Meta:
