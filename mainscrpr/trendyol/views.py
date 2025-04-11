@@ -111,11 +111,15 @@ class BatchStatusView(TemplateView):
             return context
         
         try:
-            # Clean batch ID if it has any prefix
-            if '-' in batch_id:
-                parts = batch_id.split('-')
-                if len(parts) > 1:
-                    batch_id = parts[-1]
+            # For batch status, we need the full UUID part
+            import re
+            batch_uuid = batch_id
+            match = re.search(r'([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})', batch_id)
+            if match:
+                batch_uuid = match.group(1)
+                
+            # Make the actual request with the complete batch ID to Trendyol
+            batch_id = batch_uuid
             
             # Get batch status from API
             response = client.products.get_batch_request_status(batch_id)
