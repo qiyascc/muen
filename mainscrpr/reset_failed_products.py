@@ -34,11 +34,28 @@ def main():
     
     print(f"Found {failed_products.count()} failed products")
     
+    # Show all error messages
+    print("\nError messages from failed products:")
     for product in failed_products:
-        error_msg = product.status_message
+        print(f"- Product ID {product.id}: {product.status_message}")
+    
+    print("\nResetting products...")
+    for product in failed_products:
+        error_msg = product.status_message or ""  # Use empty string if None
         
         # Check if the failure was related to an API URL error
-        if any(e in error_msg for e in ['apigw.trendyol.com', '/integration/integration/', 'Server Error', '502', '556']):
+        # Be more lenient with error matching to catch more cases
+        api_related_keywords = [
+            'apigw.trendyol.com', 
+            'api.trendyol.com',
+            '/integration/',
+            'Server Error', 
+            '502', 
+            '556',
+            'url'
+        ]
+        
+        if any(e.lower() in error_msg.lower() for e in api_related_keywords):
             print(f"Resetting product: {product.title} (ID: {product.id})")
             print(f"  Previous error: {error_msg}")
             
@@ -48,11 +65,19 @@ def main():
             product.save()
             
             url_error_count += 1
+        else:
+            print(f"Skipping product: {product.title} (ID: {product.id})")
+            print(f"  Error doesn't appear API-related: {error_msg}")
         
         count += 1
     
     print(f"Processed {count} failed products")
     print(f"Reset {url_error_count} products with API URL errors")
 
-if __name__ == "__main__":
-    main()
+# When running with python manage.py shell < script.py
+# the __name__ == "__main__" condition is not met
+# So we call main() directly
+
+print("Starting the reset_failed_products script...")
+main()
+print("Script completed.")
