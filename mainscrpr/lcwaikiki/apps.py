@@ -2,17 +2,32 @@ from django.apps import AppConfig
 from django.conf import settings
 
 
-def run_sync_products_command():
+def run_sync_products_full():
     """
-    Function to run the sync_products management command that handles:
-    - Checking for new products and adding them
-    - Checking for deleted products and updating their status
-    - Checking for data changes in existing products
-    
+    Function to run the sync_products management command with all operations.
+    This handles new products, deleted products, and updates to existing products.
     This needs to be defined as a module-level function for proper serialization.
     """
     from django.core.management import call_command
     call_command('sync_products', '--all')
+
+
+def run_sync_products_new_only():
+    """
+    Function to run the sync_products management command to check for new products only.
+    This is a lightweight operation that can run more frequently.
+    """
+    from django.core.management import call_command
+    call_command('sync_products', '--check-new')
+
+
+def run_sync_products_deleted_only():
+    """
+    Function to run the sync_products management command to check for deleted products only.
+    This is a lightweight operation that can run at a medium frequency.
+    """
+    from django.core.management import call_command
+    call_command('sync_products', '--check-deleted')
 
 
 class LcwaikikiConfig(AppConfig):
@@ -22,7 +37,7 @@ class LcwaikikiConfig(AppConfig):
     def ready(self):
         """
         Set up scheduled tasks when the application starts.
-        This will run the sync_products command on startup and every 4 hours.
+        This will run the sync_products command on startup and at regular intervals.
         """
         # Avoid running scheduler in management commands like migrate
         import sys
@@ -43,7 +58,7 @@ class LcwaikikiConfig(AppConfig):
             # Schedule the main sync job to run every 4 hours
             # This runs all sync operations (new, deleted, and updates)
             scheduler.add_job(
-                run_sync_products_command,
+                run_sync_products_full,
                 trigger=IntervalTrigger(hours=4),
                 id='sync_products_full',
                 name='Sync all LC Waikiki product data',
@@ -55,7 +70,7 @@ class LcwaikikiConfig(AppConfig):
             
             # Check for new products every hour (lightweight)
             scheduler.add_job(
-                lambda: call_command('sync_products', '--check-new'),
+                run_sync_products_new_only,
                 trigger=IntervalTrigger(hours=1),
                 id='sync_products_new',
                 name='Check for new LC Waikiki products',
@@ -64,7 +79,7 @@ class LcwaikikiConfig(AppConfig):
             
             # Check for deleted products every 2 hours (lightweight)
             scheduler.add_job(
-                lambda: call_command('sync_products', '--check-deleted'),
+                run_sync_products_deleted_only,
                 trigger=IntervalTrigger(hours=2),
                 id='sync_products_deleted',
                 name='Check for deleted LC Waikiki products',

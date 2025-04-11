@@ -2,6 +2,7 @@ import logging
 import json
 import time
 import datetime
+import sys
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 from django.db import transaction
@@ -12,7 +13,13 @@ from lcwaikiki.models import Config, ProductAvailableUrl, ProductDeletedUrl, Pro
 from lcwaikiki.product_models import Product, ProductSize, City, Store, SizeStoreStock
 from lcwaikiki.product_scraper import ProductScraper
 
-logger = logging.getLogger(__name__)
+# Configure logging for better visibility
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    stream=sys.stdout
+)
+logger = logging.getLogger('lcwaikiki.sync_products')
 
 class Command(BaseCommand):
     help = 'Synchronizes product data with URLs and updates only changed data'
@@ -23,6 +30,12 @@ class Command(BaseCommand):
             default=10,
             type=int,
             help='Number of products to process in each batch',
+        )
+        parser.add_argument(
+            '--max-items',
+            default=100,
+            type=int,
+            help='Maximum number of items to process in a single run',
         )
         parser.add_argument(
             '--check-deleted',
@@ -47,6 +60,7 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         batch_size = options.get('batch_size', 10)
+        max_items = options.get('max_items', 100)
         check_deleted = options.get('check_deleted', False) or options.get('all', False)
         check_new = options.get('check_new', False) or options.get('all', False)
         update_existing = options.get('update_existing', False) or options.get('all', False)
@@ -56,37 +70,38 @@ class Command(BaseCommand):
             check_deleted = check_new = update_existing = True
         
         self.stdout.write(self.style.SUCCESS('Starting product synchronization...'))
+        self.stdout.write(self.style.SUCCESS(f'Batch size: {batch_size}, Max items per operation: {max_items}'))
         
         scraper = ProductScraper()
         
         # Process new URLs
         if check_new:
-            self.process_new_urls(scraper, batch_size)
+            self.process_new_urls(scraper, batch_size, max_items)
             
         # Update existing products
         if update_existing:
-            self.update_existing_products(scraper, batch_size)
+            self.update_existing_products(scraper, batch_size, max_items)
             
         # Check for deleted products
         if check_deleted:
-            self.check_deleted_products(scraper)
+            self.check_deleted_products(scraper, max_items)
             
         self.stdout.write(self.style.SUCCESS('Product synchronization completed successfully'))
 
-    def process_new_urls(self, scraper, batch_size):
+    def process_new_urls(self, scraper, batch_size, max_items=100):
         """Process new product URLs and add them to the database"""
         self.stdout.write(self.style.NOTICE('Checking for new product URLs...'))
         
         try:
-            # Get new URLs from the database
-            new_urls = list(ProductNewUrl.objects.all().values_list('url', flat=True))
+            # Get new URLs from the database, limited by max_items
+            new_urls = list(ProductNewUrl.objects.all().values_list('url', flat=True)[:max_items])
             count = len(new_urls)
             
             if count == 0:
                 self.stdout.write(self.style.SUCCESS('No new URLs to process'))
                 return
                 
-            self.stdout.write(self.style.SUCCESS(f'Found {count} new URLs to process'))
+            self.stdout.write(self.style.SUCCESS(f'Found {count} new URLs to process (limited to {max_items})'))
             
             # Process URLs in batches with small delay between batches
             processed_count = 0
@@ -152,7 +167,7 @@ class Command(BaseCommand):
         except Exception as e:
             self.stdout.write(self.style.ERROR(f'Error processing new URLs: {str(e)}'))
 
-    def update_existing_products(self, scraper, batch_size):
+    def update_existing_products(self, scraper, batch_size, max_items=100):
         """Update existing products with only changed data"""
         self.stdout.write(self.style.NOTICE('Updating existing products...'))
         
@@ -167,8 +182,8 @@ class Command(BaseCommand):
                 
             self.stdout.write(self.style.SUCCESS(f'Found {count} existing products to check for updates'))
             
-            # Get products ordered by oldest timestamp first
-            products_to_update = list(Product.objects.all().order_by('timestamp').values_list('url', flat=True))
+            # Get products ordered by oldest timestamp first, limited by max_items
+            products_to_update = list(Product.objects.all().order_by('timestamp').values_list('url', flat=True)[:max_items])
             update_count = len(products_to_update)
             
             if update_count == 0:
