@@ -1126,9 +1126,13 @@ def prepare_product_data(product: TrendyolProduct) -> Dict[str, Any]:
     if image_urls:
         product_data["images"] = [{"url": url} for url in image_urls if url]
     
-    # Add color attribute if not already present
-    if product.color and not any(attr.get("attributeName") == "Renk" for attr in attributes):
-        product_data["color"] = product.color
+    # Add color attribute if it exists in the attributes
+    color_from_attributes = None
+    if product.attributes and isinstance(product.attributes, dict) and 'color' in product.attributes:
+        color_from_attributes = product.attributes.get('color')
+        
+    if color_from_attributes and not any(attr.get("attributeName") == "Renk" for attr in attributes):
+        product_data["color"] = color_from_attributes
     
     # Ensure all numeric values are proper floats/ints
     for key in ["quantity", "dimensionalWeight", "listPrice", "salePrice", "vatRate", "deliveryDuration"]:
@@ -1746,6 +1750,12 @@ def lcwaikiki_to_trendyol_product(lcw_product) -> Optional[TrendyolProduct]:
                 logger.error(f"Error fetching categories: {str(e)}")
         
         if not trendyol_product:
+            # Store color in attributes if it exists
+            if hasattr(lcw_product, 'color') and lcw_product.color:
+                if not attributes:
+                    attributes = {}
+                attributes['color'] = lcw_product.color
+                
             # Create a new Trendyol product with enhanced data
             trendyol_product = TrendyolProduct.objects.create(
                 title=lcw_product.title or "LC Waikiki Product",
@@ -1756,7 +1766,8 @@ def lcwaikiki_to_trendyol_product(lcw_product) -> Optional[TrendyolProduct]:
                 brand_name="LCW",
                 brand_id=brand_id,
                 category_name=lcw_product.category or "Clothing",
-                category_id=category_id,
+                category_id=category_id, 
+                pim_category_id=category_id,  # Use same as category_id initially
                 price=price or Decimal('100.00'),  # Fallback price if none provided
                 quantity=quantity,
                 image_url=images[0] if images else "",
@@ -1766,8 +1777,7 @@ def lcwaikiki_to_trendyol_product(lcw_product) -> Optional[TrendyolProduct]:
                 batch_status='pending',
                 status_message="Created from LCWaikiki product",
                 currency_type="TRY",  # Turkish Lira
-                vat_rate=18,  # Default VAT rate in Turkey
-                color=lcw_product.color or ""
+                vat_rate=18  # Default VAT rate in Turkey
             )
             logger.info(f"Created new Trendyol product from LCW product {lcw_product.id} with barcode {barcode}")
         else:
@@ -1778,8 +1788,15 @@ def lcwaikiki_to_trendyol_product(lcw_product) -> Optional[TrendyolProduct]:
             trendyol_product.quantity = quantity
             trendyol_product.brand_id = brand_id or trendyol_product.brand_id
             trendyol_product.category_id = category_id or trendyol_product.category_id
+            trendyol_product.pim_category_id = category_id or trendyol_product.pim_category_id
+            
+            # Update attributes and add color if it exists
+            if hasattr(lcw_product, 'color') and lcw_product.color:
+                if not attributes:
+                    attributes = {}
+                attributes['color'] = lcw_product.color
+                
             trendyol_product.attributes = attributes
-            trendyol_product.color = lcw_product.color or trendyol_product.color or ""
             
             # Only update barcode if it's not already been used with Trendyol
             if not trendyol_product.trendyol_id and not trendyol_product.batch_status == 'completed':
