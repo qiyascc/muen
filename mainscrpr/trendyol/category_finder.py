@@ -421,13 +421,13 @@ class TrendyolCategoryFinder:
         # If no leaf categories, return the first match
         return matches[0]
     
-    def get_required_attributes(self, category_id, product_title, product_color=None, product_size=None):
+    def get_required_attributes(self, category_id, product_title=None, product_color=None, product_size=None):
         """
         Get required attributes for a category, filling in default values when possible
         
         Args:
             category_id (int): The category ID to get attributes for
-            product_title (str): The product title, used to infer attributes
+            product_title (str, optional): The product title, used to infer attributes
             product_color (str, optional): The product color, if known
             product_size (str, optional): The product size, if known
             
