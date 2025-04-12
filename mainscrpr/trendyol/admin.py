@@ -83,13 +83,15 @@ class TrendyolProductAdmin(ModelAdmin):
     list_display = ('title', 'barcode', 'brand_name', 'price', 'quantity', 'display_batch_id', 'batch_status', 'last_sync_time')
     list_filter = ('batch_status', 'last_sync_time', 'created_at')
     search_fields = ('title', 'barcode', 'product_main_id', 'stock_code', 'batch_id')
-    readonly_fields = ('created_at', 'updated_at', 'last_check_time', 'last_sync_time', 'display_trendyol_link', 'display_batch_id')
+    readonly_fields = ('created_at', 'updated_at', 'last_check_time', 'last_sync_time', 
+                  'display_trendyol_link', 'display_batch_id', 'display_html_description', 
+                  'display_image_preview', 'display_additional_images_preview')
     
     fieldsets = (
-        ("Product Information", {"fields": ("title", "description", "barcode", "product_main_id", "stock_code")}),
+        ("Product Information", {"fields": ("title", "description", "display_html_description", "barcode", "product_main_id", "stock_code")}),
         ("Brand and Category", {"fields": ("brand_name", "category_name", "brand_id", "category_id")}),
         ("Price and Stock", {"fields": ("price", "quantity", "vat_rate", "currency_type")}),
-        ("Images", {"fields": ("image_url", "additional_images")}),
+        ("Images", {"fields": ("image_url", "display_image_preview", "additional_images", "display_additional_images_preview")}),
         ("LCWaikiki Relation", {"fields": ("lcwaikiki_product",)}),
         ("Trendyol Information", {"fields": ("trendyol_id", "trendyol_url", "display_trendyol_link", "attributes")}),
         ("Synchronization", {"fields": ("display_batch_id", "batch_id", "batch_status", "status_message", "last_check_time", "last_sync_time")}),
@@ -119,6 +121,52 @@ class TrendyolProductAdmin(ModelAdmin):
             return format_html('<a href="{}" target="_blank">{}</a>', batch_status_url, obj.batch_id)
         return "Not available"
     display_batch_id.short_description = "Batch ID"
+    
+    def display_html_description(self, obj):
+        """
+        Display HTML description as rendered HTML.
+        """
+        if obj.description:
+            return format_html('<div style="max-width:800px;">{}</div>', obj.description)
+        return "No description available"
+    display_html_description.short_description = "HTML Açıklama"
+    
+    def display_image_preview(self, obj):
+        """
+        Display main image as a preview.
+        """
+        if obj.image_url:
+            return format_html('<img src="{}" style="max-width:200px; max-height:200px;" />', obj.image_url)
+        return "No image available"
+    display_image_preview.short_description = "Görsel Önizleme"
+    
+    def display_additional_images_preview(self, obj):
+        """
+        Display additional images as previews.
+        """
+        if not obj.additional_images:
+            return "No additional images"
+            
+        # Try to parse additional images
+        images = []
+        try:
+            if isinstance(obj.additional_images, list):
+                images = obj.additional_images
+            elif isinstance(obj.additional_images, str):
+                import json
+                images = json.loads(obj.additional_images)
+        except:
+            return "Invalid image format"
+            
+        # Generate thumbnails for each image
+        html = '<div style="display:flex; flex-wrap:wrap; gap:10px;">'
+        for img in images:
+            if img and isinstance(img, str):
+                html += format_html('<img src="{}" style="max-width:150px; max-height:150px; margin:5px;" />', img)
+        html += '</div>'
+        
+        return format_html(html)
+    display_additional_images_preview.short_description = "Ek Görseller"
     
     actions = ['sync_with_trendyol', 'check_sync_status', 'retry_failed_products', 'refresh_product_data']
     

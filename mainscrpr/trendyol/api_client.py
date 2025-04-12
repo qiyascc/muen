@@ -1238,11 +1238,23 @@ def find_best_brand_match(product: TrendyolProduct) -> Optional[int]:
   """
     Find the best matching brand for a product.
     Returns the brand ID if found, None otherwise.
+    
+    LC Waikiki ürünleri için her zaman sabit 7156 ID'si kullanılır.
     """
   logger.info(
       f"Finding brand for product: {product.title} (Brand name: {product.brand_name})"
   )
-
+  
+  # LC Waikiki için sabit ID kullan (7156)
+  LC_WAIKIKI_BRAND_ID = 7156
+  
+  # İstek üzerine, LC Waikiki ürünleri için sabit ID kullan
+  if product.lcwaikiki_product or (product.brand_name and 
+                                   ('lcw' in product.brand_name.lower() or 
+                                    'waikiki' in product.brand_name.lower())):
+      logger.info(f"Using fixed LC Waikiki brand ID: {LC_WAIKIKI_BRAND_ID}")
+      return LC_WAIKIKI_BRAND_ID
+  
   # If we already have a brand ID, use it
   if product.brand_id:
     # Verify the brand exists
@@ -1252,10 +1264,12 @@ def find_best_brand_match(product: TrendyolProduct) -> Optional[int]:
       return product.brand_id
     except TrendyolBrand.DoesNotExist:
       logger.warning(f"Brand ID {product.brand_id} does not exist in database")
-      pass
+      # Fallback to LC Waikiki
+      logger.info(f"Falling back to LC Waikiki brand ID: {LC_WAIKIKI_BRAND_ID}")
+      return LC_WAIKIKI_BRAND_ID
 
-  # Try to find by brand name
-  if product.brand_name:
+  # Try to find by brand name for non-LC Waikiki products
+  if product.brand_name and 'lcw' not in product.brand_name.lower() and 'waikiki' not in product.brand_name.lower():
     try:
       # Try exact match first
       brand = TrendyolBrand.objects.filter(name__iexact=product.brand_name,
@@ -1275,67 +1289,15 @@ def find_best_brand_match(product: TrendyolProduct) -> Optional[int]:
             f"Found partial brand match: {brand.name} (ID: {brand.brand_id})")
         return brand.brand_id
 
-      # Try with brand name variations
-      brand_variations = []
-
-      # Handle LC WAIKIKI / LCW variations
-      if 'lcw' in product.brand_name.lower(
-      ) or 'waikiki' in product.brand_name.lower():
-        brand_variations.extend(['LC WAIKIKI', 'LCW'])
-
-      for variation in brand_variations:
-        brand = TrendyolBrand.objects.filter(name__iexact=variation,
-                                             is_active=True).first()
-
-        if brand:
-          logger.info(
-              f"Found brand match using variation '{variation}': {brand.name} (ID: {brand.brand_id})"
-          )
-          return brand.brand_id
-
     except Exception as e:
       logger.error(f"Error finding brand by name: {str(e)}")
+      # Fallback to LC Waikiki
+      logger.info(f"Error occurred, falling back to LC Waikiki brand ID: {LC_WAIKIKI_BRAND_ID}")
+      return LC_WAIKIKI_BRAND_ID
 
-  # If we have a related LCWaikiki product, assume it's LCWaikiki brand
-  if product.lcwaikiki_product:
-    try:
-      # First try LC WAIKIKI
-      brand = TrendyolBrand.objects.filter(name__icontains="WAIKIKI",
-                                           is_active=True).first()
-
-      if brand:
-        logger.info(
-            f"Found LCW brand using related product: {brand.name} (ID: {brand.brand_id})"
-        )
-        return brand.brand_id
-
-      # Then try LCW
-      brand = TrendyolBrand.objects.filter(name__iexact="LCW",
-                                           is_active=True).first()
-
-      if brand:
-        logger.info(
-            f"Found LCW brand using related product: {brand.name} (ID: {brand.brand_id})"
-        )
-        return brand.brand_id
-
-    except Exception as e:
-      logger.error(f"Error finding LCW brand: {str(e)}")
-
-  # If all else fails, try to find any brand and use it as fallback
-  try:
-    fallback_brand = TrendyolBrand.objects.filter(is_active=True).first()
-    if fallback_brand:
-      logger.warning(
-          f"Using fallback brand: {fallback_brand.name} (ID: {fallback_brand.brand_id})"
-      )
-      return fallback_brand.brand_id
-  except Exception as e:
-    logger.error(f"Error finding fallback brand: {str(e)}")
-
-  # No brand found
-  logger.error(f"No matching brand found for product: {product.title}")
-  return None
+  # Varsayılan olarak LC Waikiki brand ID'sini kullan
+  logger.info(f"No specific brand match, using default LC Waikiki brand ID: {LC_WAIKIKI_BRAND_ID}")
+  return LC_WAIKIKI_BRAND_ID
 
 
 def get_required_attributes_for_category(
@@ -1509,17 +1471,28 @@ def prepare_product_data(product: TrendyolProduct) -> Dict[str, Any]:
   # Limit title to 100 characters to avoid "Ürün Adı 100 karakterden fazla olamaz" error
   title = normalized_title[:100] if normalized_title and len(normalized_title) > 100 else normalized_title
   
+  # "Satıcı" ifadesi geçen p etiketlerini description'dan temizle
+  cleaned_description = product.description
+  if cleaned_description and "<p" in cleaned_description and "Satıcı" in cleaned_description:
+      import re
+      # "Satıcı" geçen p etiketlerini temizle
+      cleaned_description = re.sub(r'<p[^>]*>.*?Satıcı.*?</p>', '', cleaned_description)
+      print(f"[DEBUG-CLEAN] 'Satıcı' ifadesi içeren p etiketi temizlendi")
+  
+  # Stok kodu/model kodu aynı olacak ve değiştirilmeyecek
+  stock_code = product.stock_code
+  
   product_data = {
       "barcode": product.barcode,
       "title": title,
-      "productMainId": product.product_main_id or product.barcode,
+      "productMainId": stock_code,  # Stok kodu ve model kodu aynı olacak
       "brandId": brand_id,
       "categoryId": category_id,
-      "stockCode": product.stock_code or product.barcode,
+      "stockCode": stock_code,  # Stok kodunu olduğu gibi kullan, ön ek ekleme
       "quantity": product.quantity or 10,  # Default to 10 if not specified
       # Removed stockUnitType per request
       # Removed dimensionalWeight per request
-      "description": product.description
+      "description": cleaned_description
       or product.title,  # Use title as fallback description
       "currencyType": product.currency_type
       or "TRY",  # Default to Turkish Lira
