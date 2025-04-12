@@ -124,14 +124,16 @@ class TrendyolProductAdmin(ModelAdmin):
     
     def sync_with_trendyol(self, request, queryset):
         """
-        Synchronize selected products with Trendyol.
+        Synchronize selected products with Trendyol using the new API client.
         """
-        from . import api_client
+        # Yeni API istemcisini kullanıyoruz
+        from .trendyol_api_new import create_trendyol_product
         
         count = 0
         for product in queryset:
             try:
-                batch_id = api_client.create_trendyol_product(product)
+                self.message_user(request, f"Sending product '{product.title}' to Trendyol using new API client...")
+                batch_id = create_trendyol_product(product)
                 if batch_id:
                     count += 1
             except Exception as e:
@@ -143,15 +145,23 @@ class TrendyolProductAdmin(ModelAdmin):
     
     def check_sync_status(self, request, queryset):
         """
-        Check synchronization status for selected products.
+        Check synchronization status for selected products using the new API client.
         """
-        from . import api_client
+        from .trendyol_api_new import check_batch_status
         
         count = 0
         for product in queryset:
             if product.batch_id:
                 try:
-                    api_client.check_product_batch_status(product)
+                    self.message_user(request, f"Checking batch status for product '{product.title}' using new API client...")
+                    status, message = check_batch_status(product.batch_id)
+                    
+                    # Update product with status information
+                    product.batch_status = status
+                    product.status_message = message or "Status checked"
+                    product.last_check_time = timezone.now()
+                    product.save()
+                    
                     count += 1
                 except Exception as e:
                     self.message_user(request, f"Error checking status for {product.title}: {str(e)}", level='error')
@@ -164,10 +174,10 @@ class TrendyolProductAdmin(ModelAdmin):
     
     def retry_failed_products(self, request, queryset):
         """
-        Retry failed products with improved attribute handling.
-        Specifically removes the problematic 'color' field and uses proper attribute IDs.
+        Retry failed products with improved attribute handling using the new API client.
+        Specifically uses the new TrendyolAPI class which correctly formats attributes.
         """
-        from . import api_client
+        from .trendyol_api_new import create_trendyol_product, get_api_client_from_config, TrendyolCategoryFinder
         import json
         import re
         
@@ -175,25 +185,9 @@ class TrendyolProductAdmin(ModelAdmin):
         success_count = 0
         already_pending_count = 0
         
-        # Color ID mapping to use numeric IDs instead of string values
-        color_id_map = {
-            'Beyaz': 1001, 
-            'Siyah': 1002, 
-            'Mavi': 1003, 
-            'Kirmizi': 1004, 
-            'Pembe': 1005,
-            'Yeşil': 1006,
-            'Sarı': 1007,
-            'Mor': 1008,
-            'Gri': 1009,
-            'Kahverengi': 1010,
-            'Ekru': 1011,
-            'Bej': 1012,
-            'Lacivert': 1013,
-            'Turuncu': 1014,
-            'Krem': 1015,
-            'Petrol': 1016   # Petrol rengini ekledik
-        }
+        # Get API client and category finder
+        api_client = get_api_client_from_config()
+        category_finder = TrendyolCategoryFinder(api_client)
         
         for product in queryset:
             try:
@@ -201,54 +195,21 @@ class TrendyolProductAdmin(ModelAdmin):
                 if product.batch_status in ['pending', 'processing']:
                     already_pending_count += 1
                     continue
-                    
-                # Step 1: Fix product attributes (extract color from title if possible)
-                color = None
-                if product.title:
-                    color_match = re.search(r'(Beyaz|Siyah|Mavi|Kirmizi|Pembe|Yeşil|Sarı|Mor|Gri|Kahverengi|Ekru|Bej|Lacivert|Turuncu|Krem|Petrol)', 
-                                            product.title, re.IGNORECASE)
-                    if color_match:
-                        color = color_match.group(1)
                 
-                # Apply proper numeric color ID attribute
-                if color and color in color_id_map:
-                    color_id = color_id_map[color]
-                    product.attributes = [{"attributeId": 348, "attributeValueId": color_id}]
-                    fixed_count += 1
+                self.message_user(request, f"Retrying product '{product.title}' with new API client...")
                 
                 # Set to pending status with a placeholder message
                 product.batch_status = 'pending'
-                product.status_message = 'Pending retry after fix'
+                product.status_message = 'Pending retry with new API client'
                 product.save()
                 
-                # Step 2: Create a temporary function to prepare product data without the 'color' field
-                def prepare_product_data_fixed(product_obj):
-                    # Get standard product data
-                    data = api_client.prepare_product_data(product_obj)
-                    
-                    # Remove problematic 'color' field if it exists
-                    if 'color' in data:
-                        del data['color']
-                        
-                    return data
-                
-                # Step 3: Call API client with our modified data
-                client = api_client.get_api_client()
-                if client:
-                    # Prepare data using our fixed function
-                    api_data = prepare_product_data_fixed(product)
-                    if api_data:
-                        # Submit to API
-                        response = client.products.create_products([api_data])
-                        
-                        # Update status based on response
-                        if response and isinstance(response, dict) and 'batchId' in response:
-                            batch_id = response['batchId']
-                            product.batch_id = batch_id
-                            product.batch_status = 'processing'
-                            product.save()
-                            
-                            success_count += 1
+                # Use new create_trendyol_product function that correctly handles attributes
+                batch_id = create_trendyol_product(product)
+                if batch_id:
+                    product.batch_id = batch_id
+                    product.batch_status = 'processing'
+                    product.save()
+                    success_count += 1
             except Exception as e:
                 self.message_user(request, f"Error retrying product {product.title}: {str(e)}", level='error')
         
