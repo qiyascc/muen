@@ -1583,6 +1583,17 @@ def create_trendyol_product(product: TrendyolProduct) -> Optional[str]:
     """
   print(f"[DEBUG-CREATE] Ürün oluşturma başlatılıyor: ID={product.id}, Başlık={product.title}")
   
+  # Clean description - remove <p> tags containing "Satıcı"
+  if product.description:
+    import re
+    original_desc = product.description
+    # Remove all <p> tags containing "Satıcı" text
+    cleaned_desc = re.sub(r'<p[^>]*>.*?Satıcı.*?</p>', '', product.description)
+    if original_desc != cleaned_desc:
+      print(f"[DEBUG-CREATE] Açıklamadan \"Satıcı\" içeren etiketler temizlendi")
+      product.description = cleaned_desc
+      product.save()
+  
   client = get_api_client()
   if not client:
     error_message = "No active Trendyol API configuration found"
@@ -2155,24 +2166,23 @@ def lcwaikiki_to_trendyol_product(lcw_product) -> Optional[TrendyolProduct]:
     trendyol_product = TrendyolProduct.objects.filter(
         lcwaikiki_product=lcw_product).first()
 
-    # Extract and format product code properly
+    # Extract product code correctly - but don't modify it
     product_code = None
     if lcw_product.product_code:
-      # Clean up product code - only allow alphanumeric characters
+      # Use the product code as is - only clean up non-alphanumeric characters
       product_code = re.sub(r'[^a-zA-Z0-9]', '', lcw_product.product_code)
       # Ensure it's not empty after cleaning
       if not product_code:
         product_code = None
 
-    # Generate a unique barcode that meets Trendyol requirements
-    # Trendyol requires unique barcode with alphanumeric chars
+    # Generate a barcode using the product code directly (without LCW prefix)
     barcode = None
     if product_code:
-      barcode = f"LCW{product_code}"
+      barcode = product_code
     else:
       # If no product code, create a unique identifier based on ID and timestamp
       timestamp = int(time.time())
-      barcode = f"LCW{lcw_product.id}{timestamp}"
+      barcode = f"{lcw_product.id}{timestamp}"
 
     # Ensure barcode is alphanumeric and meets Trendyol requirements
     barcode = re.sub(r'[^a-zA-Z0-9]', '', barcode)
@@ -2232,40 +2242,9 @@ def lcwaikiki_to_trendyol_product(lcw_product) -> Optional[TrendyolProduct]:
             f"Error getting total stock for product {lcw_product.id}: {str(e)}"
         )
 
-    # Find the appropriate brand ID in the Trendyol system
-    brand_id = None
-    try:
-      # Try to find the LCW brand in our database
-      lcw_brand = TrendyolBrand.objects.filter(name__icontains="LCW",
-                                               is_active=True).first()
-
-      if lcw_brand:
-        brand_id = lcw_brand.brand_id
-        logger.info(f"Found brand: {lcw_brand.name} (ID: {brand_id})")
-      else:
-        # Try to fetch brands if none found
-        logger.info(
-            "No LCW brand found in database, fetching from Trendyol...")
-        fetch_brands()
-
-        # Try again after fetching
-        lcw_brand = TrendyolBrand.objects.filter(name__icontains="LCW",
-                                                 is_active=True).first()
-
-        if lcw_brand:
-          brand_id = lcw_brand.brand_id
-          logger.info(
-              f"Found brand after fetch: {lcw_brand.name} (ID: {brand_id})")
-        else:
-          # If still not found, use any available brand
-          any_brand = TrendyolBrand.objects.filter(is_active=True).first()
-          if any_brand:
-            brand_id = any_brand.brand_id
-            logger.warning(
-                f"Using fallback brand: {any_brand.name} (ID: {brand_id})")
-    except Exception as e:
-      logger.error(
-          f"Error finding brand for product {lcw_product.id}: {str(e)}")
+    # Use fixed LC Waikiki brand ID (7156)
+    brand_id = 7156
+    logger.info(f"Using fixed LC Waikiki brand ID: {brand_id}")
 
     # Prepare basic attributes based on product data
     attributes = {}
