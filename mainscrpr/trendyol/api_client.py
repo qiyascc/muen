@@ -10,14 +10,14 @@ from typing import Dict, List, Optional, Any, Tuple, Union
 from django.utils import timezone
 
 from .models import TrendyolAPIConfig, TrendyolBrand, TrendyolCategory, TrendyolProduct
-# DEFAULT_REQUIRED_ATTRIBUTES tanımla
+# DEFAULT_REQUIRED_ATTRIBUTES tanımla - basit versiyon
 DEFAULT_REQUIRED_ATTRIBUTES = {
-    # Giyim kategorileri için zorunlu öznitelikler
-    'clothing': [
-        {"attributeId": 338, "attributeValueId": 7189},  # Cinsiyet: Kadın
-        {"attributeId": 47, "attributeValueId": 8201},   # Menşei: Türkiye
-        {"attributeId": 60, "attributeValueId": 902},    # Yaş Grubu: Yetişkin
-    ]
+    # Temel zorunlu öznitelikler - API'den alındığı için gerekirse bunlar kullanılacak
+    "Gender": {"id": 338, "values": {"Kadın": 7189, "Erkek": 7190}},
+    "Origin": {"id": 47, "values": {"Türkiye": 8201}},
+    "Age Group": {"id": 60, "values": {"Yetişkin": 902}},
+    "Color": {"id": 348, "values": {"Siyah": 4294}},
+    "Size": {"id": 346, "values": {"M": 4236}}
 }
 
 logger = logging.getLogger(__name__)
@@ -1350,54 +1350,43 @@ def get_required_attributes_for_category(
     Get required attributes for a specific category.
     Returns a list of attribute dictionaries in format required by Trendyol API.
     
+    Artık, API'den alınan kategoriye özgü öznitelikler doğrudan kullanılacak,
+    manuel renk eşleştirmesine gerek kalmayacak.
+    
     Args:
         category_id: The category ID
         product_title: The product title to infer attributes from (optional)
-        product_color: The product color if known (optional)
+        product_color: The product color if known (optional) - artık API'den alınacak
         product_size: The product size if known (optional)
     
     Returns:
         List of attribute dictionaries in the format required by Trendyol API
     """
-  print(f"[DEBUG-ATTR] Zorunlu özellikler alınıyor: Kategori ID={category_id}")
+  logger.info(f"Getting required attributes for category ID={category_id}")
   
   try:
     client = get_api_client()
     if not client:
-      print(f"[DEBUG-ATTR] API istemcisi alınamadı, varsayılan özellikler kullanılacak")
-      # Use default attributes if we can't get an API client
+      logger.warning("API client could not be obtained, using default attributes")
+      # Sadece yerel tanımlı varsayılan öznitelikleri kullan
       return [
-          # Gender = Women
+          # Gender - Cinsiyet = Women - Kadın
           {
               "attributeId": DEFAULT_REQUIRED_ATTRIBUTES["Gender"]["id"],
               "attributeValueId": DEFAULT_REQUIRED_ATTRIBUTES["Gender"]["values"]["Kadın"]
           },
-          # Origin = Turkey 
+          # Origin - Menşei = Turkey - Türkiye 
           {
               "attributeId": DEFAULT_REQUIRED_ATTRIBUTES["Origin"]["id"],
               "attributeValueId": DEFAULT_REQUIRED_ATTRIBUTES["Origin"]["values"]["Türkiye"]
           },
-          # Color = Black
-          {
-              "attributeId": DEFAULT_REQUIRED_ATTRIBUTES["Color"]["id"],
-              "attributeValueId": DEFAULT_REQUIRED_ATTRIBUTES["Color"]["values"]["Siyah"]
-          },
-          # Size = M
-          {
-              "attributeId": DEFAULT_REQUIRED_ATTRIBUTES["Size"]["id"],
-              "attributeValueId": DEFAULT_REQUIRED_ATTRIBUTES["Size"]["values"]["M"]
-          },
-          # Age Group = Adult
-          {
-              "attributeId": DEFAULT_REQUIRED_ATTRIBUTES["Age Group"]["id"],
-              "attributeValueId": DEFAULT_REQUIRED_ATTRIBUTES["Age Group"]["values"]["Yetişkin"]
-          }
+          # Sadece varsayılan değerleri ekle - renk değeri API'den alınacak
       ]
     
-    # Use our enhanced category finder
+    # Doğrudan API'den öznitelikleri almak için CategoryFinder kullan
     finder = TrendyolCategoryFinder(client)
     
-    # We'll directly call the get_required_attributes method with positional args only
+    # Doğrudan API'den kategoriye özgü öznitelikleri al
     # First positional arg is category_id, the self is handled automatically
     try:
         attributes = finder.get_required_attributes(category_id)
