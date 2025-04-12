@@ -43,41 +43,76 @@ class TrendyolAPI:
         url = f"{self.config.base_url.rstrip('/')}/{endpoint.lstrip('/')}"
         kwargs.setdefault('timeout', DEFAULT_TIMEOUT)
         
-        logger.info(f"[DEBUG-API] URL: {url}")
-        logger.info(f"[DEBUG-API] Method: {method}")
-        logger.info(f"[DEBUG-API] Headers: {self.session.headers}")
+        # Detaylı loglama için tüm bilgileri yazdır
+        print(f"\n=== DEBUG API REQUEST ===")
+        print(f"URL: {url}")
+        print(f"Method: {method}")
+        
+        # Hassas bilgileri gizleyerek header'ları yazdır
+        headers_safe = self.session.headers.copy()
+        if 'Authorization' in headers_safe:
+            headers_safe['Authorization'] = "Basic ********"  # Güvenlik için API tokenini gizle
+        print(f"Headers: {headers_safe}")
         
         if 'json' in kwargs:
+            print(f"Request Data: {json.dumps(kwargs['json'], ensure_ascii=False, indent=2)}")
             logger.info(f"[DEBUG-API] JSON data: {json.dumps(kwargs['json'], ensure_ascii=False)[:500]}")
+        
+        logger.info(f"[DEBUG-API] URL: {url}")
+        logger.info(f"[DEBUG-API] Method: {method}")
+        logger.info(f"[DEBUG-API] Headers: {headers_safe}")
         
         for attempt in range(MAX_RETRIES):
             try:
+                print(f"Attempt {attempt + 1} of {MAX_RETRIES}...")
                 response = self.session.request(method, url, **kwargs)
                 
                 # Loglama: Tam istek ve yanıt için
+                print(f"Status Code: {response.status_code}")
                 logger.info(f"[DEBUG-API] Status Code: {response.status_code}")
                 
                 try:
-                    response_text = response.text[:1000]  # Yanıtın ilk 1000 karakteri
+                    response_text = response.text[:2000]  # Daha uzun yanıt göster (ilk 2000 karakter)
+                    print(f"Response: {response_text}")
                     logger.info(f"[DEBUG-API] Response: {response_text}")
                 except Exception as e:
+                    print(f"Could not read response: {str(e)}")
                     logger.info(f"[DEBUG-API] Could not read response: {str(e)}")
+                
+                print(f"=== END DEBUG API REQUEST ===\n")
+                
+                # Hata kontrolü
+                if response.status_code >= 400:
+                    print(f"ERROR: HTTP {response.status_code} - {response.reason}")
+                    print(f"Response body: {response.text}")
                 
                 response.raise_for_status()
                 
                 try:
                     return response.json()
                 except json.JSONDecodeError:
-                    logger.error(f"[DEBUG-API] JSON parse error for response: {response.text[:500]}")
+                    error_msg = f"JSON parse error for response: {response.text[:500]}"
+                    print(f"ERROR: {error_msg}")
+                    logger.error(f"[DEBUG-API] {error_msg}")
                     return {"error": "Invalid JSON response"}
                     
             except requests.exceptions.RequestException as e:
-                logger.error(f"[DEBUG-API] Request failed on attempt {attempt + 1}: {str(e)}")
+                error_msg = f"Request failed on attempt {attempt + 1}: {str(e)}"
+                print(f"ERROR: {error_msg}")
+                logger.error(f"[DEBUG-API] {error_msg}")
+                
+                if hasattr(e, 'response') and e.response is not None:
+                    print(f"Response status: {e.response.status_code}")
+                    print(f"Response body: {e.response.text[:1000]}")
+                
                 if attempt == MAX_RETRIES - 1:
                     logger.error(f"API request failed after {MAX_RETRIES} attempts: {str(e)}")
                     raise
+                
                 logger.warning(f"Attempt {attempt + 1} failed, retrying...")
-                time.sleep(RETRY_DELAY * (attempt + 1))
+                retry_delay = RETRY_DELAY * (attempt + 1)
+                print(f"Retrying in {retry_delay} seconds...")
+                time.sleep(retry_delay)
     
     def get(self, endpoint, params=None):
         # Debug için 
