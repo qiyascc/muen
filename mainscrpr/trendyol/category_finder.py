@@ -24,13 +24,17 @@ from typing import Dict, List, Any, Optional, Tuple, Set
 import difflib
 
 # Try to import sentence-transformers for advanced semantic similarity
+# Try to import sentence-transformers, but we expect this to fail in the current environment
+# We'll gracefully fall back to basic string matching for category finding
 try:
+    # These imports will likely fail, but the code is structured to handle that gracefully
     from sentence_transformers import SentenceTransformer, util
     from PyMultiDictionary import MultiDictionary
     ADVANCED_SEARCH_AVAILABLE = True
     logger = logging.getLogger(__name__)
     logger.info("Advanced semantic search enabled with sentence-transformers")
 except ImportError:
+    # This is the expected path in the Replit environment
     ADVANCED_SEARCH_AVAILABLE = False
     logger = logging.getLogger(__name__)
     logger.warning("sentence-transformers not available, using basic search")

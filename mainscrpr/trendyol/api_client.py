@@ -1225,7 +1225,7 @@ def find_best_category_match(product: TrendyolProduct) -> Optional[int]:
     title = product.title if product.title else ""
     
     # Find matching category using the enhanced finder
-    category_id = finder.find_category_id(title)
+    category_id = finder.find_best_category(title)
     
     if category_id:
       print(f"[DEBUG-CATEGORY] Bulunan kategori ID: {category_id}")
