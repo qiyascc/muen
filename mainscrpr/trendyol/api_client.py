@@ -290,11 +290,11 @@ class ProductsAPI:
     # Debugging - bu fonksiyona gelen batch ID
     print(f"[DEBUG-API] _get_batch_request_endpoint fonksiyonuna gelen batch ID: {batch_id}")
     
-    # Eğer '-' varsa, bu kısım için özel debug yapalım
+    # Eğer '-' varsa, bu önemli bir UUID olabilir ve tam olarak kullanmalıyız
     if '-' in batch_id:
         original_id = batch_id
-        uuid_part = batch_id.split('-')[0]
-        print(f"[DEBUG-API] [UYARI BUNU DEĞİŞTİRMİYORUZ] Orijinal ID: {original_id}, UUID kısmı: {uuid_part}")
+        # Artık UUID parçalama işlemini yapmıyoruz, orijinal ID'yi olduğu gibi kullanıyoruz
+        print(f"[DEBUG-API] [UYARI] Orijinal batch ID aynen kullanılıyor: {original_id}")
         
     # Log for debugging purposes
     logger.info(f"Using full batch ID for request: {batch_id}")
