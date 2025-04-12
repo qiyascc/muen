@@ -1396,17 +1396,16 @@ def prepare_product_data(product: TrendyolProduct) -> Dict[str, Any]:
     raise ValueError(
         "Product is missing required fields: title, barcode, or price")
 
-  # Find best category and brand matches
+  # Find best category match
   category_id = find_best_category_match(product)
-  brand_id = find_best_brand_match(product)
+  
+  # Her zaman LC Waikiki brand ID'sini (7156) kullan
+  brand_id = 7156
+  logger.info(f"Using fixed LC Waikiki brand ID: {brand_id}")
 
   if not category_id:
     logger.error(f"No matching category found for product {product.id}")
     raise ValueError("No matching category found for product")
-
-  if not brand_id:
-    logger.error(f"No matching brand found for product {product.id}")
-    raise ValueError("No matching brand found for product")
 
   # Get image URLs
   image_urls = []
@@ -1423,6 +1422,13 @@ def prepare_product_data(product: TrendyolProduct) -> Dict[str, Any]:
           image_urls.extend(additional)
       except json.JSONDecodeError:
         pass
+          
+  # Helper function to clean description by removing "Satıcı" paragraphs
+  def clean_description(desc):
+    if desc and "<p><b>Satıcı:</b>" in desc:
+      satici_pattern = r'<p><b>Satıcı:</b>.*?</p>'
+      desc = re.sub(satici_pattern, '', desc)
+    return desc
 
   # Prepare attributes - Using API data and not hard-coded values
   attributes = []
@@ -1509,6 +1515,12 @@ def prepare_product_data(product: TrendyolProduct) -> Dict[str, Any]:
   # Limit title to 100 characters to avoid "Ürün Adı 100 karakterden fazla olamaz" error
   title = normalized_title[:100] if normalized_title and len(normalized_title) > 100 else normalized_title
   
+  # Prepare description by cleaning up "Satıcı" paragraphs
+  description = product.description or product.title
+  if description and "<p><b>Satıcı:</b>" in description:
+      satici_pattern = r'<p><b>Satıcı:</b>.*?</p>'
+      description = re.sub(satici_pattern, '', description)
+  
   product_data = {
       "barcode": product.barcode,
       "title": title,
@@ -1519,8 +1531,7 @@ def prepare_product_data(product: TrendyolProduct) -> Dict[str, Any]:
       "quantity": product.quantity or 10,  # Default to 10 if not specified
       # Removed stockUnitType per request
       # Removed dimensionalWeight per request
-      "description": product.description
-      or product.title,  # Use title as fallback description
+      "description": description,
       "currencyType": product.currency_type
       or "TRY",  # Default to Turkish Lira
       "listPrice": float(product.price or 0),
@@ -2310,11 +2321,22 @@ def lcwaikiki_to_trendyol_product(lcw_product) -> Optional[TrendyolProduct]:
           attributes = {}
         attributes['color'] = lcw_product.color
 
+      # Başlığı kontrol et ve 100 karakterden uzunsa kısalt
+      title = lcw_product.title or "LC Waikiki Product"
+      if len(title) > 100:
+        title = title[:97] + "..."
+      
+      # Açıklamadaki "Satıcı" içeren p etiketlerini kaldır
+      description = lcw_product.description or lcw_product.title or "LC Waikiki Product Description"
+      if description and "<p><b>Satıcı:</b>" in description:
+        # HTML parser kullanmadan simple string replacement ile temizleme
+        satici_pattern = r'<p><b>Satıcı:</b>.*?</p>'
+        description = re.sub(satici_pattern, '', description)
+      
       # Create a new Trendyol product with enhanced data
       trendyol_product = TrendyolProduct.objects.create(
-          title=lcw_product.title or "LC Waikiki Product",
-          description=lcw_product.description or lcw_product.title
-          or "LC Waikiki Product Description",
+          title=title,
+          description=description,
           barcode=barcode,
           product_main_id=product_code or barcode,
           stock_code=product_code or barcode,
@@ -2332,15 +2354,27 @@ def lcwaikiki_to_trendyol_product(lcw_product) -> Optional[TrendyolProduct]:
           batch_status='pending',
           status_message="Created from LCWaikiki product",
           currency_type="TRY",  # Turkish Lira
-          vat_rate=18  # Default VAT rate in Turkey
+          vat_rate=10  # Trendyol'da 10 olması gerekiyor
       )
       logger.info(
           f"Created new Trendyol product from LCW product {lcw_product.id} with barcode {barcode}"
       )
     else:
       # Update existing Trendyol product with latest LCWaikiki data
-      trendyol_product.title = lcw_product.title or trendyol_product.title or "LC Waikiki Product"
-      trendyol_product.description = lcw_product.description or lcw_product.title or trendyol_product.description or "LC Waikiki Product Description"
+      # Başlığı güncelle ve 100 karakterden uzunsa kısalt
+      title = lcw_product.title or trendyol_product.title or "LC Waikiki Product"
+      if len(title) > 100:
+        title = title[:97] + "..."
+      trendyol_product.title = title
+      
+      # Açıklamadaki "Satıcı" içeren p etiketlerini kaldır
+      description = lcw_product.description or lcw_product.title or trendyol_product.description or "LC Waikiki Product Description"
+      if description and "<p><b>Satıcı:</b>" in description:
+        # HTML parser kullanmadan simple string replacement ile temizleme
+        satici_pattern = r'<p><b>Satıcı:</b>.*?</p>'
+        description = re.sub(satici_pattern, '', description)
+      trendyol_product.description = description
+      
       trendyol_product.price = price or trendyol_product.price or Decimal(
           '100.00')
       trendyol_product.quantity = quantity
