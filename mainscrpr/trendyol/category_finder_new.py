@@ -238,47 +238,34 @@ class TrendyolCategoryFinder:
         return best_match
     
     def get_required_attributes(self, category_id):
-        """Belirli bir kategorinin tüm özniteliklerini API'den getir"""
+        """Belirli bir kategorinin gerekli özniteliklerini API'den getir"""
         try:
             attrs = self.get_category_attributes(category_id)
             attributes = []
             
-            # İlk önce zorunlu (required) olanları işle
-            required_attrs = []
-            non_required_attrs = []
-            
+            # Process all category attributes, required ones first
             for attr in attrs.get('categoryAttributes', []):
                 if not attr['attribute'].get('id'):
                     continue
                     
-                # Attribute değerleri yoksa ve özel değer de izin verilmiyorsa atla
                 if not attr.get('attributeValues') and not attr.get('allowCustom'):
                     continue
                     
                 attribute_id = attr['attribute']['id']
                 
-                # Uygun bir değer bul
+                # Get a suitable value
                 attribute_value_id = None
                 
-                # Eğer attribute değerleri varsa ilkini kullan
+                # If there are attribute values, use the first one
                 if attr.get('attributeValues') and len(attr['attributeValues']) > 0:
                     attribute_value_id = attr['attributeValues'][0]['id']
                 
-                # Eğer geçerli bir attribute ID ve value ID varsa listeye ekle
+                # If we have a valid attribute ID and value ID, add to the list
                 if attribute_id and attribute_value_id:
-                    attribute_data = {
-                        "attributeId": attribute_id, 
+                    attributes.append({
+                        "attributeId": attribute_id,
                         "attributeValueId": attribute_value_id
-                    }
-                    
-                    # Zorunlu olanları önce ekle
-                    if attr.get('required'):
-                        required_attrs.append(attribute_data)
-                    else:
-                        non_required_attrs.append(attribute_data)
-            
-            # Önce zorunlu sonra diğer özellikler
-            attributes = required_attrs + non_required_attrs
+                    })
             
             return attributes
             
