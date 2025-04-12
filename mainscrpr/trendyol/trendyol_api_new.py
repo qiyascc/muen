@@ -633,6 +633,75 @@ def create_trendyol_product(product: TrendyolProduct) -> str:
         return None
 
 
+def check_batch_status(batch_id: str) -> tuple:
+    """
+    Check the status of a batch operation using the batch ID.
+    Returns a tuple of (status, message)
+    """
+    try:
+        product_manager = get_product_manager()
+        if not product_manager:
+            logger.error("No active Trendyol API configuration found")
+            return 'failed', "No active API configuration found"
+        
+        logger.info(f"Checking batch status for ID: {batch_id}")
+        response = product_manager.check_batch_status(batch_id)
+        
+        if not response:
+            logger.error(f"No response from Trendyol API for batch ID: {batch_id}")
+            return 'failed', "No response from Trendyol API"
+        
+        # Process the response to determine status
+        status = 'processing'  # Default status
+        status_message = "Processing in progress"
+        
+        # Extract status information
+        if isinstance(response, dict):
+            if 'status' in response:
+                status = response['status'].lower()
+                status_message = f"Status: {response['status']}"
+                
+                # Check for completed status with product ID
+                if status == 'completed' and 'productId' in response:
+                    product_id = response['productId']
+                    status_message = f"Completed with product ID: {product_id}"
+                
+                # Check for errors
+                if 'errorMessage' in response:
+                    error_message = response.get('errorMessage')
+                    status_message = f"Error: {error_message}"
+                    status = 'failed'
+            
+            # Handle item-level status
+            elif 'items' in response and response['items'] and isinstance(response['items'], list):
+                # Take the first item's status
+                first_item = response['items'][0]
+                if 'status' in first_item:
+                    status = first_item['status'].lower()
+                    status_message = f"Status: {first_item['status']}"
+                    
+                    # Check for errors in the first item
+                    if 'errorMessage' in first_item:
+                        error_message = first_item.get('errorMessage')
+                        status_message = f"Error: {error_message}"
+                        status = 'failed'
+        elif isinstance(response, str):
+            # Handle string responses
+            status_message = response
+            if 'error' in response.lower() or 'failed' in response.lower():
+                status = 'failed'
+            elif 'completed' in response.lower() or 'success' in response.lower():
+                status = 'completed'
+            else:
+                status = 'processing'
+        
+        logger.info(f"Batch {batch_id} status: {status}, message: {status_message}")
+        return status, status_message
+    except Exception as e:
+        logger.error(f"Error checking batch status: {str(e)}")
+        return 'failed', f"Error: {str(e)}"
+
+
 def check_product_batch_status(product: TrendyolProduct) -> str:
     """Check the status of a product batch on Trendyol"""
     if not product.batch_id:
