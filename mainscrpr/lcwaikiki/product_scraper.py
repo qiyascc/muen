@@ -349,16 +349,16 @@ class ProductScraper:
     def extract_json_data(self, response):
         """Extract product JSON data from the response"""
         try:
-            # First try looking for the script tag containing cartOperationViewModel
             script_tags = re.findall(r'<script[^>]*>(.*?)</script>', response.text, re.DOTALL)
             
+            # 1. İlk olarak cartOperationViewModel'i ara
             for script in script_tags:
                 try:
                     pattern = r'cartOperationViewModel\s*=\s*({.*?});'
                     match = re.search(pattern, script, re.DOTALL)
                     if match:
                         json_str = match.group(1).strip()
-                        # Clean up the JSON string - remove comments, trailing commas, etc.
+                        # JSON'u temizle
                         json_str = re.sub(r'/\*.*?\*/', '', json_str, flags=re.DOTALL)
                         json_str = re.sub(r',\s*}', '}', json_str)
                         json_str = re.sub(r',\s*]', ']', json_str)
@@ -367,7 +367,7 @@ class ProductScraper:
                             return json.loads(json_str)
                         except json.JSONDecodeError as e:
                             logger.warning(f"JSON decode error: {str(e)}, attempting additional cleanup")
-                            # Additional cleanup for problematic JSON strings
+                            # Sorunlu JSON için ek temizlik
                             json_str = re.sub(r'undefined', 'null', json_str)
                             json_str = re.sub(r'NaN', '0', json_str)
                             json_str = re.sub(r'//.*?\\n', '', json_str)
@@ -376,17 +376,17 @@ class ProductScraper:
                     logger.error(f"JSON parsing error in script tag: {str(e)}")
                     continue
             
-            # Try an alternative approach by looking for meta tags
+            # 2. Alternatif olarak meta etiketlerini dene
             try:
                 meta_tag = re.search(r'<meta name="product-info" content="([^"]+)"', response.text)
                 if meta_tag:
                     meta_content = meta_tag.group(1)
-                    meta_content = html.unescape(meta_content)  # Handle HTML entities
+                    meta_content = html.unescape(meta_content)  # HTML varlıklarını işle
                     return json.loads(meta_content)
             except Exception as e:
                 logger.error(f"Error extracting meta tag product info: {str(e)}")
             
-            # Try directly looking for product data in the HTML
+            # 3. Ürün verilerini HTML'de doğrudan ara
             try:
                 product_data_match = re.search(r'var\s+productDetailData\s*=\s*({.*?});', response.text, re.DOTALL)
                 if product_data_match:
@@ -396,6 +396,17 @@ class ProductScraper:
                     return json.loads(json_str)
             except Exception as e:
                 logger.error(f"Error extracting product detail data: {str(e)}")
+            
+            # 4. modal_data variable'ını ara (yeni eklendi)
+            try:
+                modal_data_match = re.search(r'var\s+modal_data\s*=\s*({.*?});', response.text, re.DOTALL)
+                if modal_data_match:
+                    json_str = modal_data_match.group(1).strip()
+                    json_str = re.sub(r',\s*}', '}', json_str)
+                    json_str = re.sub(r',\s*]', ']', json_str)
+                    return json.loads(json_str)
+            except Exception as e:
+                logger.error(f"Error extracting modal data: {str(e)}")
             
             logger.warning(f"No valid JSON data found in response")
             return None
@@ -423,18 +434,49 @@ class ProductScraper:
                 'status': 'active'
             }
             
-            # Extract product code
-            product_code_elem = soup.select_one('.product-code')
-            if product_code_elem:
-                product_code_text = product_code_elem.text.strip()
-                product_code_match = re.search(r'([A-Z0-9]+)', product_code_text)
-                if product_code_match:
-                    product_data['product_code'] = product_code_match.group(1)
+            # Extract product code - first from HTML meta tag
+            meta_tags = re.findall(r'<meta\s+([^>]+)>', response.text, re.IGNORECASE)
+            product_code = None
             
-            # Extract color
-            color_elem = soup.select_one('.selected-color')
-            if color_elem:
-                product_data['color'] = color_elem.text.strip()
+            # Try to get product code from meta tags
+            for tag in meta_tags:
+                name_match = re.search(r'name=["\']?([^"\'>\s]+)', tag, re.IGNORECASE)
+                content_match = re.search(r'content=["\']?([^"\'>]+)', tag, re.IGNORECASE)
+                
+                if name_match and content_match:
+                    name = name_match.group(1)
+                    content = content_match.group(1)
+                    
+                    if name == 'ProductCodeColorCode' and content:
+                        product_code = content.strip()
+                        break
+            
+            # If product code not found in meta tags, try from HTML
+            if not product_code:
+                product_code_elem = soup.select_one('.product-code')
+                if product_code_elem:
+                    product_code_text = product_code_elem.text.strip()
+                    product_code_match = re.search(r'([A-Z0-9]+)', product_code_text)
+                    if product_code_match:
+                        product_code = product_code_match.group(1)
+            
+            # If still not found, try from URL pattern
+            if not product_code:
+                url_code_match = re.search(r'-o-(\d+)', product_url)
+                if url_code_match:
+                    product_code = url_code_match.group(1)
+            
+            if product_code:
+                product_data['product_code'] = product_code
+            
+            # Extract color - first from JSON data if available
+            if json_data and 'Color' in json_data:
+                product_data['color'] = json_data['Color']
+            else:
+                # Fallback to HTML
+                color_elem = soup.select_one('.selected-color')
+                if color_elem:
+                    product_data['color'] = color_elem.text.strip()
             
             # Extract price information
             price_elem = soup.select_one('.price-regular')
@@ -482,14 +524,28 @@ class ProductScraper:
             # Extract availability
             product_data['in_stock'] = 'out of stock' not in soup.text.lower()
             
-            # Extract images
-            image_elems = soup.select('.product-image img')
-            for img in image_elems:
-                if 'src' in img.attrs:
-                    img_url = img['src']
-                    if img_url.startswith('//'):
-                        img_url = 'https:' + img_url
-                    product_data['images'].append(img_url)
+            # Extract images - first try JSON method (more reliable)
+            if json_data and 'Pictures' in json_data and json_data['Pictures']:
+                for pic in json_data['Pictures']:
+                    # Try different image sizes in order of preference
+                    for img_size in ['ExtraMedium800', 'ExtraMedium600', 'MediumImage', 'SmallImage']:
+                        if img_size in pic and pic[img_size]:
+                            img_url = pic[img_size]
+                            if isinstance(img_url, str):  # Ensure it's a string
+                                if img_url.startswith('//'):
+                                    img_url = 'https:' + img_url
+                                product_data['images'].append(img_url)
+                                break  # Found an image for this picture, move to next
+            
+            # Fallback: Try to extract images from HTML if JSON method didn't find any
+            if not product_data['images']:
+                image_elems = soup.select('.product-image img')
+                for img in image_elems:
+                    if 'src' in img.attrs:
+                        img_url = img['src']
+                        if isinstance(img_url, str) and img_url.startswith('//'):
+                            img_url = 'https:' + img_url
+                        product_data['images'].append(img_url)
             
             # Extract description
             description_elem = soup.select_one('#collapseOne')

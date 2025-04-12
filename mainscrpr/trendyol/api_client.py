@@ -262,7 +262,7 @@ class CategoriesAPI:
     
   def _get_category_attributes_endpoint(self, category_id):
     """Get the category attributes endpoint for verification"""
-    return f'/product-categories/{category_id}/attributes'
+    return f'/product/product-categories/{category_id}/attributes'
 
   def get_categories(self):
     """Get all categories from Trendyol"""
