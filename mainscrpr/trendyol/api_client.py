@@ -1817,10 +1817,10 @@ def check_product_batch_status(product: TrendyolProduct) -> str:
     if isinstance(response, dict) and 'items' in response:
       items = response.get('items', [])
       for item in items:
-        if isinstance(item, dict) and item.get('status') in ['FAILED', 'INVALID']:
+        if item.get('status') in ['FAILED', 'INVALID']:
           errors = item.get('failureReasons', [])
           for error in errors:
-            if isinstance(error, dict) and error.get('message'):
+            if error.get('message'):
               error_message += error.get('message') + ". "
 
     # If status is completed and no Trendyol ID, try to get it

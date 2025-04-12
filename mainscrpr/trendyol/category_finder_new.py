@@ -238,17 +238,16 @@ class TrendyolCategoryFinder:
         return best_match
     
     def get_required_attributes(self, category_id):
-        """Belirli bir kategorinin tüm özniteliklerini API'den getir"""
+        """Belirli bir kategorinin gerekli özniteliklerini API'den getir"""
         try:
             attrs = self.get_category_attributes(category_id)
             attributes = []
             
-            # Process all category attributes, not just required ones
+            # Process all category attributes, required ones first
             for attr in attrs.get('categoryAttributes', []):
                 if not attr['attribute'].get('id'):
                     continue
                     
-                # Sadece değerleri olan öznitelikleri işle
                 if not attr.get('attributeValues') and not attr.get('allowCustom'):
                     continue
                     
