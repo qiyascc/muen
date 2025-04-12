@@ -75,7 +75,7 @@ def create_simple_product():
         "currencyType": "TRY",
         "listPrice": 150.0,
         "salePrice": 120.0,
-        "vatRate": 18,
+        "vatRate": 20,
         "cargoCompanyId": 17,
         "shipmentAddressId": 0,
         "deliveryDuration": 3,
