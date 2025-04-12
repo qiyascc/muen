@@ -10,7 +10,7 @@ from typing import Dict, List, Optional, Any, Tuple, Union
 from django.utils import timezone
 
 from .models import TrendyolAPIConfig, TrendyolBrand, TrendyolCategory, TrendyolProduct
-from .category_finder import TrendyolCategoryFinder, DEFAULT_REQUIRED_ATTRIBUTES
+from trendyol.category_finder import TrendyolCategoryFinder, DEFAULT_REQUIRED_ATTRIBUTES
 
 logger = logging.getLogger(__name__)
 
@@ -1389,8 +1389,14 @@ def get_required_attributes_for_category(
     # Use our enhanced category finder
     finder = TrendyolCategoryFinder(client)
     
-    # Get required attributes with appropriate defaults
-    attributes = finder.get_required_attributes(category_id, product_title, product_color, product_size)
+    # Get required attributes with appropriate defaults using positional parameters for category_id
+    # and named parameters for the optional arguments
+    attributes = finder.get_required_attributes(
+        category_id, 
+        product_title=product_title, 
+        product_color=product_color, 
+        product_size=product_size
+    )
     print(f"[DEBUG-ATTR] Bulunan zorunlu özellikler: {json.dumps(attributes, ensure_ascii=False)}")
     
     return attributes
