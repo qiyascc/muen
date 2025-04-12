@@ -120,6 +120,29 @@ class ProductAdmin(ModelAdmin):
     def process_product(product):
       try:
         import trendyol.api_client as trendyol_for_lc_to_trendyol
+        from trendyol.models import TrendyolProduct
+        import logging
+        logger = logging.getLogger('trendyol.admin')
+        
+        # First check if product was already processed and has an active batch
+        existing_product = TrendyolProduct.objects.filter(
+            lcwaikiki_product=product).first()
+            
+        if existing_product and existing_product.batch_id:
+            # Check the status of the existing batch
+            if existing_product.batch_status in ['processing', 'success', 'completed']:
+                # Product is already being processed or is successful, no need to resubmit
+                self.message_user(
+                    request,
+                    f"Product '{product.title}' already has active batch ID: {existing_product.batch_id} (Status: {existing_product.batch_status})",
+                    level=messages.INFO)
+                return existing_product.batch_id
+            elif existing_product.batch_status == 'pending':
+                # Product is pending, update to retry
+                logger.info(f"Updating pending product {existing_product.id} for resubmission")
+                existing_product.batch_status = 'retry'
+                existing_product.save()
+        
         # Convert to Trendyol product
         trendyol_product = trendyol_for_lc_to_trendyol.lcwaikiki_to_trendyol_product(
             product)
@@ -135,9 +158,6 @@ class ProductAdmin(ModelAdmin):
         if not trendyol_product.category_id:
           from trendyol.trendyol_api_new import find_best_category_match
           from trendyol.models import TrendyolCategory
-          import logging
-
-          logger = logging.getLogger('trendyol.admin')
 
           category_id = find_best_category_match(trendyol_product)
           if category_id:

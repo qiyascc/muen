@@ -848,8 +848,19 @@ def sync_product_to_trendyol(product: TrendyolProduct) -> bool:
         
         # If already successful or still processing, no need to resubmit
         if status in ['success', 'processing']:
-            logger.info(f"Product {product.id} is already {status} on Trendyol")
+            logger.info(f"Product {product.id} is already {status} on Trendyol with batch ID {product.batch_id}")
             return True
+        # If failed or error, log this but continue to resubmit
+        elif status in ['failed', 'error']:
+            logger.info(f"Product {product.id} previously {status} on Trendyol. Retrying submission.")
+            # Continue to resubmission
+        # If pending, update status to prevent endless loop
+        elif status == 'pending':
+            # Update to 'retry' to indicate we've tried to resubmit
+            product.batch_status = 'retry'
+            product.status_message = "Resubmitting previously pending product"
+            product.save()
+            logger.info(f"Updated pending product {product.id} status to 'retry' before resubmission")
     
     # Create the product on Trendyol
     batch_id = create_trendyol_product(product)

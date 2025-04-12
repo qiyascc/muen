@@ -2207,6 +2207,16 @@ def lcwaikiki_to_trendyol_product(lcw_product) -> Optional[TrendyolProduct]:
     # Check if a Trendyol product already exists for this LCWaikiki product
     trendyol_product = TrendyolProduct.objects.filter(
         lcwaikiki_product=lcw_product).first()
+    
+    # If a product exists and is already successfully processed, just return it
+    if trendyol_product and trendyol_product.batch_status in ['success', 'completed'] and trendyol_product.trendyol_id:
+        logger.info(f"Product already successfully sent to Trendyol with ID: {trendyol_product.trendyol_id}")
+        return trendyol_product
+        
+    # If still processing, return as is to avoid duplicate submissions
+    if trendyol_product and trendyol_product.batch_status == 'processing' and trendyol_product.batch_id:
+        logger.info(f"Product is being processed by Trendyol with batch ID: {trendyol_product.batch_id}")
+        return trendyol_product
 
     # Extract and format product code properly
     product_code = None
@@ -2423,39 +2433,46 @@ def lcwaikiki_to_trendyol_product(lcw_product) -> Optional[TrendyolProduct]:
       )
     else:
       # Update existing Trendyol product with latest LCWaikiki data
-      trendyol_product.title = lcw_product.title or trendyol_product.title or "LC Waikiki Product"
-      trendyol_product.description = lcw_product.description or lcw_product.title or trendyol_product.description or "LC Waikiki Product Description"
-      trendyol_product.price = price or trendyol_product.price or Decimal(
-          '100.00')
-      trendyol_product.quantity = quantity
-      trendyol_product.brand_id = brand_id or trendyol_product.brand_id
-      trendyol_product.category_id = category_id or trendyol_product.category_id
-      trendyol_product.pim_category_id = category_id or trendyol_product.pim_category_id
+      # If the product has a failed or error status, reset it to pending
+      if trendyol_product.batch_status in ['failed', 'error', 'pending', 'retry']:
+          # Only update if the product has previously failed or not yet been submitted
+          trendyol_product.title = lcw_product.title or trendyol_product.title or "LC Waikiki Product"
+          trendyol_product.description = lcw_product.description or lcw_product.title or trendyol_product.description or "LC Waikiki Product Description"
+          trendyol_product.price = price or trendyol_product.price or Decimal('100.00')
+          trendyol_product.quantity = quantity
+          trendyol_product.brand_id = brand_id or trendyol_product.brand_id
+          trendyol_product.category_id = category_id or trendyol_product.category_id
+          trendyol_product.pim_category_id = category_id or trendyol_product.pim_category_id
 
-      # Update attributes and add color if it exists
-      if hasattr(lcw_product, 'color') and lcw_product.color:
-        if not attributes:
-          attributes = {}
-        attributes['color'] = lcw_product.color
+          # Update attributes and add color if it exists
+          if hasattr(lcw_product, 'color') and lcw_product.color:
+              if not attributes:
+                  attributes = {}
+              attributes['color'] = lcw_product.color
 
-      trendyol_product.attributes = attributes
+          trendyol_product.attributes = attributes
 
-      # Only update barcode if it's not already been used with Trendyol
-      if not trendyol_product.trendyol_id and not trendyol_product.batch_status == 'completed':
-        trendyol_product.barcode = barcode
-        trendyol_product.product_main_id = product_code or barcode
-        trendyol_product.stock_code = product_code or barcode
+          # Only update barcode if it's not already been used with Trendyol
+          if not trendyol_product.trendyol_id:
+              trendyol_product.barcode = barcode
+              trendyol_product.product_main_id = product_code or barcode
+              trendyol_product.stock_code = product_code or barcode
 
-      # Update images if available
-      if images:
-        trendyol_product.image_url = images[0]
-        trendyol_product.additional_images = images[1:] if len(
-            images) > 1 else []
+          # Update images if available
+          if images:
+              trendyol_product.image_url = images[0]
+              trendyol_product.additional_images = images[1:] if len(images) > 1 else []
 
-      trendyol_product.save()
-      logger.info(
-          f"Updated Trendyol product {trendyol_product.id} from LCW product {lcw_product.id}"
-      )
+          # Reset status to pending for retry
+          if trendyol_product.batch_status in ['failed', 'error']:
+              trendyol_product.batch_status = 'pending'
+              trendyol_product.status_message = "Retrying submission after previous failure"
+              logger.info(f"Resetting product {trendyol_product.id} status to pending for retry")
+
+          trendyol_product.save()
+          logger.info(f"Updated Trendyol product {trendyol_product.id} from LCW product {lcw_product.id}")
+      else:
+          logger.info(f"Not updating Trendyol product with status '{trendyol_product.batch_status}' to avoid disrupting current process")
 
     return trendyol_product
   except Exception as e:
