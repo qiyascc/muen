@@ -269,14 +269,11 @@ class ProductsAPI:
     
   def _get_batch_request_endpoint(self, batch_id):
     """Get the batch request endpoint for verification"""
-    # Extract the actual batch ID from the full response if needed
-    # Trendyol sometimes returns combined IDs with timestamps
-    if '-' in batch_id:
-      # Extract just the UUID part before the timestamp
-      batch_id = batch_id.split('-')[0]
-      
+    # Tüm batch ID'yi olduğu gibi kullanacağız - UUID kısmını çıkarmadan
+    # Batch ID'yi parçalamak API hatalarına neden olabilir
+    
     # Log for debugging purposes
-    logger.info(f"Using batch ID for request: {batch_id}")
+    logger.info(f"Using full batch ID for request: {batch_id}")
       
     return f'/integration/product/sellers/{self.client.supplier_id}/products/batch-requests/{batch_id}'
 
@@ -303,25 +300,22 @@ class ProductsAPI:
       logger.warning("Attempted to check batch status with empty batch ID")
       return None
       
-    # Clean up the batch ID format if necessary (in case of combined IDs)
-    clean_batch_id = batch_id
-    if '-' in batch_id:
-      # Handle format like "uuid-timestamp" 
-      clean_batch_id = batch_id.split('-')[0]
-    elif '/' in batch_id:
+    # Batch ID'yi olduğu gibi kullan, herhangi bir işlem yapma
+    # Eğer URL ise sadece son kısmı al
+    if '/' in batch_id:
       # Handle potential URL format
-      clean_batch_id = batch_id.split('/')[-1]
-      
-    # Trim any whitespace
-    clean_batch_id = clean_batch_id.strip()
+      batch_id = batch_id.split('/')[-1]
     
-    logger.info(f"Checking batch status for ID: {batch_id} (cleaned: {clean_batch_id})")
-      
-    endpoint = self._get_batch_request_endpoint(clean_batch_id)
+    # Trim any whitespace
+    batch_id = batch_id.strip()
+    
+    logger.info(f"Checking batch status for batch ID: {batch_id}")
+    
+    endpoint = self._get_batch_request_endpoint(batch_id)
     response = self.client.make_request('GET', endpoint)
     
     # Log the response for debugging
-    logger.info(f"Batch status response for {clean_batch_id}: {response}")
+    logger.info(f"Batch status response for {batch_id}: {response}")
     
     return response
 
