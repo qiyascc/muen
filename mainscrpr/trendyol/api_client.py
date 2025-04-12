@@ -1436,12 +1436,63 @@ def prepare_product_data(product: TrendyolProduct) -> Dict[str, Any]:
         try:
           # For any attributes, try to convert to integers
           # No special handling for color attribute
-          attr_id = int(key) if isinstance(key, str) and key.isdigit() else key
+          # ALWAYS convert attributeId to integer
+          if key == "color" or key == "renk":
+            # For color attribute, we need to use the standard attribute ID of 348
+            attr_id = 348  # Standard color attribute ID in Trendyol
+          else:
+            attr_id = int(key) if isinstance(key, str) and key.isdigit() else key
+            
           # Try to convert attributeValueId to integer if possible
-          attr_value_id = int(value) if isinstance(value, str) and value.isdigit() else value
+          if isinstance(value, str) and value.isdigit():
+            attr_value_id = int(value)
+          elif isinstance(attr_id, int) and (attr_id == 348 or key == "color" or key == "renk"):
+            # For color, make sure we have a numeric ID instead of a string value
+            # Map common colors to numeric IDs
+            color_id_map = {
+                'beyaz': 3939, 
+                'siyah': 3940, 
+                'mavi': 3941, 
+                'kırmızı': 3942, 
+                'pembe': 3943,
+                'yeşil': 3944,
+                'sarı': 3945,
+                'mor': 3946,
+                'gri': 3947,
+                'kahverengi': 3948,
+                'ekru': 3949,
+                'bej': 3950,
+                'lacivert': 3951,
+                'turuncu': 3952,
+                'krem': 3953,
+                'petrol': 3954,
+                'bordo': 3955,
+                'camel': 3956
+            }
+            # Normalize value to lowercase and without accents
+            if isinstance(value, str):
+                value_lower = value.lower()
+                for color_name, color_id in color_id_map.items():
+                    if color_name in value_lower:
+                        attr_value_id = color_id
+                        break
+                else:
+                    # If no match, use a default color ID
+                    attr_value_id = 3939  # Default to white
+                    logger.warning(f"No matching color ID for '{value}', using default")
+            else:
+                attr_value_id = value
+          else:
+              attr_value_id = value
+              
+          # Make sure attributeId is an integer - this is critical
+          if not isinstance(attr_id, int):
+              logger.warning(f"Non-integer attributeId: {attr_id}, skipping this attribute")
+              continue
+                
           attributes.append({"attributeId": attr_id, "attributeValueId": attr_value_id})
-        except (ValueError, TypeError):
-          logger.warning(f"Could not convert attribute ID/value to integer: {key}={value}")
+        except (ValueError, TypeError) as e:
+          logger.warning(f"Could not convert attribute ID/value to integer: {key}={value}, error: {str(e)}")
     elif isinstance(product.attributes, str):
       try:
         attrs = json.loads(product.attributes)

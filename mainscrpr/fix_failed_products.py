@@ -71,21 +71,24 @@ def fix_product_payload(product):
             
             # Get color ID mapping for Trendyol
             color_id_map = {
-                'Beyaz': 1001, 
-                'Siyah': 1002, 
-                'Mavi': 1003, 
-                'Kirmizi': 1004, 
-                'Pembe': 1005,
-                'Yeşil': 1006,
-                'Sarı': 1007,
-                'Mor': 1008,
-                'Gri': 1009,
-                'Kahverengi': 1010,
-                'Ekru': 1011,
-                'Bej': 1012,
-                'Lacivert': 1013,
-                'Turuncu': 1014,
-                'Krem': 1015
+                'Beyaz': 3939, 
+                'Siyah': 3940, 
+                'Mavi': 3941, 
+                'Kirmizi': 3942, 
+                'Pembe': 3943,
+                'Yeşil': 3944,
+                'Sarı': 3945,
+                'Mor': 3946,
+                'Gri': 3947,
+                'Kahverengi': 3948,
+                'Ekru': 3949,
+                'Bej': 3950,
+                'Lacivert': 3951,
+                'Turuncu': 3952,
+                'Krem': 3953,
+                'Petrol': 3954,
+                'Bordo': 3955,
+                'Camel': 3956
             }
             
             if color and color in color_id_map:
