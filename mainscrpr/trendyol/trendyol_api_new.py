@@ -35,12 +35,36 @@ class TrendyolAPI:
         url = f"{self.config.base_url.rstrip('/')}/{endpoint.lstrip('/')}"
         kwargs.setdefault('timeout', DEFAULT_TIMEOUT)
         
+        logger.info(f"[DEBUG-API] URL: {url}")
+        logger.info(f"[DEBUG-API] Method: {method}")
+        logger.info(f"[DEBUG-API] Headers: {self.session.headers}")
+        
+        if 'json' in kwargs:
+            logger.info(f"[DEBUG-API] JSON data: {json.dumps(kwargs['json'], ensure_ascii=False)[:500]}")
+        
         for attempt in range(MAX_RETRIES):
             try:
                 response = self.session.request(method, url, **kwargs)
+                
+                # Loglama: Tam istek ve yanıt için
+                logger.info(f"[DEBUG-API] Status Code: {response.status_code}")
+                
+                try:
+                    response_text = response.text[:1000]  # Yanıtın ilk 1000 karakteri
+                    logger.info(f"[DEBUG-API] Response: {response_text}")
+                except Exception as e:
+                    logger.info(f"[DEBUG-API] Could not read response: {str(e)}")
+                
                 response.raise_for_status()
-                return response.json()
+                
+                try:
+                    return response.json()
+                except json.JSONDecodeError:
+                    logger.error(f"[DEBUG-API] JSON parse error for response: {response.text[:500]}")
+                    return {"error": "Invalid JSON response"}
+                    
             except requests.exceptions.RequestException as e:
+                logger.error(f"[DEBUG-API] Request failed on attempt {attempt + 1}: {str(e)}")
                 if attempt == MAX_RETRIES - 1:
                     logger.error(f"API request failed after {MAX_RETRIES} attempts: {str(e)}")
                     raise
@@ -48,10 +72,27 @@ class TrendyolAPI:
                 time.sleep(RETRY_DELAY * (attempt + 1))
     
     def get(self, endpoint, params=None):
-        return self._make_request('GET', endpoint, params=params)
+        # Debug için 
+        logger.info(f"[DEBUG-API] GET isteği gönderiliyor: {endpoint}")
+        try:
+            result = self._make_request('GET', endpoint, params=params)
+            logger.info(f"[DEBUG-API] GET cevabı başarılı: {endpoint}")
+            return result
+        except Exception as e:
+            logger.error(f"[DEBUG-API] GET hatası: {str(e)} - {endpoint}")
+            raise
     
     def post(self, endpoint, data):
-        return self._make_request('POST', endpoint, json=data)
+        # Debug için 
+        logger.info(f"[DEBUG-API] POST isteği gönderiliyor: {endpoint}")
+        logger.info(f"[DEBUG-API] POST verisi: {json.dumps(data, ensure_ascii=False)[:200]}...")
+        try:
+            result = self._make_request('POST', endpoint, json=data)
+            logger.info(f"[DEBUG-API] POST cevabı başarılı: {endpoint}")
+            return result
+        except Exception as e:
+            logger.error(f"[DEBUG-API] POST hatası: {str(e)} - {endpoint}")
+            raise
 
 
 class TrendyolCategoryFinder:

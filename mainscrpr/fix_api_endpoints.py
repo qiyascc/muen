@@ -22,6 +22,7 @@ django.setup()
 # Import models and API client functions
 from trendyol.models import TrendyolAPIConfig
 from trendyol.api_client import get_api_client, TrendyolApi
+from trendyol.trendyol_api_new import get_api_client_from_config, TrendyolAPI
 
 def print_endpoint_test(api_client, endpoint_name, endpoint_path):
     """Test and print an endpoint's full URL"""
@@ -71,6 +72,29 @@ def test_create_product_endpoint(api_client):
     
     return endpoint, url
 
+def test_new_api_client():
+    """Test the new API client from trendyol_api_new.py"""
+    print("\n\nTesting new TrendyolAPI client:")
+    print("===============================")
+    
+    api_client = get_api_client_from_config()
+    
+    if not api_client:
+        print("Failed to get new API client")
+        return
+    
+    # Test basic GET request with detailed logging
+    print("\nTesting category attributes endpoint:")
+    try:
+        # Test category attributes endpoint
+        category_id = 2356  # Test ID
+        print(f"Making GET request to product/product-categories/{category_id}/attributes")
+        response = api_client.get(f"product/product-categories/{category_id}/attributes")
+        print(f"Response received: {type(response)}")
+        print(f"Response contains {len(response.get('categoryAttributes', []))} category attributes")
+    except Exception as e:
+        print(f"Error in new API client test: {str(e)}")
+
 def main():
     """Test and fix Trendyol API endpoints"""
     # Get active API configuration
@@ -93,6 +117,9 @@ def main():
         api_url=config.base_url,
         user_agent=config.user_agent or f"{config.supplier_id or config.seller_id} - SelfIntegration"
     )
+    
+    # Also test the new API client
+    test_new_api_client()
     
     # Test all the endpoints
     print("Testing all endpoints:")

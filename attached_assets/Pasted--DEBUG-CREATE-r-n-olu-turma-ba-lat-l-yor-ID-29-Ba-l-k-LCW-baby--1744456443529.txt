@@ -1,0 +1,60 @@
+[DEBUG-CREATE] Ürün oluşturma başlatılıyor: ID=29, Başlık=LCW baby                                                                                        Ekru Bisiklet Yaka Kız Bebek Basic Bluz ve Pantolon 2'li
+[DEBUG-CREATE] Ürün verileri hazırlanıyor...
+[DEBUG-PRODUCT] Zorunlu özellikleri alıyoruz, Ürün: 29, Kategori: 2356
+[DEBUG-PRODUCT] Mevcut özellikler: [{"attributeId": "color", "attributeValueId": "Ekru"}]
+[DEBUG-API] make_request çağrısı. Orijinal endpoint: /product-categories/2356/attributes
+[DEBUG-API] Oluşturulan URL: https://apigw.trendyol.com/integration/product-categories/2356/attributes
+[DEBUG-API] SON İSTEK: GET https://apigw.trendyol.com/integration/product-categories/2356/attributes
+[DEBUG-API] İSTEK HEADERS: {'Authorization': 'Basic cVNvaEtrTEtQV3dEZVNLand6OFI6eVlGM1ljbDlCNlZqczc3cTNNaEU=', 'Content-Type': 'application/json', 'User-Agent': '535623 - SelfIntegration'}
+Error making request to Trendyol API: 556 Server Error:  for url: https://apigw.trendyol.com/integration/product-categories/2356/attributes
+[DEBUG-PRODUCT] Toplam özellik sayısı: 1
+[DEBUG-PRODUCT] Özellikler: [{"attributeId": "color", "attributeValueId": "Ekru"}]
+[DEBUG-CREATE] Hazırlanan ürün verileri: {"barcode": "LCWKarateci23", "title": "LCW baby Ekru Bisiklet Yaka Kız Bebek Basic Bluz ve Pantolon 2'li", "productMainId": "Karateci23", "brandId": 102, "categoryId": 2356, "stockCode": "Karateci23", "quantity": 10, "description": "<div class=\"pane...
+[DEBUG-CREATE] Trendyol'a ürün gönderiliyor...
+[DEBUG-API] make_request çağrısı. Orijinal endpoint: /integration/product/sellers/535623/products
+[DEBUG-API] /integration prefix kaldırıldı: /integration/product/sellers/535623/products -> /product/sellers/535623/products
+[DEBUG-API] Oluşturulan URL: https://apigw.trendyol.com/integration/product/sellers/535623/products
+[DEBUG-API] SON İSTEK: POST https://apigw.trendyol.com/integration/product/sellers/535623/products
+[DEBUG-API] İSTEK HEADERS: {'Authorization': 'Basic cVNvaEtrTEtQV3dEZVNLand6OFI6eVlGM1ljbDlCNlZqczc3cTNNaEU=', 'Content-Type': 'application/json', 'User-Agent': '535623 - SelfIntegration'}
+400 BAD REQUEST ERROR
+Request URL: https://apigw.trendyol.com/integration/product/sellers/535623/products
+Request method: POST
+Request headers: {'Authorization': 'Basic cVNvaEtrTEtQV3dEZVNLand6OFI6eVlGM1ljbDlCNlZqczc3cTNNaEU=', 'Content-Type': 'application/json', 'User-Agent': '535623 - SelfIntegration'}
+Request data: {
+  "items": [
+    {
+      "barcode": "LCWKarateci23",
+      "title": "LCW baby Ekru Bisiklet Yaka K\u0131z Bebek Basic Bluz ve Pantolon 2'li",
+      "productMainId": "Karateci23",
+      "brandId": 102,
+      "categoryId": 2356,
+      "stockCode": "Karateci23",
+      "quantity": 10,
+      "description": "<div class=\"panel-body\">\r\n<div class=\"row\">\r\n<div class=\"col-xs-12\">\r\n<h5>\u00dcr\u00fcn A\u00e7\u0131klamas\u0131</h5>\r\n<ul>\r\n<li class=\"\">\r\n                                                                            Sade tasar\u0131m\u0131 ve yumu\u015fak yap\u0131s\u0131yla g\u00fcnl\u00fck kullan\u0131m i\u00e7in ideal bir se\u00e7imdir. Pamuk kar\u0131\u015f\u0131ml\u0131 kuma\u015f\u0131, bebe\u011finizin hassas cildine dost bir konfor sunarken, nefes alabilir yap\u0131s\u0131yla g\u00fcn boyu rahatl\u0131k sa\u011flar.\r\n                                                                        </li>\r\n<li class=\"\">\r\n                                                                            Bebe\u011finizi zararl\u0131 kimyasallardan korumak ve g\u00fcvenli\u011fini \u00f6n planda tutmak i\u00e7in \u00fcr\u00fcn\u00fc \u00f6rneklem y\u00f6ntemiyle ekolojik testlerden ge\u00e7iriyoruz. \u00dcr\u00fcnde yutulabilir k\u00fc\u00e7\u00fck par\u00e7alar, tehlikeli ipler ve keskin par\u00e7alar bulunmamaktad\u0131r.\r\n                                                                        </li>\r\n</ul>\r\n</div>\r\n</div>\r\n<div class=\"row\">\r\n<div class=\"col-xs-12\">\r\n</div>\r\n</div>\r\n<div class=\"row\">\r\n<div class=\"col-xs-12\">\r\n<p><h5>Manken Bilgisi</h5></p>\r\n<p>\r\n<b>G\u00f6\u011f\u00fcs:</b> <span class=\"ltr-fix\">0 cm</span>\r\n<b>Bel:</b> <span class=\"ltr-fix\">27 cm</span>\r\n<b>Basen:</b> <span class=\"ltr-fix\">0 cm</span>\r\n<b>Boy:</b> <span class=\"ltr-fix\">127 cm</span>\r\n<br/>\r\n        Manken <b class=\"ltr-fix\">9m-12m</b> beden \u00fcr\u00fcn giyiyor.\r\n    </p>\r\n</div>\r\n</div>\r\n<div class=\"row\">\r\n<div class=\"col-xs-12\">\r\n<p><h5>Manken Bilgisi</h5></p>\r\n<p>\r\n<b>Boy:</b> 127 cm\r\n\r\n        <b>Kilo:</b> 27 kg\r\n        <br/>\r\nManken <b>9-12 AY</b> beden \u00fcr\u00fcn giyiyor.    </p>\r\n</div>\r\n</div>\r\n<div class=\"row\">\r\n<div class=\"col-xs-12\">\r\n<h5>\u00dcr\u00fcn \u0130\u00e7eri\u011fi ve \u00d6zellikleri</h5>\r\n</div>\r\n<div class=\"col-xs-12\">\r\n<!--googleoff: all-->\r\n<b>\u00dcr\u00fcn \u0130\u00e7eri\u011fi:</b>\r\n<p><b>2.Kuma\u015f Bluz:</b> %35 Polyester %65 Pamuk</p>\r\n<p><b>Ana Kuma\u015f Bluz:</b> %100 Pamuk</p>\r\n<p><b>Ana Kuma\u015f Pantolon:</b> %100 Pamuk</p>\r\n<!--googleon: all-->\r\n</div>\r\n<div class=\"col-xs-12\">\r\n<div class=\"col-md-6 option-info nopadding\">\r\n<p><b>\u00dcr\u00fcn \u00d6zellikleri:</b></p>\r\n<p><b>Sat\u0131c\u0131:</b> LC Waikiki Ma\u011fazac\u0131l\u0131k Hizmetleri Ticaret A.\u015e.</p>\r\n<p><b>Marka:</b> LCW baby</p>\r\n<p><b>\u00dcr\u00fcn Tipi:</b> Tak\u0131m</p>\r\n<p><b>Cinsiyet:</b> K\u0131z Bebek</p>\r\n<p><b>Kal\u0131p:</b> Standart &amp; Regular</p>\r\n<p><b>Bel Fiti:</b> Beli Lastikli</p>\r\n<p><b>Desen:</b> D\u00fcz</p>\r\n<p><b>Yaka:</b> Bisiklet Yaka</p>\r\n<p><b>Kal\u0131nl\u0131k:</b> \u0130nce</p>\r\n<p><b>Kol Boyu:</b> K\u0131sa Kollu</p>\r\n<p><b>Malzeme:</b> %100 Pamuk</p>\r\n<p><b>Koleksiyon:</b> Yenido\u011fan</p>\r\n<p><b>Par\u00e7a Say\u0131s\u0131:</b> 2 Par\u00e7a</p>\r\n</div>\r\n</div>\r\n</div>\r\n</div>",
+      "currencyType": "TRY",
+      "listPrice": 935.99,
+      "salePrice": 935.99,
+      "vatRate": 10,
+      "cargoCompanyId": 17,
+      "gender": {
+        "id": 1
+      },
+      "attributes": [
+        {
+          "attributeId": "color",
+          "attributeValueId": "Ekru"
+        }
+      ],
+      "images": [
+        {
+          "url": "https://5d5f0d6a-7ad1-460e-bcb2-7db84ebc77ff-00-30mgnzeqj65wp.kirk.replit.dev/admin/lcwaikiki/product/231/change/"
+        }
+      ]
+    }
+  ]
+}
+Response headers: {'Date': 'Sat, 12 Apr 2025 11:09:03 GMT', 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': '82', 'Connection': 'keep-alive', 'x-powered-by': 'Express', 'etag': 'W/"52-V4BoxBxqCGQGt3Bmruo4gDnePkU"', 'ty-lb-fid': 'CBC-GGRFA-CEQ-RKG-YO57-CBC-GGRFRALHEG GLP-ZEF-CEQ-RKG-YO58-GERAQLBY-ZNEF', 'referrer-policy': 'same-origin', 'strict-transport-security': 'max-age=15768000;', 'x-content-type-options': 'nosniff', 'ty-lb-upstream-status': '400', 'ty-lb-tid': 'de48a52ab80b1b29243acd34dd79d193', 'CF-Cache-Status': 'DYNAMIC', 'Set-Cookie': '__cf_bm=.C1erlq58LrARe5FPX7nNj7BSwR1G.RRmdJ0hUdNia8-1744456143-1.0.1.1-zuJMWZ6M4SIhrp6EZr5MExhC.Osy.R.EniLe5oMQM5O.aknK7nlBacphoeEY_emJMzuTOOApCib4bQL2WrSr5JEku0jkm7iul3Kk6Xf8SwM; path=/; expires=Sat, 12-Apr-25 11:39:03 GMT; domain=.trendyol.com; HttpOnly; Secure; SameSite=None, __cflb=04dToYCH9RsdhPpttDDEnPngTWcVjd8h2XPtyre4cV; SameSite=Lax; path=/; expires=Sat, 12-Apr-25 11:39:03 GMT; HttpOnly, _cfuvid=WCBsywt5jbjYvmBC2rMSgKqt2BxBWwcq7ms_t7pRfKY-1744456143156-0.0.1.1-604800000; path=/; domain=.trendyol.com; HttpOnly; Secure; SameSite=None', 'Server': 'cloudflare', 'CF-RAY': '92f244ed18e2ebfa-SEA'}
+Response body: {"timestamp":1744456143040,"exception":"ClientApiBusinessException","errors":[{}]}
+Error making request to Trendyol API: 400 Client Error: Bad Request for url: https://apigw.trendyol.com/integration/product/sellers/535623/products
+[DEBUG-CREATE] Trendyol'dan gelen yanıt: {"error": true, "message": "400 Client Error: Bad Request for url: https://apigw.trendyol.com/integration/product/sellers/535623/products", "details": {}}
+API error for product ID 29: 400 Client Error: Bad Request for url: https://apigw.trendyol.com/integration/product/sellers/535623/products
