@@ -1389,14 +1389,14 @@ def get_required_attributes_for_category(
     # Use our enhanced category finder
     finder = TrendyolCategoryFinder(client)
     
-    # Get required attributes with appropriate defaults using positional parameters for category_id
-    # and named parameters for the optional arguments
-    attributes = finder.get_required_attributes(
-        category_id, 
-        product_title=product_title, 
-        product_color=product_color, 
-        product_size=product_size
-    )
+    # We'll directly call the get_required_attributes method with positional args only
+    # First positional arg is category_id, the self is handled automatically
+    try:
+        attributes = finder.get_required_attributes(category_id)
+        print(f"[DEBUG-ATTR] Temel kategori özellikleri alındı: {json.dumps(attributes, ensure_ascii=False)}")
+    except Exception as e:
+        print(f"[DEBUG-ATTR] Temel kategori özellikleri alınırken hata: {str(e)}")
+        attributes = []
     print(f"[DEBUG-ATTR] Bulunan zorunlu özellikler: {json.dumps(attributes, ensure_ascii=False)}")
     
     return attributes
@@ -1578,12 +1578,8 @@ def prepare_product_data(product: TrendyolProduct) -> Dict[str, Any]:
   
   # Get required attributes with our enhanced finder
   # This also ensures all mandatory fields are included, even if we already have some attributes
-  required_attrs = get_required_attributes_for_category(
-      category_id, 
-      product_title=product.title,
-      product_color=color_value,
-      product_size=size_value
-  )
+  # We only provide category_id as positional argument, and handle others with defaults
+  required_attrs = get_required_attributes_for_category(category_id)
   
   # Get existing attribute IDs
   existing_attr_ids = {attr['attributeId'] for attr in attributes}
