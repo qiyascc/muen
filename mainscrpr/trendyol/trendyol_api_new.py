@@ -408,13 +408,30 @@ class TrendyolProductManager:
         """Construct the complete product payload"""
         # Parse images
         images = []
-        for image_url in product.image_urls.split(','):
-            if image_url.strip():
-                images.append({"url": image_url.strip()})
         
-        # Ensure we have at least one image
-        if not images and product.thumbnail:
-            images.append({"url": product.thumbnail})
+        # Add the main image if available
+        if hasattr(product, 'image_url') and product.image_url:
+            images.append({"url": product.image_url})
+        
+        # Add additional images if available
+        if hasattr(product, 'additional_images') and product.additional_images:
+            try:
+                if isinstance(product.additional_images, list):
+                    for img in product.additional_images:
+                        if isinstance(img, str) and img.strip():
+                            images.append({"url": img.strip()})
+                        elif isinstance(img, dict) and 'url' in img and img['url'].strip():
+                            images.append({"url": img['url'].strip()})
+            except Exception as e:
+                logger.warning(f"Error processing additional images: {str(e)}")
+        
+        # If we still don't have images and there's a fallback attribute available
+        if not images:
+            # Try lcwaikiki_product relation if exists
+            if hasattr(product, 'lcwaikiki_product') and product.lcwaikiki_product:
+                lc_product = product.lcwaikiki_product
+                if hasattr(lc_product, 'image_url') and lc_product.image_url:
+                    images.append({"url": lc_product.image_url})
         
         # Prepare title - limit to 100 characters and normalize whitespace
         title = product.title
@@ -427,19 +444,19 @@ class TrendyolProductManager:
         
         # Build the product item
         item = {
-            "barcode": product.barcode or product.product_code,
-            "title": title or product.name or product.description[:100],
-            "productMainId": product.product_code,
+            "barcode": product.barcode,
+            "title": title or product.description[:100],
+            "productMainId": getattr(product, 'product_main_id', product.barcode),
             "brandId": brand_id,
             "categoryId": category_id,
-            "quantity": product.stock_quantity or 10,
-            "stockCode": product.stock_code or product.product_code,
-            "dimensionalWeight": product.weight or 1,
-            "description": product.description or product.name or product.title,
-            "currencyType": "TRY",
-            "listPrice": float(product.list_price) if product.list_price else float(product.price),
+            "quantity": getattr(product, 'quantity', 10),
+            "stockCode": getattr(product, 'stock_code', product.barcode),
+            "dimensionalWeight": getattr(product, 'dimensional_weight', 1),
+            "description": product.description or product.title,
+            "currencyType": getattr(product, 'currency_type', "TRY"),
+            "listPrice": float(product.price),  # Use price as list price if no specific list price
             "salePrice": float(product.price),
-            "vatRate": 10,  # Default VAT rate for clothing
+            "vatRate": getattr(product, 'vat_rate', 10),  # Default VAT rate for clothing
             "cargoCompanyId": 17,  # Default cargo company
             "attributes": self._ensure_integer_attributes(attributes),
             "images": images
@@ -447,7 +464,7 @@ class TrendyolProductManager:
         
         # Add shipment and returning addresses if available
         try:
-            addresses = self.api_client.get(f"sellers/{self.api_client.config.seller_id}/addresses")
+            addresses = self.api.get(f"sellers/{self.api.config.seller_id}/addresses")
             if addresses and 'supplierAddresses' in addresses:
                 for address in addresses['supplierAddresses']:
                     if address.get('isShipmentAddress', False):
@@ -486,7 +503,10 @@ class TrendyolProductManager:
             
             fixed_attributes.append(fixed_attr)
         
-        return fixed_attributesdef get_api_client_from_config():
+        return fixed_attributes
+        
+        
+def get_api_client_from_config():
     """Get a TrendyolAPI client instance from the active configuration"""
     try:
         config = TrendyolAPIConfig.objects.filter(is_active=True).first()
