@@ -1436,69 +1436,12 @@ def prepare_product_data(product: TrendyolProduct) -> Dict[str, Any]:
         try:
           # For any attributes, try to convert to integers
           # No special handling for color attribute
-          # Convert color attributes based on the category's actual attributes
-          if key == "color" or key == "renk":
-            # We'll leave the attribute ID as is and let the category's attributes determine the right ID
-            # This is more flexible as different categories might use different attribute IDs for color
-            attr_id = key
-          else:
-            attr_id = int(key) if isinstance(key, str) and key.isdigit() else key
-            
+          attr_id = int(key) if isinstance(key, str) and key.isdigit() else key
           # Try to convert attributeValueId to integer if possible
-          if isinstance(value, str) and value.isdigit():
-            attr_value_id = int(value)
-          elif isinstance(attr_id, int) and (attr_id == 348 or key == "color" or key == "renk"):
-            # For color, make sure we have a numeric ID instead of a string value
-            # Map common colors to numeric IDs
-            color_id_map = {
-                'beyaz': 3939, 
-                'siyah': 3940, 
-                'mavi': 3941, 
-                'kırmızı': 3942, 
-                'pembe': 3943,
-                'yeşil': 3944,
-                'sarı': 3945,
-                'mor': 3946,
-                'gri': 3947,
-                'kahverengi': 3948,
-                'ekru': 3949,
-                'bej': 3950,
-                'lacivert': 3951,
-                'turuncu': 3952,
-                'krem': 3953,
-                'petrol': 3954,
-                'bordo': 3955,
-                'camel': 3956
-            }
-            # Normalize value to lowercase and without accents
-            if isinstance(value, str):
-                value_lower = value.lower()
-                for color_name, color_id in color_id_map.items():
-                    if color_name in value_lower:
-                        attr_value_id = color_id
-                        break
-                else:
-                    # If no match, use a default color ID
-                    attr_value_id = 3939  # Default to white
-                    logger.warning(f"No matching color ID for '{value}', using default")
-            else:
-                attr_value_id = value
-          else:
-              attr_value_id = value
-              
-          # For renk/color, we'll handle special mapping through the category attrs
-          # For other attributes, we need integer attributeId
-          if isinstance(attr_id, str) and (attr_id == "color" or attr_id == "renk"):
-              # Find the correct color attribute ID from required attributes 
-              # This will be handled later when we process required_attrs from the category
-              pass
-          elif not isinstance(attr_id, int):
-              logger.warning(f"Non-integer attributeId: {attr_id}, not adding this attribute yet")
-              continue
-                
+          attr_value_id = int(value) if isinstance(value, str) and value.isdigit() else value
           attributes.append({"attributeId": attr_id, "attributeValueId": attr_value_id})
-        except (ValueError, TypeError) as e:
-          logger.warning(f"Could not convert attribute ID/value to integer: {key}={value}, error: {str(e)}")
+        except (ValueError, TypeError):
+          logger.warning(f"Could not convert attribute ID/value to integer: {key}={value}")
     elif isinstance(product.attributes, str):
       try:
         attrs = json.loads(product.attributes)
@@ -1529,68 +1472,14 @@ def prepare_product_data(product: TrendyolProduct) -> Dict[str, Any]:
   # We only provide category_id as positional argument, and handle others with defaults
   required_attrs = get_required_attributes_for_category(category_id)
   
-  # Process any color/renk attributes that need proper ID mapping
-  color_value = None
-  temp_attrs = []
-  
-  # First extract any string color attributes and find their values
-  for attr in attributes:
-    if isinstance(attr['attributeId'], str) and (attr['attributeId'] == 'color' or attr['attributeId'] == 'renk'):
-      color_value = attr['attributeValueId']  # Save the color value
-    else:
-      temp_attrs.append(attr)  # Keep all other attributes
-  
-  # Replace with the processed attributes
-  attributes = temp_attrs
-  
   # Get existing attribute IDs
   existing_attr_ids = {attr['attributeId'] for attr in attributes}
   
   # Add required attributes if they don't exist yet
   for attr in required_attrs:
-    attr_id = attr['attributeId']
-    
-    # If this is a color attribute (look for attribute name containing "renk" in lowercase)
-    color_attr_names = ["renk", "color"]
-    color_attr_found = False
-    
-    try:
-      # Check if this is a color attribute by looking at the color (this will be a color if we saved one earlier)
-      if color_value and any(cname in str(attr.get('attribute', {}).get('name', '')).lower() for cname in color_attr_names):
-        # This is a color attribute and we have a color value!
-        color_attr_found = True
-        print(f"[DEBUG-PRODUCT] Renk özelliği bulundu: ID={attr_id}")
-        
-        # Try to map the color name to a valid value ID
-        color_id = attr['attributeValueId']  # Default to the existing value
-        
-        if isinstance(color_value, str):
-          # Look for a matching attributeValue
-          attr_values = attr.get('attribute', {}).get('attributeValues', [])
-          for val in attr_values:
-            if color_value.lower() in val.get('name', '').lower():
-              # Found a match!
-              color_id = val.get('id')
-              print(f"[DEBUG-PRODUCT] Renk eşleşmesi bulundu: {color_value} => {val.get('name')} (ID: {color_id})")
-              break
-        
-        # Add the color attribute with the right ID
-        attributes.append({
-          "attributeId": attr_id,
-          "attributeValueId": color_id
-        })
-        print(f"[DEBUG-PRODUCT] Renk özelliği eklendi: AttributeID={attr_id}, ValueID={color_id}")
-        
-      # For other attributes, add if they don't exist yet
-      elif attr_id not in existing_attr_ids:
-        attributes.append({"attributeId": attr_id, "attributeValueId": attr['attributeValueId']})
-        print(f"[DEBUG-PRODUCT] Zorunlu özellik eklendi: AttributeID={attr_id}, ValueID={attr['attributeValueId']}")
-    except Exception as e:
-      print(f"[DEBUG-PRODUCT] Özellik eklerken hata: {str(e)}")
-      # Add the attribute anyway
-      if attr_id not in existing_attr_ids:
-        attributes.append({"attributeId": attr_id, "attributeValueId": attr['attributeValueId']})
-        print(f"[DEBUG-PRODUCT] (Hata sonrası) Zorunlu özellik eklendi: AttributeID={attr_id}, ValueID={attr['attributeValueId']}")
+    if attr['attributeId'] not in existing_attr_ids:
+      attributes.append(attr)
+      print(f"[DEBUG-PRODUCT] Zorunlu özellik eklendi: AttributeID={attr['attributeId']}, ValueID={attr['attributeValueId']}")
     
   print(f"[DEBUG-PRODUCT] Toplam özellik sayısı: {len(attributes)}")
   print(f"[DEBUG-PRODUCT] Özellikler: {json.dumps(attributes, ensure_ascii=False)}")
