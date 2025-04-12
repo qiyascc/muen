@@ -125,70 +125,20 @@ class TrendyolProductAdmin(ModelAdmin):
     def sync_with_trendyol(self, request, queryset):
         """
         Synchronize selected products with Trendyol.
-        
-        If product already exists on Trendyol (has a barcode), this will only update price and inventory.
-        Otherwise, it will create a new product on Trendyol.
         """
         from . import api_client
-        import logging
         
-        logger = logging.getLogger('trendyol.admin')
-        
-        new_count = 0
-        update_count = 0
-        error_count = 0
-        
+        count = 0
         for product in queryset:
             try:
-                logger.info(f"Processing product '{product.title}', barcode: {product.barcode}")
-                
-                # Check if product already exists on Trendyol
-                if product.trendyol_id or product.batch_status == 'completed':
-                    # Product exists - update price and inventory only
-                    logger.info(f"Product '{product.title}' already exists on Trendyol, updating price and inventory")
-                    batch_id = api_client.update_price_and_inventory(product)
-                    if batch_id:
-                        update_count += 1
-                        self.message_user(
-                            request, 
-                            f"Updated price and inventory for '{product.title}' with batch ID: {batch_id}",
-                            level='success'
-                        )
-                else:
-                    # New product - create on Trendyol
-                    logger.info(f"Product '{product.title}' is new, creating on Trendyol")
-                    batch_id = api_client.create_trendyol_product(product)
-                    if batch_id:
-                        new_count += 1
-                        self.message_user(
-                            request, 
-                            f"Created new product '{product.title}' with batch ID: {batch_id}",
-                            level='success'
-                        )
+                batch_id = api_client.create_trendyol_product(product)
+                if batch_id:
+                    count += 1
             except Exception as e:
-                logger.error(f"Error syncing product {product.title}: {str(e)}")
-                self.message_user(
-                    request, 
-                    f"Error syncing product '{product.title}': {str(e)}", 
-                    level='error'
-                )
-                error_count += 1
+                self.message_user(request, f"Error syncing product {product.title}: {str(e)}", level='error')
         
-        if new_count > 0 or update_count > 0:
-            summary = []
-            if new_count > 0:
-                summary.append(f"created {new_count} new products")
-            if update_count > 0:
-                summary.append(f"updated {update_count} existing products")
-                
-            self.message_user(
-                request, 
-                f"Successfully {' and '.join(summary)} on Trendyol. Check status in a few minutes.",
-                level='success'
-            )
-        elif error_count == 0:
-            self.message_user(request, "No products were processed.", level='warning')
-    
+        if count:
+            self.message_user(request, f"Successfully initiated sync for {count} products. Check status in a few minutes.")
     sync_with_trendyol.short_description = "Sync selected products with Trendyol"
     
     def check_sync_status(self, request, queryset):
