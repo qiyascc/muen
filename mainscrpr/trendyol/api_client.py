@@ -10,7 +10,15 @@ from typing import Dict, List, Optional, Any, Tuple, Union
 from django.utils import timezone
 
 from .models import TrendyolAPIConfig, TrendyolBrand, TrendyolCategory, TrendyolProduct
-from trendyol.category_finder import TrendyolCategoryFinder, DEFAULT_REQUIRED_ATTRIBUTES
+# DEFAULT_REQUIRED_ATTRIBUTES tanımla
+DEFAULT_REQUIRED_ATTRIBUTES = {
+    # Giyim kategorileri için zorunlu öznitelikler
+    'clothing': [
+        {"attributeId": 338, "attributeValueId": 7189},  # Cinsiyet: Kadın
+        {"attributeId": 47, "attributeValueId": 8201},   # Menşei: Türkiye
+        {"attributeId": 60, "attributeValueId": 902},    # Yaş Grubu: Yetişkin
+    ]
+}
 
 logger = logging.getLogger(__name__)
 

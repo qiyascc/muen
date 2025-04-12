@@ -21,8 +21,18 @@ import re
 from functools import lru_cache
 from typing import Dict, List, Any, Optional, Tuple, Set
 import difflib
-# PyMultiDictionary kaldırıldı - basit eşleştirme için difflib kullanılacak
-from .api_client import TrendyolAPIClient
+
+# DEFAULT_REQUIRED_ATTRIBUTES tanımlama
+DEFAULT_REQUIRED_ATTRIBUTES = {
+    # Giyim kategorileri için zorunlu öznitelikler
+    'clothing': [
+        {"attributeId": 338, "attributeValueId": 7189},  # Cinsiyet: Kadın
+        {"attributeId": 47, "attributeValueId": 8201},   # Menşei: Türkiye
+        {"attributeId": 60, "attributeValueId": 902},    # Yaş Grubu: Yetişkin
+    ]
+}
+
+from .api_client import TrendyolApi
 logger = logging.getLogger(__name__)
 
 class TrendyolCategoryFinder:
@@ -41,7 +51,8 @@ class TrendyolCategoryFinder:
     def _fetch_all_categories(self):
         """Fetch all categories from Trendyol API"""
         try:
-            data = self.api.get("product/product-categories")
+            # categories.get_categories() kullan, doğrudan get() kullanmak yerine
+            data = self.api.categories.get_categories()
             return data.get('categories', [])
         except Exception as e:
             logger.error(f"Failed to fetch categories: {str(e)}")
@@ -50,7 +61,7 @@ class TrendyolCategoryFinder:
     def get_category_attributes(self, category_id):
         """Get attributes for a category directly from API"""
         try:
-            return self.api.get(f"product/product-categories/{category_id}/attributes")
+            return self.api.categories.get_category_attributes(category_id)
         except Exception as e:
             logger.error(f"Failed to fetch attributes for category {category_id}: {str(e)}")
             return {"categoryAttributes": []}
