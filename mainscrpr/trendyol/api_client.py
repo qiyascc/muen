@@ -1,3 +1,6 @@
+# Updated import for working API client
+from trendyol.trendyol_api_working import TrendyolAPI as WorkingTrendyolAPI
+
 import logging
 import json
 import time
@@ -419,35 +422,16 @@ class InventoryAPI:
     return self.client.make_request('POST', endpoint, data={"items": items})
 
 
-def get_api_client() -> Optional[TrendyolApi]:
-  """
-    Get a configured Trendyol API client.
-    Returns None if no active API configuration is found.
-    """
-  try:
-    config = TrendyolAPIConfig.objects.filter(is_active=True).first()
-    if not config:
-      logger.error("No active Trendyol API configuration found")
-      return None
+def get_api_client():
+    """Get a configured API client."""
+    try:
+        # Use the working API client instead of the original
+        return WorkingTrendyolAPI()
+    except Exception as e:
+        logger.error(f"Error creating API client: {str(e)}")
+        return None
 
-    # Get the user_agent from the config, or create a default one
-    user_agent = config.user_agent
-    if not user_agent:
-      user_agent = f"{config.seller_id} - SelfIntegration"
-
-    # Initialize the Trendyol API client
-    client = TrendyolApi(
-        api_key=config.api_key,
-        api_secret=config.api_secret,
-        supplier_id=config.supplier_id or config.
-        seller_id,  # Use supplier_id if set, otherwise fall back to seller_id
-        api_url=config.base_url,
-        user_agent=user_agent)
-
-    return client
-  except Exception as e:
-    logger.error(f"Error creating Trendyol API client: {str(e)}")
-    return None
+# Eski API istemcisi kodları kaldırıldı - artık WorkingTrendyolAPI kullanılıyor
 
 
 def fetch_brands() -> List[Dict[str, Any]]:
