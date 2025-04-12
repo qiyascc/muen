@@ -1,8 +1,8 @@
 from django.contrib import admin
 from django.core.serializers.json import DjangoJSONEncoder
 from django.utils import timezone
-from django.utils.html import format_html
-from django.forms.widgets import PasswordInput
+from django.utils.html import format_html, mark_safe
+from django.forms.widgets import PasswordInput, Textarea
 from unfold.admin import ModelAdmin, TabularInline
 
 from .models import TrendyolAPIConfig, TrendyolBrand, TrendyolCategory, TrendyolProduct
@@ -83,15 +83,16 @@ class TrendyolProductAdmin(ModelAdmin):
     list_display = ('title', 'barcode', 'brand_name', 'price', 'quantity', 'display_batch_id', 'batch_status', 'last_sync_time')
     list_filter = ('batch_status', 'last_sync_time', 'created_at')
     search_fields = ('title', 'barcode', 'product_main_id', 'stock_code', 'batch_id')
-    readonly_fields = ('created_at', 'updated_at', 'last_check_time', 'last_sync_time', 'display_trendyol_link', 'display_batch_id')
+    readonly_fields = ('created_at', 'updated_at', 'last_check_time', 'last_sync_time', 
+                      'display_trendyol_link', 'display_batch_id', 'formatted_description', 'preview_image', 'formatted_attributes')
     
     fieldsets = (
-        ("Product Information", {"fields": ("title", "description", "barcode", "product_main_id", "stock_code")}),
+        ("Product Information", {"fields": ("title", "description", "formatted_description", "barcode", "product_main_id", "stock_code")}),
         ("Brand and Category", {"fields": ("brand_name", "category_name", "brand_id", "category_id")}),
         ("Price and Stock", {"fields": ("price", "quantity", "vat_rate", "currency_type")}),
-        ("Images", {"fields": ("image_url", "additional_images")}),
+        ("Images", {"fields": ("image_url", "preview_image", "additional_images")}),
         ("LCWaikiki Relation", {"fields": ("lcwaikiki_product",)}),
-        ("Trendyol Information", {"fields": ("trendyol_id", "trendyol_url", "display_trendyol_link", "attributes")}),
+        ("Trendyol Information", {"fields": ("trendyol_id", "trendyol_url", "display_trendyol_link", "attributes", "formatted_attributes")}),
         ("Synchronization", {"fields": ("display_batch_id", "batch_id", "batch_status", "status_message", "last_check_time", "last_sync_time")}),
         ("Metadata", {"fields": ("created_at", "updated_at")}),
     )
@@ -387,3 +388,139 @@ class TrendyolProductAdmin(ModelAdmin):
             )
     
     refresh_product_data.short_description = "Refresh product data from LCWaikiki"
+    
+    def formatted_description(self, obj):
+        """
+        Display formatted HTML description with proper styling and cleaned content.
+        """
+        if not obj.description:
+            return "No description available"
+            
+        # Clean the description by removing "Satıcı" paragraphs if present
+        description = obj.description
+        if description and "<p><b>Satıcı:</b>" in description:
+            import re
+            satici_pattern = r'<p><b>Satıcı:</b>.*?</p>'
+            description = re.sub(satici_pattern, '', description)
+        
+        # Add CSS styling to ensure proper formatting in the admin panel
+        styled_html = f"""
+        <div style="max-width: 800px; max-height: 400px; overflow: auto; padding: 10px; 
+                    border: 1px solid #eee; border-radius: 5px; background-color: #fafafa;">
+            {description}
+        </div>
+        """
+        return mark_safe(styled_html)
+    formatted_description.short_description = "Formatted Description"
+    
+    def preview_image(self, obj):
+        """
+        Display a thumbnail of the product image with a link to the full-size image.
+        Also shows additional images if available.
+        """
+        if not obj.image_url:
+            return "No image available"
+        
+        html = [f"""
+        <div style="margin-bottom: 10px;">
+            <strong>Main Image:</strong><br>
+            <a href="{obj.image_url}" target="_blank">
+                <img src="{obj.image_url}" style="max-width: 200px; max-height: 200px; 
+                border: 1px solid #ddd; border-radius: 4px; padding: 5px;" />
+            </a>
+        </div>
+        """]
+        
+        # Check for additional images
+        if obj.additional_images:
+            additional_urls = []
+            
+            # Parse additional images from JSON or list
+            if isinstance(obj.additional_images, list):
+                additional_urls = obj.additional_images
+            elif isinstance(obj.additional_images, str):
+                try:
+                    import json
+                    additional_urls = json.loads(obj.additional_images)
+                except json.JSONDecodeError:
+                    pass
+                    
+            # Display additional images
+            if additional_urls:
+                html.append("<div><strong>Additional Images:</strong><br>")
+                html.append('<div style="display: flex; flex-wrap: wrap; gap: 10px;">')
+                
+                for i, img_url in enumerate(additional_urls[:5]):  # Limit to first 5 additional images
+                    if img_url:
+                        html.append(f"""
+                        <a href="{img_url}" target="_blank" title="Additional Image {i+1}">
+                            <img src="{img_url}" style="width: 100px; height: 100px; object-fit: cover; 
+                            border: 1px solid #ddd; border-radius: 4px; padding: 3px;" />
+                        </a>
+                        """)
+                
+                if len(additional_urls) > 5:
+                    html.append(f"<div>+{len(additional_urls) - 5} more images</div>")
+                    
+                html.append('</div></div>')
+        
+        return mark_safe(''.join(html))
+    preview_image.short_description = "Image Preview"
+    
+    def formatted_attributes(self, obj):
+        """
+        Display product attributes in a formatted way with proper styling.
+        """
+        if not obj.attributes:
+            return "No attributes available"
+            
+        # Parse attributes from JSON or list
+        attributes = []
+        if isinstance(obj.attributes, list):
+            attributes = obj.attributes
+        elif isinstance(obj.attributes, str):
+            try:
+                import json
+                attributes = json.loads(obj.attributes)
+            except json.JSONDecodeError:
+                return "Invalid attribute format"
+                
+        if not attributes:
+            return "No attributes available"
+            
+        # Build HTML for attributes table
+        html = ['<div style="max-width: 800px; max-height: 400px; overflow: auto;">']
+        html.append('<table style="width: 100%; border-collapse: collapse; border: 1px solid #ddd;">')
+        html.append('<thead style="background-color: #f5f5f5;">')
+        html.append('<tr>')
+        html.append('<th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Attribute ID</th>')
+        html.append('<th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Attribute Name</th>')
+        html.append('<th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Value ID</th>')
+        html.append('<th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Value</th>')
+        html.append('</tr>')
+        html.append('</thead>')
+        html.append('<tbody>')
+        
+        # Add rows for each attribute
+        for attr in attributes:
+            try:
+                attr_id = attr.get('attributeId', '')
+                attr_name = attr.get('attributeName', '')
+                value_id = attr.get('attributeValueId', '')
+                value = attr.get('attributeValue', '')
+                
+                html.append('<tr>')
+                html.append(f'<td style="padding: 8px; border: 1px solid #ddd;">{attr_id}</td>')
+                html.append(f'<td style="padding: 8px; border: 1px solid #ddd;">{attr_name}</td>')
+                html.append(f'<td style="padding: 8px; border: 1px solid #ddd;">{value_id}</td>')
+                html.append(f'<td style="padding: 8px; border: 1px solid #ddd;">{value}</td>')
+                html.append('</tr>')
+            except Exception as e:
+                html.append(f'<tr><td colspan="4" style="padding: 8px; border: 1px solid #ddd; color: red;">Error parsing attribute: {str(e)}</td></tr>')
+                
+        html.append('</tbody>')
+        html.append('</table>')
+        html.append('</div>')
+        
+        return mark_safe(''.join(html))
+    formatted_attributes.short_description = "Formatted Attributes"
