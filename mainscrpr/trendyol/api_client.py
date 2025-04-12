@@ -1341,16 +1341,16 @@ def find_best_brand_match(product: TrendyolProduct) -> Optional[int]:
 def get_required_attributes_for_category(
     category_id: int, product_title: str = None, product_color: str = None, product_size: str = None) -> List[Dict[str, Any]]:
   """
-    Get required attributes for a specific category.
+    Get required attributes for a specific category directly from Trendyol API.
     Returns a list of attribute dictionaries in format required by Trendyol API.
     
-    Artık, API'den alınan kategoriye özgü öznitelikler doğrudan kullanılacak,
-    manuel renk eşleştirmesine gerek kalmayacak.
+    Bu fonksiyon, her kategori için doğru özellikleri Trendyol API'sinden alır
+    ve sabit değerlere ihtiyaç duymaz.
     
     Args:
         category_id: The category ID
         product_title: The product title to infer attributes from (optional)
-        product_color: The product color if known (optional) - artık API'den alınacak
+        product_color: The product color if known (optional)
         product_size: The product size if known (optional)
     
     Returns:
@@ -1361,68 +1361,28 @@ def get_required_attributes_for_category(
   try:
     client = get_api_client()
     if not client:
-      logger.warning("API client could not be obtained, using default attributes")
-      # Sadece yerel tanımlı varsayılan öznitelikleri kullan
-      return [
-          # Gender - Cinsiyet = Women - Kadın
-          {
-              "attributeId": DEFAULT_REQUIRED_ATTRIBUTES["Gender"]["id"],
-              "attributeValueId": DEFAULT_REQUIRED_ATTRIBUTES["Gender"]["values"]["Kadın"]
-          },
-          # Origin - Menşei = Turkey - Türkiye 
-          {
-              "attributeId": DEFAULT_REQUIRED_ATTRIBUTES["Origin"]["id"],
-              "attributeValueId": DEFAULT_REQUIRED_ATTRIBUTES["Origin"]["values"]["Türkiye"]
-          },
-          # Sadece varsayılan değerleri ekle - renk değeri API'den alınacak
-      ]
+      logger.warning("API client could not be obtained")
+      return []
     
-    # Doğrudan API'den öznitelikleri almak için CategoryFinder kullan
+    # İyileştirilmiş kategori bulucu kullanarak öznitelikleri al
+    from .category_finder_new import TrendyolCategoryFinder
     finder = TrendyolCategoryFinder(client)
     
     # Doğrudan API'den kategoriye özgü öznitelikleri al
-    # First positional arg is category_id, the self is handled automatically
     try:
         attributes = finder.get_required_attributes(category_id)
-        print(f"[DEBUG-ATTR] Temel kategori özellikleri alındı: {json.dumps(attributes, ensure_ascii=False)}")
+        logger.info(f"Kategorinin zorunlu özellikleri API'den alındı: {len(attributes)} özellik")
+        logger.debug(f"Özellikler: {json.dumps(attributes, ensure_ascii=False)}")
     except Exception as e:
-        print(f"[DEBUG-ATTR] Temel kategori özellikleri alınırken hata: {str(e)}")
+        logger.error(f"Kategori özellikleri alınırken hata: {str(e)}")
         attributes = []
-    print(f"[DEBUG-ATTR] Bulunan zorunlu özellikler: {json.dumps(attributes, ensure_ascii=False)}")
     
     return attributes
   except Exception as e:
     logger.error(f"Error getting required attributes: {str(e)}")
-    print(f"[DEBUG-ATTR] HATA: Özellikler alınamadı: {str(e)}")
-    
-    # Return default attributes on error
-    return [
-        # Gender = Women
-        {
-            "attributeId": DEFAULT_REQUIRED_ATTRIBUTES["Gender"]["id"],
-            "attributeValueId": DEFAULT_REQUIRED_ATTRIBUTES["Gender"]["values"]["Kadın"]
-        },
-        # Origin = Turkey 
-        {
-            "attributeId": DEFAULT_REQUIRED_ATTRIBUTES["Origin"]["id"],
-            "attributeValueId": DEFAULT_REQUIRED_ATTRIBUTES["Origin"]["values"]["Türkiye"]
-        },
-        # Color = Black
-        {
-            "attributeId": DEFAULT_REQUIRED_ATTRIBUTES["Color"]["id"],
-            "attributeValueId": DEFAULT_REQUIRED_ATTRIBUTES["Color"]["values"]["Siyah"]
-        },
-        # Size = M
-        {
-            "attributeId": DEFAULT_REQUIRED_ATTRIBUTES["Size"]["id"],
-            "attributeValueId": DEFAULT_REQUIRED_ATTRIBUTES["Size"]["values"]["M"]
-        },
-        # Age Group = Adult
-        {
-            "attributeId": DEFAULT_REQUIRED_ATTRIBUTES["Age Group"]["id"],
-            "attributeValueId": DEFAULT_REQUIRED_ATTRIBUTES["Age Group"]["values"]["Yetişkin"]
-        }
-    ]
+    # Return an empty list on error - we won't use hardcoded values anymore
+    # This will force the API to provide the correct values
+    return []
 
 
 def prepare_product_data(product: TrendyolProduct) -> Dict[str, Any]:
