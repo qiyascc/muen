@@ -1472,14 +1472,32 @@ def prepare_product_data(product: TrendyolProduct) -> Dict[str, Any]:
   # We only provide category_id as positional argument, and handle others with defaults
   required_attrs = get_required_attributes_for_category(category_id)
   
-  # Get existing attribute IDs
-  existing_attr_ids = {attr['attributeId'] for attr in attributes}
+  # Get existing attribute IDs, but handle special case for string "color"
+  existing_attr_ids = set()
+  color_attribute_exists = False
   
-  # Add required attributes if they don't exist yet
+  # Pre-process attributes to fix the color attribute issue
+  fixed_attributes = []
+  for attr in attributes:
+      if attr.get('attributeId') == 'color':
+          # Mark that we have a color attribute to handle specially
+          color_attribute_exists = True
+          print(f"[DEBUG-PRODUCT] Renk özelliği string ID ile bulundu, değeri: {attr.get('attributeValueId')}")
+          # Do not add this attribute to the fixed list yet
+      else:
+          # Add non-color attributes to our fixed attributes list
+          fixed_attributes.append(attr)
+          existing_attr_ids.add(attr.get('attributeId'))
+  
+  # Replace the original attributes with fixed ones (without 'color')
+  attributes = fixed_attributes
+  
+  # Add required attributes from API, which will include the correct color attribute format
   for attr in required_attrs:
-    if attr['attributeId'] not in existing_attr_ids:
-      attributes.append(attr)
-      print(f"[DEBUG-PRODUCT] Zorunlu özellik eklendi: AttributeID={attr['attributeId']}, ValueID={attr['attributeValueId']}")
+      attr_id = attr.get('attributeId')
+      if attr_id not in existing_attr_ids:
+          attributes.append(attr)
+          print(f"[DEBUG-PRODUCT] Zorunlu özellik eklendi: AttributeID={attr_id}, ValueID={attr.get('attributeValueId')}")
     
   print(f"[DEBUG-PRODUCT] Toplam özellik sayısı: {len(attributes)}")
   print(f"[DEBUG-PRODUCT] Özellikler: {json.dumps(attributes, ensure_ascii=False)}")

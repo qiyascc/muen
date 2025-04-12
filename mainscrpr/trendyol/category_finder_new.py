@@ -244,23 +244,39 @@ class TrendyolCategoryFinder:
             attrs = self.get_category_attributes(category_id)
             attributes = []
             
-            # Process all category attributes
+            # Process all category attributes and log details
+            logger.info(f"Processing {len(attrs.get('categoryAttributes', []))} attributes for category {category_id}")
+            
             for attr in attrs.get('categoryAttributes', []):
-                if not attr['attribute'].get('id'):
+                # Skip attributes without ID
+                if not attr.get('attribute') or not attr['attribute'].get('id'):
+                    logger.warning(f"Skipping attribute without ID: {attr}")
                     continue
                     
-                # Sadece attributeValues olan özellikleri işle
-                if not attr.get('attributeValues') and not attr.get('allowCustom'):
-                    continue
-                    
+                # Get attribute details
                 attribute_id = attr['attribute']['id']
+                attribute_name = attr['attribute'].get('name', 'Unknown')
                 
+                logger.info(f"Processing attribute: {attribute_name} (ID: {attribute_id})")
+                
+                # Check if this is a 'color' attribute and log it
+                if attribute_name.lower() in ['renk', 'color']:
+                    logger.info(f"Found color attribute with ID {attribute_id}")
+                
+                # Skip if no values are available and custom is not allowed
+                if not attr.get('attributeValues') and not attr.get('allowCustom'):
+                    logger.info(f"Skipping attribute {attribute_name} with no values")
+                    continue
+                    
                 # Get a suitable value
                 attribute_value_id = None
+                attribute_value_name = None
                 
                 # If there are attribute values, use the first one
                 if attr.get('attributeValues') and len(attr['attributeValues']) > 0:
                     attribute_value_id = attr['attributeValues'][0]['id']
+                    attribute_value_name = attr['attributeValues'][0].get('name', 'Unknown')
+                    logger.info(f"Using attribute value: {attribute_value_name} (ID: {attribute_value_id})")
                 
                 # If we have a valid attribute ID and value ID, add to the list
                 if attribute_id and attribute_value_id:
@@ -268,7 +284,10 @@ class TrendyolCategoryFinder:
                         "attributeId": attribute_id,
                         "attributeValueId": attribute_value_id
                     })
+                    logger.info(f"Added attribute: {attribute_name}={attribute_value_name}")
             
+            # Log summary of attributes
+            logger.info(f"Returning {len(attributes)} attributes for category {category_id}")
             return attributes
             
         except Exception as e:
