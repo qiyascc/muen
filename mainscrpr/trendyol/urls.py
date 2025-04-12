@@ -15,6 +15,9 @@ urlpatterns = [
     # Batch status view
     path('batch-status/<str:batch_id>/', views.BatchStatusView.as_view(), name='batch_status'),
     
+    # Product attributes view
+    path('product-attributes/<int:product_id>/', views.ProductAttributesView.as_view(), name='product_attributes'),
+    
     # API endpoints
     path('api/', include(router.urls)),
 ]

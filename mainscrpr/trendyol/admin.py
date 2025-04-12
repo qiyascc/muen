@@ -84,7 +84,7 @@ class TrendyolProductAdmin(ModelAdmin):
     list_filter = ('batch_status', 'last_sync_time', 'created_at')
     search_fields = ('title', 'barcode', 'product_main_id', 'stock_code', 'batch_id')
     readonly_fields = ('created_at', 'updated_at', 'last_check_time', 'last_sync_time', 
-                      'display_trendyol_link', 'display_batch_id', 'formatted_description', 'preview_image', 'formatted_attributes')
+                      'display_trendyol_link', 'display_batch_id', 'formatted_description', 'preview_image')
     
     fieldsets = (
         ("Product Information", {"fields": ("title", "description", "formatted_description", "barcode", "product_main_id", "stock_code")}),
@@ -92,7 +92,7 @@ class TrendyolProductAdmin(ModelAdmin):
         ("Price and Stock", {"fields": ("price", "quantity", "vat_rate", "currency_type")}),
         ("Images", {"fields": ("image_url", "preview_image", "additional_images")}),
         ("LCWaikiki Relation", {"fields": ("lcwaikiki_product",)}),
-        ("Trendyol Information", {"fields": ("trendyol_id", "trendyol_url", "display_trendyol_link", "attributes", "formatted_attributes")}),
+        ("Trendyol Information", {"fields": ("trendyol_id", "trendyol_url", "display_trendyol_link", "attributes", "display_attributes_link")}),
         ("Synchronization", {"fields": ("display_batch_id", "batch_id", "batch_status", "status_message", "last_check_time", "last_sync_time")}),
         ("Metadata", {"fields": ("created_at", "updated_at")}),
     )
@@ -120,6 +120,17 @@ class TrendyolProductAdmin(ModelAdmin):
             return format_html('<a href="{}" target="_blank">{}</a>', batch_status_url, obj.batch_id)
         return "Not available"
     display_batch_id.short_description = "Batch ID"
+    
+    def display_attributes_link(self, obj):
+        """
+        Display a link to view formatted product attributes.
+        """
+        if obj.attributes:
+            from django.urls import reverse
+            attributes_url = reverse('trendyol:product_attributes', args=[obj.id])
+            return format_html('<a href="{}" target="_blank" class="button">View Attributes</a>', attributes_url)
+        return "No attributes"
+    display_attributes_link.short_description = "Attributes View"
     
     actions = ['sync_with_trendyol', 'check_sync_status', 'retry_failed_products', 'refresh_product_data']
     
