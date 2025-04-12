@@ -88,6 +88,7 @@ class TrendyolCategoryFinder:
     def get_category_attributes(self, category_id):
         """Belirli bir kategori için öznitelikleri API'den getir"""
         try:
+            # API istemcisinin categories.get_category_attributes metodunu kullan
             return self.api.categories.get_category_attributes(category_id)
         except Exception as e:
             logger.error(f"Failed to fetch attributes for category {category_id}: {str(e)}")
@@ -238,16 +239,17 @@ class TrendyolCategoryFinder:
         return best_match
     
     def get_required_attributes(self, category_id):
-        """Belirli bir kategorinin gerekli özniteliklerini API'den getir"""
+        """Belirli bir kategorinin tüm özniteliklerini API'den getir"""
         try:
             attrs = self.get_category_attributes(category_id)
             attributes = []
             
-            # Process all category attributes, required ones first
+            # Process all category attributes
             for attr in attrs.get('categoryAttributes', []):
                 if not attr['attribute'].get('id'):
                     continue
                     
+                # Sadece attributeValues olan özellikleri işle
                 if not attr.get('attributeValues') and not attr.get('allowCustom'):
                     continue
                     
