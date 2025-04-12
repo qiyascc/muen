@@ -92,35 +92,6 @@ class TrendyolCategoryViewSet(viewsets.ModelViewSet):
 
 
 @method_decorator(staff_member_required, name='dispatch')
-class ProductAttributesView(TemplateView):
-    """
-    View to display formatted product attributes in a standalone page.
-    """
-    template_name = 'trendyol/product_attributes.html'
-    
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        product_id = kwargs.get('product_id')
-        product = get_object_or_404(TrendyolProduct, id=product_id)
-        
-        context['product'] = product
-        context['title'] = product.title
-        
-        # Parse attributes
-        attributes = []
-        if isinstance(product.attributes, list):
-            attributes = product.attributes
-        elif isinstance(product.attributes, str):
-            try:
-                attributes = json.loads(product.attributes)
-            except json.JSONDecodeError:
-                context['error'] = "Invalid attribute format"
-        
-        context['attributes'] = attributes
-        return context
-
-
-@method_decorator(staff_member_required, name='dispatch')
 class BatchStatusView(TemplateView):
     """
     View to check the status of a batch request.
