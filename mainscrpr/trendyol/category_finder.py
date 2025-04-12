@@ -39,15 +39,10 @@ except ImportError:
     logger = logging.getLogger(__name__)
     logger.warning("sentence-transformers not available, using basic search")
 
-# DEFAULT_REQUIRED_ATTRIBUTES tanımlama
-DEFAULT_REQUIRED_ATTRIBUTES = {
-    # Giyim kategorileri için zorunlu öznitelikler
-    'clothing': [
-        {"attributeId": 338, "attributeValueId": 7189},  # Cinsiyet: Kadın
-        {"attributeId": 47, "attributeValueId": 8201},   # Menşei: Türkiye
-        {"attributeId": 60, "attributeValueId": 902},    # Yaş Grubu: Yetişkin
-    ]
-}
+# Sabit öznitelik değerleri KULLANMAYIN!
+# Her kategorinin kendine özgü öznitelik yapısı vardır ve
+# API'den doğrudan alınmalıdır.
+DEFAULT_REQUIRED_ATTRIBUTES = {}
 
 from .api_client import TrendyolApi
 
