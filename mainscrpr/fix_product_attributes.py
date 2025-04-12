@@ -27,24 +27,9 @@ logger.add(sys.stdout, level="INFO")
 
 def main():
     """Fix attributes format to use numeric IDs for all products"""
-    # Color ID mapping to use numeric IDs instead of string values
-    color_id_map = {
-        'Beyaz': 1001, 
-        'Siyah': 1002, 
-        'Mavi': 1003, 
-        'Kirmizi': 1004, 
-        'Pembe': 1005,
-        'Yeşil': 1006,
-        'Sarı': 1007,
-        'Mor': 1008,
-        'Gri': 1009,
-        'Kahverengi': 1010,
-        'Ekru': 1011,
-        'Bej': 1012,
-        'Lacivert': 1013,
-        'Turuncu': 1014,
-        'Krem': 1015
-    }
+    # NOT USED ANYMORE - Instead we allow the attributes to be fetched from the API
+    # This is just for backward compatibility with existing code
+    color_id_map = {}
     
     # Get all products
     products = TrendyolProduct.objects.all()
@@ -117,40 +102,36 @@ def main():
                 new_attributes = []
                 for attr in product.attributes:
                     if 'attributeId' in attr and 'attributeValueId' in attr:
-                        # Special handling for color attribute
-                        if attr.get('attributeId') == 'color' or attr.get('attributeId') == '348':
-                            color_value = attr.get('attributeValueId')
-                            if isinstance(color_value, str):
-                                color_numeric_id = color_id_map.get(color_value)
-                                if color_numeric_id:
-                                    new_attributes.append({
-                                        "attributeId": 348,
-                                        "attributeValueId": color_numeric_id
-                                    })
-                                    logger.info(f"Converted color '{color_value}' to numeric ID {color_numeric_id} for product {product.id}")
-                                else:
-                                    # If we don't have a mapping, use a default
-                                    logger.warning(f"No color ID mapping for '{color_value}', using default for product {product.id}")
-                                    new_attributes.append({
-                                        "attributeId": 348,
-                                        "attributeValueId": 1001  # Default to white
-                                    })
-                            else:
-                                new_attributes.append({
-                                    "attributeId": 348,
-                                    "attributeValueId": color_value
-                                })
+                        # Preserve the attributeId but make sure it's an integer
+                        attr_id = attr.get('attributeId')
+                        attr_value = attr.get('attributeValueId')
+                        
+                        # Handle string ID format (like "color")
+                        if attr_id == 'color':
+                            # We'll keep the value as is, and set numeric flag to False
+                            # This will trigger a category attributes refresh when the product is processed
+                            new_attributes.append({
+                                "attributeId": attr_id,
+                                "attributeValueId": attr_value
+                            })
+                            logger.info(f"Keeping color attribute with original values for product {product.id}")
                         else:
-                            # For other attributes, try to convert to integers
+                            # Try to convert both to integers
                             try:
-                                attr_id = int(attr['attributeId']) if isinstance(attr['attributeId'], str) and attr['attributeId'].isdigit() else attr['attributeId']
-                                attr_value_id = int(attr['attributeValueId']) if isinstance(attr['attributeValueId'], str) and attr['attributeValueId'].isdigit() else attr['attributeValueId']
+                                attr_id = int(attr_id) if isinstance(attr_id, str) and attr_id.isdigit() else attr_id
+                                attr_value = int(attr_value) if isinstance(attr_value, str) and attr_value.isdigit() else attr_value
                                 new_attributes.append({
                                     "attributeId": attr_id,
-                                    "attributeValueId": attr_value_id
+                                    "attributeValueId": attr_value
                                 })
                             except (ValueError, TypeError):
-                                logger.warning(f"Could not convert attribute {attr} for product {product.id}")
+                                # Keep the original values
+                                new_attributes.append({
+                                    "attributeId": attr_id,
+                                    "attributeValueId": attr_value
+                                })
+                                logger.warning(f"Could not convert attribute ID/value to integer: {attr_id}={attr_value}, keeping original")
+
                 
                 # Update product with new attributes format
                 if new_attributes:
