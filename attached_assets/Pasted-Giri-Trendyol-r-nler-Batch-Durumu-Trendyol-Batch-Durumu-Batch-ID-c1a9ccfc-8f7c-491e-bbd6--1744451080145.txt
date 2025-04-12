@@ -1,0 +1,66 @@
+Giriş › Trendyol › Ürünler › Batch Durumu
+Trendyol Batch Durumu
+Batch ID: c1a9ccfc-8f7c-491e-bbd6-a83b25d4bbdf-1744465376
+Parametre	Değer
+Durum	COMPLETED
+Oluşturulma Tarihi	1744450976112
+Son Güncellenme	1744450977381
+Toplam Ürün	1
+Başarısız Ürün	1
+Detaylı Ürün Durumları
+Barkod	Durum	Mesaj
+FAILED	
+Orijinal Yanıt
+{
+  "batchRequestId": "c1a9ccfc-8f7c-491e-bbd6-a83b25d4bbdf-1744465376",
+  "items": [
+    {
+      "requestItem": {
+        "product": {
+          "barcode": "LCWwe843uidfguj",
+          "title": "LCW Kids Kirmizi Kap\u00fc\u015fonlu Atat\u00fcrk \u0130mza Bask\u0131l\u0131 Erkek \u00c7ocuk Sweatshirt",
+          "productMainId": "we843uidfguj",
+          "brandId": 102,
+          "categoryId": 2356,
+          "quantity": 10,
+          "stockCode": "we843uidfguj",
+          "dimensionalWeight": null,
+          "description": "<div class=\"panel-body\">\r\n<div class=\"row\">\r\n<div class=\"col-xs-12\">\r\n<h5>\u00dcr\u00fcn A\u00e7\u0131klamas\u0131</h5>\r\n<ul>\r\n<li class=\"\">\r\n                                                                            Atat\u00fcrk imza bask\u0131l\u0131 sweatshirt, 2 iplik kuma\u015ftan \u00fcretilmi\u015ftir ve yumu\u015fak dokusuyla \u00e7ocu\u011funuzun g\u00fcn boyu rahat etmesini sa\u011flar. Kap\u00fc\u015fon detay\u0131, so\u011fuk havalarda ekstra koruma sunarken, ribanal\u0131 man\u015fetler v\u00fccuda tam oturarak s\u0131cakl\u0131\u011f\u0131 korur.\r\n                                                                        </li>\r\n</ul>\r\n</div>\r\n</div>\r\n<div class=\"row\">\r\n<div class=\"col-xs-12\">\r\n</div>\r\n</div>\r\n<div class=\"row\">\r\n<div class=\"col-xs-12\">\r\n<p><h5>Manken Bilgisi</h5></p>\r\n<p>\r\n<b>Boy:</b> 130 cm\r\n\r\n        <b>Kilo:</b> 27 kg\r\n        <br/>\r\nManken <b>9-10 YA\u015e</b> beden \u00fcr\u00fcn giyiyor.    </p>\r\n</div>\r\n</div>\r\n<div class=\"row\">\r\n<div class=\"col-xs-12\">\r\n<h5>\u00dcr\u00fcn \u0130\u00e7eri\u011fi ve \u00d6zellikleri</h5>\r\n</div>\r\n<div class=\"col-xs-12\">\r\n<!--googleoff: all-->\r\n<b>\u00dcr\u00fcn \u0130\u00e7eri\u011fi:</b>\r\n<p><b>Ana Kuma\u015f:</b> %22 Polyester %78 Pamuk</p>\r\n<!--googleon: all-->\r\n</div>\r\n<div class=\"col-xs-12\">\r\n<div class=\"col-md-6 option-info nopadding\">\r\n<p><b>\u00dcr\u00fcn \u00d6zellikleri:</b></p>\r\n<p><b>Sat\u0131c\u0131:</b> LC Waikiki Ma\u011fazac\u0131l\u0131k Hizmetleri Ticaret A.\u015e.</p>\r\n<p><b>Marka:</b> LCW Kids</p>\r\n<p><b>\u00dcr\u00fcn Tipi:</b> Sweatshirt</p>\r\n<p><b>Cinsiyet:</b> Erkek \u00c7ocuk</p>\r\n<p><b>Kal\u0131p:</b> Standart &amp; Regular</p>\r\n<p><b>Kuma\u015f:</b> 2 \u0130plik</p>\r\n<p><b>Desen:</b> Bask\u0131l\u0131</p>\r\n<p><b>Yaka:</b> Kap\u00fc\u015fonlu</p>\r\n<p><b>Kal\u0131nl\u0131k:</b> \u0130nce</p>\r\n<p><b>Kol Boyu:</b> Uzun Kollu</p>\r\n<p><b>Malzeme:</b> Y\u00fcksek Pamuk \u0130\u00e7erir</p>\r\n<p><b>Koleksiyon:</b> 29 Ekim</p>\r\n</div>\r\n</div>\r\n</div>\r\n</div>",
+          "currencyType": "TRY",
+          "listPrice": 439.22,
+          "salePrice": 439.22,
+          "vatRate": 10,
+          "images": [
+            {
+              "url": "https://5d5f0d6a-7ad1-460e-bcb2-7db84ebc77ff-00-30mgnzeqj65wp.kirk.replit.dev/admin/lcwaikiki/product/199/change/"
+            }
+          ],
+          "attributes": [
+            {
+              "attributeId": 348,
+              "attributeValueId": 1001,
+              "customAttributeValue": null
+            }
+          ],
+          "cargoCompanyId": 17,
+          "shipmentAddressId": null,
+          "returningAddressId": null
+        },
+        "barcode": "LCWwe843uidfguj"
+      },
+      "status": "FAILED",
+      "failureReasons": [
+        "Zorunlu kategori \u00f6zellik bilgisi eksiktir. Eksik alan: Men\u015fei",
+        "Talebinizde kategori ile uyu\u015fmayan \u00f6zellik bilgisi bulunmaktad\u0131r. Kategori id: 2356"
+      ]
+    }
+  ],
+  "status": "COMPLETED",
+  "creationDate": 1744450976112,
+  "lastModification": 1744450977381,
+  "sourceType": "API",
+  "itemCount": 1,
+  "failedItemCount": 1,
+  "batchRequestType": "ProductV2OnBoarding",
+  "notes": null
+}

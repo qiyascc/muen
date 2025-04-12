@@ -14,6 +14,7 @@ dependencies = [
     "tqdm>=4.67.1",
     "trafilatura>=2.0.0",
     "psycopg2-binary>=2.9.10",
+    "pymultidictionary>=1.3.2",
 ]
 
 [[tool.uv.index]]
