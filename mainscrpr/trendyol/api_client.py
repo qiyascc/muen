@@ -283,7 +283,7 @@ class ProductsAPI:
     
   def _get_products_endpoint(self):
     """Get the base products endpoint for verification"""
-    return f'/integration/product/sellers/{self.client.supplier_id}/products'
+    return f'product/sellers/{self.client.supplier_id}/products'
     
   def _get_batch_request_endpoint(self, batch_id):
     """Get the batch request endpoint for verification"""
@@ -302,7 +302,7 @@ class ProductsAPI:
     # Log for debugging purposes
     logger.info(f"Using full batch ID for request: {batch_id}")
     
-    endpoint = f'/integration/product/sellers/{self.client.supplier_id}/products/batch-requests/{batch_id}'
+    endpoint = f'product/sellers/{self.client.supplier_id}/products/batch-requests/{batch_id}'
     print(f"[DEBUG-API] Oluşturulan endpoint: {endpoint}")
       
     return endpoint
@@ -391,7 +391,7 @@ class InventoryAPI:
     
   def _get_price_inventory_endpoint(self):
     """Get the price and inventory endpoint for verification"""
-    return f'/integration/inventory/sellers/{self.client.supplier_id}/products/price-and-inventory'
+    return f'inventory/sellers/{self.client.supplier_id}/products/price-and-inventory'
 
   def update_price_and_inventory(self, items):
     """
