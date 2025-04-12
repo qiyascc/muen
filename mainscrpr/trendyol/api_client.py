@@ -1440,21 +1440,54 @@ def prepare_product_data(product: TrendyolProduct) -> Dict[str, Any]:
     logger.error(f"No matching brand found for product {product.id}")
     raise ValueError("No matching brand found for product")
 
-  # Get image URLs
-  image_urls = []
-  if product.image_url:
-    image_urls.append(product.image_url)
+  # Helper function to validate image URLs
+  def is_valid_image_url(url):
+    if not url:
+      return False
+    if not isinstance(url, str):
+      return False
+    # Reject admin panel URLs
+    if 'admin' in url:
+      return False
+    # Require proper protocol
+    if not url.startswith(('http://', 'https://')):
+      return False
+    # Check for common image file extensions or LCWaikiki image domains
+    if not any(ext in url.lower() for ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp']):
+      # For LCW, sometimes URLs don't have extensions, so check for image domains
+      if not any(domain in url.lower() for domain in ['img-lcwaikiki', 'mncdn', 'cloudfront', 'lcw.com']):
+        return False
+    return True
 
+  # Get image URLs with validation
+  image_urls = []
+  if product.image_url and is_valid_image_url(product.image_url):
+    image_urls.append(product.image_url)
+    logger.info(f"Using valid primary image URL: {product.image_url}")
+  else:
+    logger.warning(f"Invalid primary image URL rejected: {product.image_url}")
+
+  # Process additional images with validation
   if product.additional_images:
     if isinstance(product.additional_images, list):
-      image_urls.extend(product.additional_images)
+      valid_additional = [img for img in product.additional_images if is_valid_image_url(img)]
+      image_urls.extend(valid_additional)
+      logger.info(f"Added {len(valid_additional)} valid additional images")
     elif isinstance(product.additional_images, str):
       try:
         additional = json.loads(product.additional_images)
         if isinstance(additional, list):
-          image_urls.extend(additional)
+          valid_additional = [img for img in additional if is_valid_image_url(img)]
+          image_urls.extend(valid_additional)
+          logger.info(f"Added {len(valid_additional)} valid additional images from JSON")
       except json.JSONDecodeError:
-        pass
+        logger.warning(f"Failed to decode additional images JSON for product {product.id}")
+        
+  # If no valid images found, use default fallback image
+  if not image_urls:
+    default_image = "https://img-lcwaikiki.mncdn.com/mnresize/1024/-/pim/productimages/20224/5841125/l_20224-w4bi51z8-ct5_a.jpg"
+    image_urls.append(default_image)
+    logger.warning(f"No valid images found for product {product.id}, using fallback image")
 
   # Prepare attributes - Using API data and not hard-coded values
   attributes = []
