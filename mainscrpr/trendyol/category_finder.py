@@ -20,17 +20,16 @@ import logging
 import re
 from functools import lru_cache
 from typing import Dict, List, Any, Optional, Tuple, Set
-# from sentence_transformers import SentenceTransformer, util
-from PyMultiDictionary import MultiDictionary
-from .api_client import TrednyopAPI
+import difflib
+# PyMultiDictionary kaldırıldı - basit eşleştirme için difflib kullanılacak
+from .api_client import TrendyolAPIClient
 logger = logging.getLogger(__name__)
 
 class TrendyolCategoryFinder:
     """Handles category discovery and attribute management with dynamic API data"""
     
-    def __init__(self, api_client: TrendyolAPI):
+    def __init__(self, api_client):
         self.api = api_client
-        self.model = SentenceTransformer('emrecan/bert-base-turkish-cased-mean-nli-stsb-tr')
         self._category_cache = None
     
     @property
@@ -105,14 +104,24 @@ class TrendyolCategoryFinder:
         )
     
     def _select_best_match(self, search_term, candidates):
-        """Select best match using semantic similarity"""
-        search_embedding = self.model.encode(search_term, convert_to_tensor=True)
+        """Select best match using string similarity with difflib"""
+        normalized_search = self._normalize(search_term)
         
         for candidate in candidates:
-            candidate['similarity'] = util.cos_sim(
-                search_embedding,
-                self.model.encode(candidate['name'], convert_to_tensor=True)
-            ).item()
+            normalized_name = self._normalize(candidate['name'])
+            # Calculate string similarity ratio (0.0 - 1.0)
+            candidate['similarity'] = difflib.SequenceMatcher(
+                None, normalized_search, normalized_name
+            ).ratio()
+            
+            # Bonus points for exact substring matches
+            if normalized_search in normalized_name:
+                candidate['similarity'] += 0.2
+            if normalized_name in normalized_search:
+                candidate['similarity'] += 0.1
+                
+            # Cap at 1.0
+            candidate['similarity'] = min(1.0, candidate['similarity'])
         
         return sorted(candidates, key=lambda x: x['similarity'], reverse=True)[0]
     
