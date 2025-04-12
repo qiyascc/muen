@@ -1,205 +1,190 @@
 """
-Simple direct API send script for Trendyol.
+Basit ürün gönderme testi.
 
-This script bypasses the model constraints by making a direct API call without saving to database.
-
-Run this script with: python manage.py shell < simple_api_send.py
+Bu script doğrudan API çağrısı yaparak test ürünü gönderir.
 """
 
+import os
+import sys
+import base64
 import logging
 import json
 import requests
-import time
-from pprint import pprint
+import uuid
+import random
 
-# Set up logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+# Django setup
+import django
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'mainscrpr.settings')
+django.setup()
+
+from trendyol.models import TrendyolAPIConfig
+
+# Loglama ayarları
+logging.basicConfig(level=logging.INFO, 
+                   format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-def direct_api_send():
-    """Send a test product directly with API."""
-    # API parameters
-    API_TOKEN = "cVNvaEtrTEtQV3dEZVNLand6OFI6eVlGM1ljbDlCNlZqczc3cTNNaEU="
-    SELLER_ID = "535623"
+def get_api_config():
+    """Aktif API yapılandırmasını alır."""
+    try:
+        return TrendyolAPIConfig.objects.filter(is_active=True).first()
+    except Exception as e:
+        logger.error(f"API yapılandırması alınamadı: {str(e)}")
+        return None
+
+def get_headers(config):
+    """API istekleri için headers oluşturur."""
+    if not config:
+        return None
     
-    logger.info("Building direct API request...")
-    
-    # Define headers
-    headers = {
-        'Authorization': f'Basic {API_TOKEN}',
+    auth_token = config.auth_token
+    if not auth_token:
+        # Yoksa oluştur
+        auth_string = f"{config.api_key}:{config.api_secret}"
+        auth_token = base64.b64encode(auth_string.encode()).decode('utf-8')
+        
+    return {
+        'Authorization': f'Basic {auth_token}',
         'Content-Type': 'application/json',
-        'User-Agent': f'{SELLER_ID} - SelfIntegration',
-        'Accept-Encoding': 'gzip, deflate',
-        'Accept': '*/*',
-        'Connection': 'keep-alive'
+        'User-Agent': config.user_agent or f"{config.seller_id} - SelfIntegration",
+        'Accept': '*/*'
     }
+
+def create_simple_product():
+    """Basit bir test ürünü oluşturur."""
+    barcode = f"TEST-{uuid.uuid4().hex[:8].upper()}"
     
-    # Build the payload
-    test_product = {
-        "barcode": "TEST123456789",
-        "title": "TEST PRODUCT - LC Waikiki Erkek T-Shirt",
-        "productMainId": "TEST123456789",
-        "brandId": 102,  # LC Waikiki
-        "categoryId": 2356,  # Example category
-        "quantity": 10,
-        "stockCode": "TEST123456789",
+    # Rasgele değerler
+    colors = ["Kırmızı", "Siyah", "Mavi", "Yeşil", "Beyaz"]
+    product_types = ["Tişört", "Pantolon", "Elbise", "Gömlek", "Ceket"]
+    
+    color = random.choice(colors)
+    product_type = random.choice(product_types)
+    
+    return {
+        "barcode": barcode,
+        "title": f"TEST API {color} {product_type}",
+        "productMainId": barcode,
+        "brandId": 3813, # LC Waikiki brand ID
+        "categoryId": 384, # T-shirt category
+        "quantity": 100,
+        "stockCode": barcode,
         "dimensionalWeight": 1,
-        "description": "Test ürün açıklaması",
+        "description": f"Bu bir test ürünüdür. TEST API {color} {product_type}",
         "currencyType": "TRY",
-        "listPrice": 299.99,
-        "salePrice": 299.99,
-        "vatRate": 10,
+        "listPrice": 150.0,
+        "salePrice": 120.0,
+        "vatRate": 18,
         "cargoCompanyId": 17,
         "shipmentAddressId": 0,
         "deliveryDuration": 3,
-        "images": [{"url": "https://img-lcwaikiki.mncdn.com/mnresize/1200/1800/pim/productimages/20231/5915299/l_20231-s37982z8-ctk-1-t2899_2.jpg"}],
-        "attributes": [
+        "images": [
             {
-                "attributeId": 348,
-                "attributeValueId": 1011
-            },
-            {
-                "attributeId": 347,
-                "attributeValueId": 4294
-            },
-            {
-                "attributeId": 349,
-                "attributeValueId": 6927
-            },
-            {
-                "attributeId": 350,
-                "attributeValueId": 6980
+                "url": "https://img-lcwaikiki.mncdn.com/mnresize/1024/-/pim/productimages/20232/5968312/l_20232-w3ce59z8-ct5_a.jpg"
             }
-        ]
+        ],
+        "attributes": []
     }
-    
-    payload = {"items": [test_product]}
-    
-    logger.info("Direct payload:")
-    logger.info(json.dumps(payload, indent=2))
-    
-    # URL
-    base_url = "https://apigw.trendyol.com/integration"
-    endpoint = f"/product/suppliers/{SELLER_ID}/products"
-    url = f"{base_url}{endpoint}"
-    
-    logger.info(f"Sending request to URL: {url}")
 
-    try:
-        # Make the request
-        response = requests.post(url, json=payload, headers=headers)
-        
-        logger.info(f"Response status: {response.status_code}")
-        logger.info(f"Response content: {response.text}")
-        
-        if response.status_code == 200:
-            data = response.json()
-            if 'batchRequestId' in data:
-                batch_id = data['batchRequestId']
-                logger.info(f"Success! Product submitted with batch ID: {batch_id}")
-                
-                # Check batch status
-                check_batch_status(batch_id)
-                return True
-        
-        logger.error(f"Failed to submit product. Status: {response.status_code}")
-        logger.error(f"Response: {response.text}")
-        return False
-    except Exception as e:
-        logger.error(f"Error sending request: {str(e)}")
-        return False
-
-def check_batch_status(batch_id):
-    """Check the status of a batch."""
-    if not batch_id:
-        logger.error("No batch ID provided")
-        return False
-    
-    logger.info(f"Checking status of batch: {batch_id}")
-    
-    # API parameters
-    API_TOKEN = "cVNvaEtrTEtQV3dEZVNLand6OFI6eVlGM1ljbDlCNlZqczc3cTNNaEU="
-    SELLER_ID = "535623"
-    
-    # Define headers
-    headers = {
-        'Authorization': f'Basic {API_TOKEN}',
-        'Content-Type': 'application/json',
-        'User-Agent': f'{SELLER_ID} - SelfIntegration',
-        'Accept-Encoding': 'gzip, deflate',
-        'Accept': '*/*',
-        'Connection': 'keep-alive'
-    }
-    
-    # Wait a bit for processing
-    logger.info("Waiting 5 seconds for batch processing...")
-    time.sleep(5)
-    
-    # URL
-    base_url = "https://apigw.trendyol.com/integration"
-    endpoint = f"/product/suppliers/{SELLER_ID}/products/batch-requests/{batch_id}"
-    url = f"{base_url}{endpoint}"
-    
-    logger.info(f"Sending status request to URL: {url}")
-    
-    try:
-        # Make the request
-        response = requests.get(url, headers=headers)
-        
-        logger.info(f"Response status: {response.status_code}")
-        logger.info(f"Response content: {response.text}")
-        
-        if response.status_code == 200:
-            data = response.json()
-            logger.info(f"Batch status: {data.get('status', 'Unknown')}")
-            return True
-    except Exception as e:
-        logger.error(f"Error checking batch status: {str(e)}")
-    
-    return False
-
-def add_to_standard_api():
-    """Add the direct API send approach to the standard API client."""
-    from trendyol.api_client import get_api_client
-    
-    logger.info("Examining the API client...")
-    api_client = get_api_client()
-    if not api_client:
-        logger.error("Failed to get API client")
+def send_test_product():
+    """Test ürününü gönderir."""
+    config = get_api_config()
+    if not config:
+        logger.error("API yapılandırması bulunamadı!")
         return
     
-    logger.info("Trying to check if the standard API client works...")
+    headers = get_headers(config)
+    base_url = config.base_url
+    seller_id = config.seller_id
     
+    # URL oluştur
+    url = f"{base_url}/product/sellers/{seller_id}/products"
+    logger.info(f"API URL: {url}")
+    
+    # Ürün oluştur
+    product = create_simple_product()
+    payload = {"items": [product]}
+    
+    logger.info(f"Test ürünü hazırlandı: {product['title']} (Barkod: {product['barcode']})")
+    
+    # isteği gönder
     try:
-        categories = api_client.get_categories()
-        logger.info(f"API client can get categories? {len(categories) > 0}")
-    except Exception as e:
-        logger.error(f"Error getting categories: {str(e)}")
-    
-    logger.info("To add this direct API send to the standard API client:")
-    logger.info("1. Update trendyol_api_new.py to use the working endpoint format")
-    logger.info("2. Ensure the API token is correctly set in the TrendyolAPIConfig")
-    logger.info("3. Add proper attribute formatting in the TrendyolProductManager._build_product_payload method")
-    
-def main():
-    """Main function."""
-    logger.info("Starting simple direct API send...")
-    
-    # Try direct API
-    success = direct_api_send()
-    
-    if success:
-        logger.info("Direct API send was successful!")
+        logger.info(f"Headers: {headers}")
+        logger.info(f"Payload: {json.dumps(payload, indent=2)}")
         
-        # Add to standard API
-        add_to_standard_api()
-    else:
-        logger.error("Direct API send failed")
+        response = requests.post(url, headers=headers, json=payload, timeout=30)
+        
+        logger.info(f"HTTP Status: {response.status_code}")
+        logger.info(f"Response Body: {response.text}")
+        
+        if response.status_code < 400:
+            logger.info("Ürün başarıyla gönderildi!")
+            return response.json()
+        else:
+            logger.error(f"Ürün gönderiminde hata: {response.status_code} - {response.text}")
+            return None
+    except Exception as e:
+        logger.error(f"İstek gönderilirken hata: {str(e)}")
+        return None
+
+def test_alternative_url():
+    """Alternatif URL test et."""
+    config = get_api_config()
+    if not config:
+        logger.error("API yapılandırması bulunamadı!")
+        return
     
-    logger.info("Simple direct API send completed")
+    headers = get_headers(config)
+    seller_id = config.seller_id
+    
+    # Alternatif API URL'lerini dene
+    base_urls = [
+        "https://api.trendyol.com/sapigw",
+        "https://apigw.trendyol.com/integration",
+        "https://api.trendyol.com/integration"
+    ]
+    
+    product = create_simple_product()
+    payload = {"items": [product]}
+    
+    for base_url in base_urls:
+        url = f"{base_url}/product/sellers/{seller_id}/products"
+        logger.info(f"Alternatif API URL deneniyor: {url}")
+        
+        try:
+            response = requests.post(url, headers=headers, json=payload, timeout=30)
+            
+            logger.info(f"HTTP Status: {response.status_code}")
+            logger.info(f"Response Body: {response.text}")
+            
+            if response.status_code < 400:
+                logger.info(f"Başarılı! Bu URL çalışıyor: {base_url}")
+                return response.json()
+        except Exception as e:
+            logger.error(f"İstek gönderilirken hata: {str(e)}")
+            
+    return None
+
+def main():
+    """Ana fonksiyon."""
+    logger.info("Basit API ürün gönderimi testi başlatılıyor...")
+    
+    result = send_test_product()
+    
+    if not result:
+        logger.info("Alternatif URL'ler deneniyor...")
+        result = test_alternative_url()
+    
+    if result:
+        logger.info(f"Test başarılı! Sonuç: {result}")
+    else:
+        logger.error("Tüm alternatifler başarısız.")
+    
+    logger.info("Test tamamlandı.")
 
 if __name__ == "__main__":
     main()
 else:
-    # When imported from Django shell
+    # Django shell'den çağrıldığında çalıştır
     main()

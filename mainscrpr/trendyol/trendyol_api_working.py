@@ -97,7 +97,8 @@ class TrendyolAPI:
             "/brands": "/product/brands",
             
             # Products
-            "/suppliers/{seller_id}/products": "/product/suppliers/{seller_id}/products"
+            "/suppliers/{seller_id}/products": "/product/sellers/{seller_id}/products",
+            "/sellers/{seller_id}/products": "/product/sellers/{seller_id}/products"
         }
         
         # Try to find a working endpoint mapping
@@ -224,7 +225,7 @@ class TrendyolAPI:
                 raise ValueError(f"Unsupported product data type: {type(product_data)}")
                 
         payload = {"items": items}
-        response = self.make_request('POST', f'/product/suppliers/{self.seller_id}/products', data=payload)
+        response = self.make_request('POST', f'/product/sellers/{self.seller_id}/products', data=payload)
         
         # Update batch ID in product model if it's a Django model
         if 'batchRequestId' in response and isinstance(product_data, TrendyolProduct):
