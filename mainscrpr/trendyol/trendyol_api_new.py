@@ -318,15 +318,33 @@ class TrendyolCategoryFinder:
             # Skip attributes with empty attributeValues array when custom values are not allowed
             if not attr.get('attributeValues') and not attr.get('allowCustom'):
                 continue
-                
+            
+            # Ensure attributeId is an integer
+            attribute_id = attr['attribute']['id']
+            if isinstance(attribute_id, str):
+                try:
+                    attribute_id = int(attribute_id)
+                except ValueError:
+                    logger.warning(f"Could not convert attributeId {attribute_id} to integer")
+                    continue
+            
             attribute = {
-                "attributeId": attr['attribute']['id'],
+                "attributeId": attribute_id,
                 "attributeName": attr['attribute']['name']
             }
             
             if attr.get('attributeValues') and len(attr['attributeValues']) > 0:
                 if not attr['allowCustom']:
-                    attribute["attributeValueId"] = attr['attributeValues'][0]['id']
+                    # Ensure attributeValueId is an integer
+                    value_id = attr['attributeValues'][0]['id']
+                    if isinstance(value_id, str):
+                        try:
+                            value_id = int(value_id)
+                        except ValueError:
+                            logger.warning(f"Could not convert attributeValueId {value_id} to integer")
+                            continue
+                    
+                    attribute["attributeValueId"] = value_id
                     attribute["attributeValue"] = attr['attributeValues'][0]['name']
                 else:
                     attribute["customAttributeValue"] = f"Sample {attr['attribute']['name']}"
@@ -412,6 +430,28 @@ class TrendyolProductManager:
                 except json.JSONDecodeError:
                     pass
         
+        # Ensure all attribute IDs are integers
+        validated_attributes = []
+        for attr in attributes:
+            try:
+                # Validate attributeId is int
+                if 'attributeId' in attr:
+                    attr_id = attr['attributeId']
+                    if isinstance(attr_id, str):
+                        attr_id = int(attr_id)
+                    attr['attributeId'] = attr_id
+                
+                # Validate attributeValueId is int if present
+                if 'attributeValueId' in attr:
+                    val_id = attr['attributeValueId']
+                    if isinstance(val_id, str):
+                        val_id = int(val_id)
+                    attr['attributeValueId'] = val_id
+                
+                validated_attributes.append(attr)
+            except (ValueError, TypeError) as e:
+                logger.warning(f"Skipping invalid attribute: {attr}. Error: {str(e)}")
+        
         return {
             "items": [{
                 "barcode": product.barcode,
@@ -428,7 +468,7 @@ class TrendyolProductManager:
                 "vatRate": 10,  # Fixed to 10% VAT
                 "cargoCompanyId": 17,  # Fixed cargo company ID
                 "images": image_urls if image_urls else [{"url": ""}],
-                "attributes": attributes,
+                "attributes": validated_attributes,
                 "gender": {"id": 1}  # Default to Unisex
             }]
         }
