@@ -2164,15 +2164,15 @@ def lcwaikiki_to_trendyol_product(lcw_product) -> Optional[TrendyolProduct]:
       if not product_code:
         product_code = None
 
-    # Generate a unique barcode that meets Trendyol requirements
-    # Trendyol requires unique barcode with alphanumeric chars
+    # Generate a barcode that meets Trendyol requirements using just product code
+    # No LCW prefix, stok kodu direkt olarak kullanılacak
     barcode = None
     if product_code:
-      barcode = f"LCW{product_code}"
+      barcode = product_code  # Önüne LCW eklemeye gerek yok, direkt stok kodunu kullan
     else:
       # If no product code, create a unique identifier based on ID and timestamp
       timestamp = int(time.time())
-      barcode = f"LCW{lcw_product.id}{timestamp}"
+      barcode = f"{lcw_product.id}{timestamp}"
 
     # Ensure barcode is alphanumeric and meets Trendyol requirements
     barcode = re.sub(r'[^a-zA-Z0-9]', '', barcode)
@@ -2232,40 +2232,9 @@ def lcwaikiki_to_trendyol_product(lcw_product) -> Optional[TrendyolProduct]:
             f"Error getting total stock for product {lcw_product.id}: {str(e)}"
         )
 
-    # Find the appropriate brand ID in the Trendyol system
-    brand_id = None
-    try:
-      # Try to find the LCW brand in our database
-      lcw_brand = TrendyolBrand.objects.filter(name__icontains="LCW",
-                                               is_active=True).first()
-
-      if lcw_brand:
-        brand_id = lcw_brand.brand_id
-        logger.info(f"Found brand: {lcw_brand.name} (ID: {brand_id})")
-      else:
-        # Try to fetch brands if none found
-        logger.info(
-            "No LCW brand found in database, fetching from Trendyol...")
-        fetch_brands()
-
-        # Try again after fetching
-        lcw_brand = TrendyolBrand.objects.filter(name__icontains="LCW",
-                                                 is_active=True).first()
-
-        if lcw_brand:
-          brand_id = lcw_brand.brand_id
-          logger.info(
-              f"Found brand after fetch: {lcw_brand.name} (ID: {brand_id})")
-        else:
-          # If still not found, use any available brand
-          any_brand = TrendyolBrand.objects.filter(is_active=True).first()
-          if any_brand:
-            brand_id = any_brand.brand_id
-            logger.warning(
-                f"Using fallback brand: {any_brand.name} (ID: {brand_id})")
-    except Exception as e:
-      logger.error(
-          f"Error finding brand for product {lcw_product.id}: {str(e)}")
+    # Her zaman LC Waikiki markasını sabit ID (7156) ile kullan
+    brand_id = 7156  # Sabit LC Waikiki brand ID'si
+    logger.info(f"Using fixed LC Waikiki brand ID: {brand_id}")
 
     # Prepare basic attributes based on product data
     attributes = {}
