@@ -126,13 +126,13 @@ class TrendyolProductAdmin(ModelAdmin):
         """
         Synchronize selected products with Trendyol using the new API client.
         """
-        # Yeni API istemcisini kullanıyoruz
-        from .trendyol_api_new import create_trendyol_product
+        # Using the updated API client
+        from .trendyol_api_working import create_trendyol_product
         
         count = 0
         for product in queryset:
             try:
-                self.message_user(request, f"Sending product '{product.title}' to Trendyol using new API client...")
+                self.message_user(request, f"Sending product '{product.title}' to Trendyol using updated API client...")
                 batch_id = create_trendyol_product(product)
                 if batch_id:
                     count += 1
@@ -145,20 +145,18 @@ class TrendyolProductAdmin(ModelAdmin):
     
     def check_sync_status(self, request, queryset):
         """
-        Check synchronization status for selected products using the new API client.
+        Check synchronization status for selected products using the updated API client.
         """
-        from .trendyol_api_new import check_batch_status
+        from .trendyol_api_working import check_product_batch_status
         
         count = 0
         for product in queryset:
             if product.batch_id:
                 try:
-                    self.message_user(request, f"Checking batch status for product '{product.title}' using new API client...")
-                    status, message = check_batch_status(product.batch_id)
+                    self.message_user(request, f"Checking batch status for product '{product.title}' using updated API client...")
+                    result = check_product_batch_status(product)
                     
-                    # Update product with status information
-                    product.batch_status = status
-                    product.status_message = message or "Status checked"
+                    # The status is updated directly in the product by the check_product_batch_status function
                     product.last_check_time = timezone.now()
                     product.save()
                     
@@ -174,10 +172,10 @@ class TrendyolProductAdmin(ModelAdmin):
     
     def retry_failed_products(self, request, queryset):
         """
-        Retry failed products with improved attribute handling using the new API client.
-        Specifically uses the new TrendyolAPI class which correctly formats attributes.
+        Retry failed products with improved attribute handling using the updated API client.
+        Specifically uses the TrendyolAPI class which correctly formats attributes.
         """
-        from .trendyol_api_new import create_trendyol_product, get_api_client_from_config, TrendyolCategoryFinder
+        from .trendyol_api_working import create_trendyol_product, get_api_client_from_config, TrendyolCategoryFinder
         import json
         import re
         
@@ -196,14 +194,19 @@ class TrendyolProductAdmin(ModelAdmin):
                     already_pending_count += 1
                     continue
                 
-                self.message_user(request, f"Retrying product '{product.title}' with new API client...")
+                self.message_user(request, f"Retrying product '{product.title}' with updated API client...")
                 
                 # Set to pending status with a placeholder message
                 product.batch_status = 'pending'
-                product.status_message = 'Pending retry with new API client'
+                product.status_message = 'Pending retry with updated API client'
                 product.save()
                 
-                # Use new create_trendyol_product function that correctly handles attributes
+                # Find appropriate category and brand if not set
+                if not product.category_id:
+                    product.category_id = category_finder.find_best_category(product.title, product.description)
+                    fixed_count += 1
+                
+                # Use create_trendyol_product function from trendyol_api_working.py
                 batch_id = create_trendyol_product(product)
                 if batch_id:
                     product.batch_id = batch_id

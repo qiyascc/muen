@@ -15,6 +15,10 @@ author = "agent"
 task = "workflow.run"
 args = "Django Server"
 
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Django Server Debug"
+
 [[workflows.workflow]]
 name = "Django Server"
 author = "agent"
@@ -28,6 +32,21 @@ task = "packager.installForAll"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "cd mainscrpr && python manage.py migrate && python manage.py shell < create_admin.py && python manage.py runserver 0.0.0.0:5000"
+waitForPort = 5000
+
+[[workflows.workflow]]
+name = "Django Server Debug"
+author = "agent"
+
+[workflows.workflow.metadata]
+agentRequireRestartOnSave = false
+
+[[workflows.workflow.tasks]]
+task = "packager.installForAll"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd mainscrpr && python manage.py runserver 0.0.0.0:5000"
 waitForPort = 5000
 
 [deployment]
