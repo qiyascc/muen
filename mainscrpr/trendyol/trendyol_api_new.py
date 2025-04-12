@@ -24,8 +24,16 @@ class TrendyolAPI:
     def __init__(self, config: TrendyolAPIConfig):
         self.config = config
         self.session = requests.Session()
+        
+        # Trendyol API için token oluşturma (Base64 encoding)
+        import base64
+        # API anahtarı ve API gizli anahtarını iki nokta ile ayırarak birleştirme
+        auth_string = f"{self.config.api_key}:{self.config.api_secret}"
+        # Base64 ile kodlama
+        auth_token = base64.b64encode(auth_string.encode()).decode()
+        
         self.session.headers.update({
-            "Authorization": f"Basic {self.config.api_key}",
+            "Authorization": f"Basic {auth_token}",
             "User-Agent": f"{self.config.seller_id} - SelfIntegration",
             "Content-Type": "application/json"
         })
