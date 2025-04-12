@@ -10,6 +10,7 @@ from typing import Dict, List, Optional, Any, Tuple, Union
 from django.utils import timezone
 
 from .models import TrendyolAPIConfig, TrendyolBrand, TrendyolCategory, TrendyolProduct
+from .category_finder import TrendyolCategoryFinder, DEFAULT_REQUIRED_ATTRIBUTES
 
 logger = logging.getLogger(__name__)
 
@@ -1196,8 +1197,39 @@ def find_best_category_match(product: TrendyolProduct) -> Optional[int]:
     
     Enhanced implementation that uses the TrendyolCategoryFinder class.
     """
-  finder = TrendyolCategoryFinder(get_api_client())
-  return finder.find_category_id(product)
+  # If a specific category_id is already set, use that
+  if product.category_id:
+    logger.info(f"Using pre-set category ID: {product.category_id}")
+    return product.category_id
+    
+  client = get_api_client()
+  if not client:
+    logger.error("Could not get API client to find category match")
+    return 385  # Default to Women's Clothing - Jacket if no client
+
+  try:
+    print(f"[DEBUG-CATEGORY] Kategori arama: Ürün={product.id}, Başlık={product.title}")
+    
+    # Initialize the category finder with our API client
+    finder = TrendyolCategoryFinder(client)
+    
+    # Get product title for category search
+    title = product.title if product.title else ""
+    
+    # Find matching category using the enhanced finder
+    category_id = finder.find_category_id(title)
+    
+    if category_id:
+      print(f"[DEBUG-CATEGORY] Bulunan kategori ID: {category_id}")
+      logger.info(f"Found category ID {category_id} for product '{title}'")
+      return category_id
+    else:
+      logger.warning(f"Could not find a category match for product '{title}', using default")
+      return 385  # Default to Women's Clothing - Jacket
+  except Exception as e:
+    logger.error(f"Error finding category match: {str(e)}")
+    # Return a default category on error
+    return 385  # Default to Women's Clothing - Jacket on error
 
 
 def find_best_brand_match(product: TrendyolProduct) -> Optional[int]:
@@ -1305,15 +1337,95 @@ def find_best_brand_match(product: TrendyolProduct) -> Optional[int]:
 
 
 def get_required_attributes_for_category(
-    category_id: int) -> List[Dict[str, Any]]:
+    category_id: int, product_title: str = None, product_color: str = None, product_size: str = None) -> List[Dict[str, Any]]:
   """
     Get required attributes for a specific category.
-    Returns a list of attribute dictionaries.
+    Returns a list of attribute dictionaries in format required by Trendyol API.
     
-    This is a wrapper for the enhanced TrendyolCategoryFinder's method.
+    Args:
+        category_id: The category ID
+        product_title: The product title to infer attributes from (optional)
+        product_color: The product color if known (optional)
+        product_size: The product size if known (optional)
+    
+    Returns:
+        List of attribute dictionaries in the format required by Trendyol API
     """
-  finder = TrendyolCategoryFinder(get_api_client())
-  return finder.get_required_attributes(category_id)
+  print(f"[DEBUG-ATTR] Zorunlu özellikler alınıyor: Kategori ID={category_id}")
+  
+  try:
+    client = get_api_client()
+    if not client:
+      print(f"[DEBUG-ATTR] API istemcisi alınamadı, varsayılan özellikler kullanılacak")
+      # Use default attributes if we can't get an API client
+      return [
+          # Gender = Women
+          {
+              "attributeId": DEFAULT_REQUIRED_ATTRIBUTES["Gender"]["id"],
+              "attributeValueId": DEFAULT_REQUIRED_ATTRIBUTES["Gender"]["values"]["Kadın"]
+          },
+          # Origin = Turkey 
+          {
+              "attributeId": DEFAULT_REQUIRED_ATTRIBUTES["Origin"]["id"],
+              "attributeValueId": DEFAULT_REQUIRED_ATTRIBUTES["Origin"]["values"]["Türkiye"]
+          },
+          # Color = Black
+          {
+              "attributeId": DEFAULT_REQUIRED_ATTRIBUTES["Color"]["id"],
+              "attributeValueId": DEFAULT_REQUIRED_ATTRIBUTES["Color"]["values"]["Siyah"]
+          },
+          # Size = M
+          {
+              "attributeId": DEFAULT_REQUIRED_ATTRIBUTES["Size"]["id"],
+              "attributeValueId": DEFAULT_REQUIRED_ATTRIBUTES["Size"]["values"]["M"]
+          },
+          # Age Group = Adult
+          {
+              "attributeId": DEFAULT_REQUIRED_ATTRIBUTES["Age Group"]["id"],
+              "attributeValueId": DEFAULT_REQUIRED_ATTRIBUTES["Age Group"]["values"]["Yetişkin"]
+          }
+      ]
+    
+    # Use our enhanced category finder
+    finder = TrendyolCategoryFinder(client)
+    
+    # Get required attributes with appropriate defaults
+    attributes = finder.get_required_attributes(category_id, product_title, product_color, product_size)
+    print(f"[DEBUG-ATTR] Bulunan zorunlu özellikler: {json.dumps(attributes, ensure_ascii=False)}")
+    
+    return attributes
+  except Exception as e:
+    logger.error(f"Error getting required attributes: {str(e)}")
+    print(f"[DEBUG-ATTR] HATA: Özellikler alınamadı: {str(e)}")
+    
+    # Return default attributes on error
+    return [
+        # Gender = Women
+        {
+            "attributeId": DEFAULT_REQUIRED_ATTRIBUTES["Gender"]["id"],
+            "attributeValueId": DEFAULT_REQUIRED_ATTRIBUTES["Gender"]["values"]["Kadın"]
+        },
+        # Origin = Turkey 
+        {
+            "attributeId": DEFAULT_REQUIRED_ATTRIBUTES["Origin"]["id"],
+            "attributeValueId": DEFAULT_REQUIRED_ATTRIBUTES["Origin"]["values"]["Türkiye"]
+        },
+        # Color = Black
+        {
+            "attributeId": DEFAULT_REQUIRED_ATTRIBUTES["Color"]["id"],
+            "attributeValueId": DEFAULT_REQUIRED_ATTRIBUTES["Color"]["values"]["Siyah"]
+        },
+        # Size = M
+        {
+            "attributeId": DEFAULT_REQUIRED_ATTRIBUTES["Size"]["id"],
+            "attributeValueId": DEFAULT_REQUIRED_ATTRIBUTES["Size"]["values"]["M"]
+        },
+        # Age Group = Adult
+        {
+            "attributeId": DEFAULT_REQUIRED_ATTRIBUTES["Age Group"]["id"],
+            "attributeValueId": DEFAULT_REQUIRED_ATTRIBUTES["Age Group"]["values"]["Yetişkin"]
+        }
+    ]
 
 
 def prepare_product_data(product: TrendyolProduct) -> Dict[str, Any]:
@@ -1429,22 +1541,55 @@ def prepare_product_data(product: TrendyolProduct) -> Dict[str, Any]:
       except json.JSONDecodeError:
         pass
 
-  # If no attributes are set, check if there are required attributes for the category
-  if not attributes:
-    required_attrs = get_required_attributes_for_category(category_id)
-    for attr in required_attrs:
-      attr_id = attr.get('id')
-      if attr_id and attr.get('allowCustom', False) and attr.get('values', []):
-        # Use the first value as a default
-        value_id = attr.get('values', [])[0].get('id')
-        if value_id:
-          # Make sure we're using integer IDs
-          attr_id_int = int(attr_id) if isinstance(attr_id, str) and attr_id.isdigit() else attr_id
-          value_id_int = int(value_id) if isinstance(value_id, str) and value_id.isdigit() else value_id
-          attributes.append({
-              "attributeId": attr_id_int,
-              "attributeValueId": value_id_int
-          })
+  # Even if we have existing attributes, we should ensure required ones are included
+  # Use our enhanced category finder to get required attributes with intelligent defaults
+  print(f"[DEBUG-PRODUCT] Zorunlu özellikleri alıyoruz, Ürün: {product.id}, Kategori: {category_id}")
+  
+  # Extract color and size from existing attributes if available
+  color_value = None
+  size_value = None
+  
+  for attr in attributes:
+    if attr.get('attributeId') == DEFAULT_REQUIRED_ATTRIBUTES["Color"]["id"]:
+      # We already have a color attribute
+      color_id = attr.get('attributeValueId')
+      # Try to find the color name for debugging
+      for name, value_id in DEFAULT_REQUIRED_ATTRIBUTES["Color"]["values"].items():
+        if value_id == color_id:
+          color_value = name
+          print(f"[DEBUG-PRODUCT] Mevcut bir renk bulundu: {color_value} (ID: {color_id})")
+          break
+    
+    if attr.get('attributeId') == DEFAULT_REQUIRED_ATTRIBUTES["Size"]["id"]:
+      # We already have a size attribute
+      size_id = attr.get('attributeValueId')
+      # Try to find the size name for debugging
+      for name, value_id in DEFAULT_REQUIRED_ATTRIBUTES["Size"]["values"].items():
+        if value_id == size_id:
+          size_value = name
+          print(f"[DEBUG-PRODUCT] Mevcut bir beden bulundu: {size_value} (ID: {size_id})")
+          break
+  
+  # Get required attributes with our enhanced finder
+  # This also ensures all mandatory fields are included, even if we already have some attributes
+  required_attrs = get_required_attributes_for_category(
+      category_id, 
+      product_title=product.title,
+      product_color=color_value,
+      product_size=size_value
+  )
+  
+  # Get existing attribute IDs
+  existing_attr_ids = {attr['attributeId'] for attr in attributes}
+  
+  # Add required attributes if they don't exist yet
+  for attr in required_attrs:
+    if attr['attributeId'] not in existing_attr_ids:
+      attributes.append(attr)
+      print(f"[DEBUG-PRODUCT] Zorunlu özellik eklendi: AttributeID={attr['attributeId']}, ValueID={attr['attributeValueId']}")
+    
+  print(f"[DEBUG-PRODUCT] Toplam özellik sayısı: {len(attributes)}")
+  print(f"[DEBUG-PRODUCT] Özellikler: {json.dumps(attributes, ensure_ascii=False)}")
 
   # Prepare product data
   # Normalize whitespace - replace multiple spaces with single space
