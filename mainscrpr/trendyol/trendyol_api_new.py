@@ -268,43 +268,31 @@ class TrendyolCategoryFinder:
         
         return "\n".join(suggestions)
         
-    def get_required_attributes(self, category_id):
-        """Get required attributes for a specific category"""
-        try:
-            attributes = []
-            category_attrs = self.get_category_attributes(category_id)
+    def _get_sample_attributes(self, category_id):
+        """Generate sample attributes for a category"""
+        attributes = []
+        category_attrs = self.get_category_attributes(category_id)
+        
+        for attr in category_attrs.get('categoryAttributes', []):
+            # Skip attributes with empty attributeValues array when custom values are not allowed
+            if not attr.get('attributeValues') and not attr.get('allowCustom'):
+                continue
+                
+            attribute = {
+                "attributeId": attr['attribute']['id'],
+                "attributeName": attr['attribute']['name']
+            }
             
-            # Process all category attributes
-            for attr in category_attrs.get('categoryAttributes', []):
-                # Skip attributes with missing IDs
-                if not attr['attribute'].get('id'):
-                    continue
-                    
-                # Skip attributes with empty values when custom values are not allowed
-                if not attr.get('attributeValues') and not attr.get('allowCustom'):
-                    continue
-                    
-                attribute_id = attr['attribute']['id']
-                
-                # Get a suitable value ID if available
-                attribute_value_id = None
-                
-                # If there are attribute values, use the first one
-                if attr.get('attributeValues') and len(attr['attributeValues']) > 0:
-                    attribute_value_id = attr['attributeValues'][0]['id']
-                
-                # If we have a valid attribute ID and value ID, add to the list
-                if attribute_id and attribute_value_id:
-                    attributes.append({
-                        "attributeId": attribute_id,
-                        "attributeValueId": attribute_value_id
-                    })
+            if attr.get('attributeValues') and len(attr['attributeValues']) > 0:
+                if not attr['allowCustom']:
+                    attribute["attributeValueId"] = attr['attributeValues'][0]['id']
+                    attribute["attributeValue"] = attr['attributeValues'][0]['name']
+                else:
+                    attribute["customAttributeValue"] = f"Sample {attr['attribute']['name']}"
             
-            return attributes
-                
-        except Exception as e:
-            logger.error(f"Error getting required attributes: {str(e)}")
-            return []
+            attributes.append(attribute)
+        
+        return attributes
 
 
 class TrendyolProductManager:
@@ -336,7 +324,7 @@ class TrendyolProductManager:
             brand_id = self.get_brand_id(product_data.brand_name)
             
             # Get attributes from the API for this category
-            attributes = self.category_finder.get_required_attributes(category_id)
+            attributes = self.category_finder._get_sample_attributes(category_id)
             
             # Build the complete payload
             payload = self._build_product_payload(product_data, category_id, brand_id, attributes)
