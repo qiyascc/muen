@@ -1,6 +1,3 @@
-# Updated import for working API client
-from trendyol.trendyol_api_working import TrendyolAPI as WorkingTrendyolAPI
-
 import logging
 import json
 import time
@@ -13,9 +10,6 @@ from typing import Dict, List, Optional, Any, Tuple, Union
 from django.utils import timezone
 
 from .models import TrendyolAPIConfig, TrendyolBrand, TrendyolCategory, TrendyolProduct
-# API'den doğrudan alacağız, sabit değerlere ihtiyacımız yok
-# Yeni yaklaşımımız: Her kategori için API'den doğru değerleri almak
-DEFAULT_REQUIRED_ATTRIBUTES = {}
 
 logger = logging.getLogger(__name__)
 
@@ -32,12 +26,12 @@ class TrendyolApi:
     self.api_key = api_key
     self.api_secret = api_secret
     self.supplier_id = supplier_id
-
+    
     # Ensure consistent URL format
     if api_url.endswith('/'):
-      api_url = api_url[:-1]
+        api_url = api_url[:-1]
     self.api_url = api_url
-
+    
     self.user_agent = user_agent or f"{supplier_id} - SelfIntegration"
     self.brands = BrandsAPI(self)
     self.categories = CategoriesAPI(self)
@@ -48,29 +42,27 @@ class TrendyolApi:
     """Make a request to the Trendyol API"""
     # Endpoint işlenmeden önce debug logu
     print(f"[DEBUG-API] make_request çağrısı. Orijinal endpoint: {endpoint}")
-
+    
     # Make sure endpoint starts with a slash
     if not endpoint.startswith('/'):
-      endpoint = f'/{endpoint}'
-      print(f"[DEBUG-API] Endpoint başına / eklendi: {endpoint}")
-
+        endpoint = f'/{endpoint}'
+        print(f"[DEBUG-API] Endpoint başına / eklendi: {endpoint}")
+        
     # Remove any duplicate /integration prefix from the endpoint
     if endpoint.startswith('/integration') and 'integration' in self.api_url:
-      endpoint_before = endpoint
-      endpoint = endpoint.replace('/integration', '', 1)
-      print(
-          f"[DEBUG-API] /integration prefix kaldırıldı: {endpoint_before} -> {endpoint}"
-      )
-
+        endpoint_before = endpoint
+        endpoint = endpoint.replace('/integration', '', 1)
+        print(f"[DEBUG-API] /integration prefix kaldırıldı: {endpoint_before} -> {endpoint}")
+    
     # Build the URL with proper formatting
     url = f"{self.api_url}{endpoint}"
     print(f"[DEBUG-API] Oluşturulan URL: {url}")
-
+    
     # Additional safeguard against duplicate integration paths
     url_before = url
     url = url.replace('/integration/integration/', '/integration/')
     if url != url_before:
-      print(f"[DEBUG-API] Duplicate integration fixes: {url_before} -> {url}")
+        print(f"[DEBUG-API] Duplicate integration fixes: {url_before} -> {url}")
 
     # Format the auth string and encode as Base64 for Basic Authentication
     auth_string = f"{self.api_key}:{self.api_secret}"
@@ -87,7 +79,7 @@ class TrendyolApi:
     print(f"[DEBUG-API] İSTEK HEADERS: {headers}")
     logger.info(f"Making request: {method} {url}")
     logger.info(f"Request headers: {headers}")
-
+    
     if data:
       logger.info(f"Request data: {json.dumps(data)}")
 
@@ -138,10 +130,10 @@ class TrendyolApi:
       logger.info(f"Making request: {method} {url}")
       logger.info(f"Request headers: {headers}")
       if params:
-        logger.info(f"Request params: {params}")
+          logger.info(f"Request params: {params}")
       if data:
-        logger.info(f"Request data: {json.dumps(data, default=str, indent=2)}")
-
+          logger.info(f"Request data: {json.dumps(data, default=str, indent=2)}")
+      
       # Make the request
       response = requests.request(method=method,
                                   url=url,
@@ -153,28 +145,26 @@ class TrendyolApi:
       # Log response status and headers
       logger.info(f"Response status: {response.status_code}")
       logger.info(f"Response headers: {dict(response.headers)}")
-
+      
       # Log the full response body for 400 errors to help debugging
       if response.status_code == 400:
-        logger.error(f"400 BAD REQUEST ERROR")
-        logger.error(f"Request URL: {url}")
-        logger.error(f"Request method: {method}")
-        logger.error(f"Request headers: {headers}")
-        if data:
-          logger.error(
-              f"Request data: {json.dumps(data, default=str, indent=2)}")
-        if params:
-          logger.error(f"Request params: {params}")
-        logger.error(f"Response headers: {dict(response.headers)}")
-        logger.error(f"Response body: {response.text}")
+          logger.error(f"400 BAD REQUEST ERROR")
+          logger.error(f"Request URL: {url}")
+          logger.error(f"Request method: {method}")
+          logger.error(f"Request headers: {headers}")
+          if data:
+              logger.error(f"Request data: {json.dumps(data, default=str, indent=2)}")
+          if params:
+              logger.error(f"Request params: {params}")
+          logger.error(f"Response headers: {dict(response.headers)}")
+          logger.error(f"Response body: {response.text}")
       # For non-400 responses, just log the first part
       elif response.text:
-        try:
-          logger.info(f"Response text: {response.text[:1000]}..."
-                      )  # Show first 1000 chars
-        except Exception as e:
-          logger.error(f"Error logging response text: {str(e)}")
-
+          try:
+              logger.info(f"Response text: {response.text[:1000]}...")  # Show first 1000 chars
+          except Exception as e:
+              logger.error(f"Error logging response text: {str(e)}")
+      
       # Check if the request was successful
       response.raise_for_status()
 
@@ -197,16 +187,16 @@ class TrendyolApi:
         logger.error(f"Response status: {e.response.status_code}")
         logger.error(f"Response headers: {dict(e.response.headers)}")
         logger.error(f"Response content: {e.response.text}")
-
+        
         # For 400 errors, log the request details to help diagnose the issue
         if e.response.status_code == 400:
-          logger.error(f"Request URL: {url}")
-          logger.error(f"Request method: {method}")
-          logger.error(f"Request headers: {headers}")
-          if data:
-            logger.error(f"Request data: {json.dumps(data, default=str)}")
-          if params:
-            logger.error(f"Request params: {params}")
+            logger.error(f"Request URL: {url}")
+            logger.error(f"Request method: {method}")
+            logger.error(f"Request headers: {headers}")
+            if data:
+                logger.error(f"Request data: {json.dumps(data, default=str)}")
+            if params:
+                logger.error(f"Request params: {params}")
 
         # Try to parse error content if it's JSON
         try:
@@ -220,8 +210,7 @@ class TrendyolApi:
               error_msg = error.get('message', 'Unknown error')
               error_code = error.get('code', 'Unknown code')
               error_messages.append(f"{error_code}: {error_msg}")
-              logger.error(
-                  f"API Error: Code={error_code}, Message={error_msg}")
+              logger.error(f"API Error: Code={error_code}, Message={error_msg}")
             error_details['error_messages'] = error_messages
         except Exception as json_err:
           logger.error(f"Error parsing response JSON: {str(json_err)}")
@@ -236,11 +225,11 @@ class BrandsAPI:
 
   def __init__(self, client):
     self.client = client
-
+    
   def _get_brands_endpoint(self):
     """Get the brands endpoint for verification"""
     return '/product/brands'
-
+    
   def get_brands(self, page=0, size=1000):
     """Get all brands from Trendyol"""
     endpoint = self._get_brands_endpoint()
@@ -250,7 +239,7 @@ class BrandsAPI:
   def _get_brand_by_name_endpoint(self):
     """Get the brand by name endpoint for verification"""
     return '/product/brands/by-name'
-
+    
   def get_brand_by_name(self, name):
     """Get brand by name"""
     endpoint = self._get_brand_by_name_endpoint()
@@ -263,11 +252,11 @@ class CategoriesAPI:
 
   def __init__(self, client):
     self.client = client
-
+    
   def _get_categories_endpoint(self):
     """Get the categories endpoint for verification"""
     return '/product-categories'
-
+    
   def _get_category_attributes_endpoint(self, category_id):
     """Get the category attributes endpoint for verification"""
     return f'/product-categories/{category_id}/attributes'
@@ -288,35 +277,31 @@ class ProductsAPI:
 
   def __init__(self, client):
     self.client = client
-
+    
   def _get_products_endpoint(self):
     """Get the base products endpoint for verification"""
-    return f'product/sellers/{self.client.supplier_id}/products'
-
+    return f'/integration/product/sellers/{self.client.supplier_id}/products'
+    
   def _get_batch_request_endpoint(self, batch_id):
     """Get the batch request endpoint for verification"""
     # Tüm batch ID'yi olduğu gibi kullanacağız - UUID kısmını çıkarmadan
     # Batch ID'yi parçalamak API hatalarına neden olabilir
-
+    
     # Debugging - bu fonksiyona gelen batch ID
-    print(
-        f"[DEBUG-API] _get_batch_request_endpoint fonksiyonuna gelen batch ID: {batch_id}"
-    )
-
+    print(f"[DEBUG-API] _get_batch_request_endpoint fonksiyonuna gelen batch ID: {batch_id}")
+    
     # Eğer '-' varsa, bu önemli bir UUID olabilir ve tam olarak kullanmalıyız
     if '-' in batch_id:
-      original_id = batch_id
-      # Artık UUID parçalama işlemini yapmıyoruz, orijinal ID'yi olduğu gibi kullanıyoruz
-      print(
-          f"[DEBUG-API] [UYARI] Orijinal batch ID aynen kullanılıyor: {original_id}"
-      )
-
+        original_id = batch_id
+        # Artık UUID parçalama işlemini yapmıyoruz, orijinal ID'yi olduğu gibi kullanıyoruz
+        print(f"[DEBUG-API] [UYARI] Orijinal batch ID aynen kullanılıyor: {original_id}")
+        
     # Log for debugging purposes
     logger.info(f"Using full batch ID for request: {batch_id}")
-
-    endpoint = f'product/sellers/{self.client.supplier_id}/products/batch-requests/{batch_id}'
+    
+    endpoint = f'/integration/product/sellers/{self.client.supplier_id}/products/batch-requests/{batch_id}'
     print(f"[DEBUG-API] Oluşturulan endpoint: {endpoint}")
-
+      
     return endpoint
 
   def create_products(self, products):
@@ -341,42 +326,40 @@ class ProductsAPI:
     if not batch_id:
       logger.warning("Attempted to check batch status with empty batch ID")
       return None
-
+    
     # Debugging için orijinal batch ID'yi yazdır
-    print(
-        f"[DEBUG-API] get_batch_request_status fonksiyonuna gelen orijinal batch ID: {batch_id}"
-    )
-
+    print(f"[DEBUG-API] get_batch_request_status fonksiyonuna gelen orijinal batch ID: {batch_id}")
+    
     # Orijinal değeri sakla ve log'la
     original_batch_id = batch_id
-
+      
     # Eğer URL ise sadece son kısmı al
     if '/' in batch_id:
       # Handle potential URL format
       batch_id = batch_id.split('/')[-1]
       print(f"[DEBUG-API] URL biçimi algılandı, temizlendi: {batch_id}")
-
+    
     # Trim any whitespace
     batch_id = batch_id.strip()
-
+    
     # Debug için orijinal ve kullanılan batch ID'yi karşılaştır
     print(f"[DEBUG-API] Orijinal batch ID: {original_batch_id}")
     print(f"[DEBUG-API] Kullanılan batch ID: {batch_id}")
-
+    
     # ÖNEMLİ! Orijinal batch ID'yi kullan!
     batch_id = original_batch_id
     print(f"[DEBUG-API] SON KARAR: Orijinal batch ID kullanılacak: {batch_id}")
-
+    
     logger.info(f"Checking batch status for batch ID: {batch_id}")
-
+    
     endpoint = self._get_batch_request_endpoint(batch_id)
     print(f"[DEBUG-API] Oluşturulan API endpoint: {endpoint}")
-
+    
     response = self.client.make_request('GET', endpoint)
-
+    
     # Log the response for debugging
     logger.info(f"Batch status response for {batch_id}: {response}")
-
+    
     return response
 
   def get_products(self, barcode=None, approved=None, page=0, size=50):
@@ -402,10 +385,10 @@ class InventoryAPI:
 
   def __init__(self, client):
     self.client = client
-
+    
   def _get_price_inventory_endpoint(self):
     """Get the price and inventory endpoint for verification"""
-    return f'inventory/sellers/{self.client.supplier_id}/products/price-and-inventory'
+    return f'/integration/inventory/sellers/{self.client.supplier_id}/products/price-and-inventory'
 
   def update_price_and_inventory(self, items):
     """
@@ -422,16 +405,35 @@ class InventoryAPI:
     return self.client.make_request('POST', endpoint, data={"items": items})
 
 
-def get_api_client():
-    """Get a configured API client."""
-    try:
-        # Use the working API client instead of the original
-        return WorkingTrendyolAPI()
-    except Exception as e:
-        logger.error(f"Error creating API client: {str(e)}")
-        return None
+def get_api_client() -> Optional[TrendyolApi]:
+  """
+    Get a configured Trendyol API client.
+    Returns None if no active API configuration is found.
+    """
+  try:
+    config = TrendyolAPIConfig.objects.filter(is_active=True).first()
+    if not config:
+      logger.error("No active Trendyol API configuration found")
+      return None
 
-# Eski API istemcisi kodları kaldırıldı - artık WorkingTrendyolAPI kullanılıyor
+    # Get the user_agent from the config, or create a default one
+    user_agent = config.user_agent
+    if not user_agent:
+      user_agent = f"{config.seller_id} - SelfIntegration"
+
+    # Initialize the Trendyol API client
+    client = TrendyolApi(
+        api_key=config.api_key,
+        api_secret=config.api_secret,
+        supplier_id=config.supplier_id or config.
+        seller_id,  # Use supplier_id if set, otherwise fall back to seller_id
+        api_url=config.base_url,
+        user_agent=user_agent)
+
+    return client
+  except Exception as e:
+    logger.error(f"Error creating Trendyol API client: {str(e)}")
+    return None
 
 
 def fetch_brands() -> List[Dict[str, Any]]:
@@ -452,20 +454,18 @@ def fetch_brands() -> List[Dict[str, Any]]:
     if not response or 'brands' not in response:
       logger.error("Failed to fetch brands from Trendyol API")
       logger.warning("Using cached brands from database instead")
-
+      
       # Get existing brands from database
-      cached_brands = list(
-          TrendyolBrand.objects.filter(is_active=True).values(
-              'brand_id', 'name'))
+      cached_brands = list(TrendyolBrand.objects.filter(is_active=True).values('brand_id', 'name'))
       if cached_brands:
         logger.info(f"Found {len(cached_brands)} brands in database cache")
         # Convert to expected format
-        formatted_brands = [{
-            'id': brand['brand_id'],
-            'name': brand['name']
-        } for brand in cached_brands]
+        formatted_brands = [
+          {'id': brand['brand_id'], 'name': brand['name']} 
+          for brand in cached_brands
+        ]
         return formatted_brands
-
+      
       logger.error("No cached brands found in database")
       return []
 
@@ -486,21 +486,19 @@ def fetch_brands() -> List[Dict[str, Any]]:
     return brands
   except Exception as e:
     logger.error(f"Error fetching brands from Trendyol: {str(e)}")
-
+    
     # Get existing brands from database in case of error
     logger.warning("Using cached brands from database instead")
-    cached_brands = list(
-        TrendyolBrand.objects.filter(is_active=True).values(
-            'brand_id', 'name'))
+    cached_brands = list(TrendyolBrand.objects.filter(is_active=True).values('brand_id', 'name'))
     if cached_brands:
       logger.info(f"Found {len(cached_brands)} brands in database cache")
       # Convert to expected format
-      formatted_brands = [{
-          'id': brand['brand_id'],
-          'name': brand['name']
-      } for brand in cached_brands]
+      formatted_brands = [
+        {'id': brand['brand_id'], 'name': brand['name']} 
+        for brand in cached_brands
+      ]
       return formatted_brands
-
+    
     return []
 
 
@@ -522,22 +520,18 @@ def fetch_categories() -> List[Dict[str, Any]]:
     if not response or 'categories' not in response:
       logger.error("Failed to fetch categories from Trendyol API")
       logger.warning("Using cached categories from database instead")
-
+      
       # Get existing categories from database
-      cached_categories = list(
-          TrendyolCategory.objects.filter(is_active=True).values(
-              'category_id', 'name', 'parent_id', 'path'))
+      cached_categories = list(TrendyolCategory.objects.filter(is_active=True).values('category_id', 'name', 'parent_id', 'path'))
       if cached_categories:
-        logger.info(
-            f"Found {len(cached_categories)} categories in database cache")
+        logger.info(f"Found {len(cached_categories)} categories in database cache")
         # Convert to expected format
-        formatted_categories = [{
-            'id': cat['category_id'],
-            'name': cat['name'],
-            'parentId': cat['parent_id']
-        } for cat in cached_categories]
+        formatted_categories = [
+          {'id': cat['category_id'], 'name': cat['name'], 'parentId': cat['parent_id']} 
+          for cat in cached_categories
+        ]
         return formatted_categories
-
+      
       logger.error("No cached categories found in database")
       return []
 
@@ -570,23 +564,19 @@ def fetch_categories() -> List[Dict[str, Any]]:
     return categories
   except Exception as e:
     logger.error(f"Error fetching categories from Trendyol: {str(e)}")
-
+    
     # Get existing categories from database in case of error
     logger.warning("Using cached categories from database instead")
-    cached_categories = list(
-        TrendyolCategory.objects.filter(is_active=True).values(
-            'category_id', 'name', 'parent_id', 'path'))
+    cached_categories = list(TrendyolCategory.objects.filter(is_active=True).values('category_id', 'name', 'parent_id', 'path'))
     if cached_categories:
-      logger.info(
-          f"Found {len(cached_categories)} categories in database cache")
+      logger.info(f"Found {len(cached_categories)} categories in database cache")
       # Convert to expected format
-      formatted_categories = [{
-          'id': cat['category_id'],
-          'name': cat['name'],
-          'parentId': cat['parent_id']
-      } for cat in cached_categories]
+      formatted_categories = [
+        {'id': cat['category_id'], 'name': cat['name'], 'parentId': cat['parent_id']} 
+        for cat in cached_categories
+      ]
       return formatted_categories
-
+    
     return []
 
 
@@ -1206,43 +1196,8 @@ def find_best_category_match(product: TrendyolProduct) -> Optional[int]:
     
     Enhanced implementation that uses the TrendyolCategoryFinder class.
     """
-  # If a specific category_id is already set, use that
-  if product.category_id:
-    logger.info(f"Using pre-set category ID: {product.category_id}")
-    return product.category_id
-
-  client = get_api_client()
-  if not client:
-    logger.error("Could not get API client to find category match")
-    return 385  # Default to Women's Clothing - Jacket if no client
-
-  try:
-    print(
-        f"[DEBUG-CATEGORY] Kategori arama: Ürün={product.id}, Başlık={product.title}"
-    )
-
-    # Initialize the category finder with our API client
-    finder = TrendyolCategoryFinder(client)
-
-    # Get product title for category search
-    title = product.title if product.title else ""
-
-    # Find matching category using the enhanced finder
-    category_id = finder.find_best_category(title)
-
-    if category_id:
-      print(f"[DEBUG-CATEGORY] Bulunan kategori ID: {category_id}")
-      logger.info(f"Found category ID {category_id} for product '{title}'")
-      return category_id
-    else:
-      logger.warning(
-          f"Could not find a category match for product '{title}', using default"
-      )
-      return 385  # Default to Women's Clothing - Jacket
-  except Exception as e:
-    logger.error(f"Error finding category match: {str(e)}")
-    # Return a default category on error
-    return 385  # Default to Women's Clothing - Jacket on error
+  finder = TrendyolCategoryFinder(get_api_client())
+  return finder.find_category_id(product)
 
 
 def find_best_brand_match(product: TrendyolProduct) -> Optional[int]:
@@ -1350,55 +1305,15 @@ def find_best_brand_match(product: TrendyolProduct) -> Optional[int]:
 
 
 def get_required_attributes_for_category(
-    category_id: int,
-    product_title: str = None,
-    product_color: str = None,
-    product_size: str = None) -> List[Dict[str, Any]]:
+    category_id: int) -> List[Dict[str, Any]]:
   """
-    Get required attributes for a specific category directly from Trendyol API.
-    Returns a list of attribute dictionaries in format required by Trendyol API.
+    Get required attributes for a specific category.
+    Returns a list of attribute dictionaries.
     
-    Bu fonksiyon, her kategori için doğru özellikleri Trendyol API'sinden alır
-    ve sabit değerlere ihtiyaç duymaz.
-    
-    Args:
-        category_id: The category ID
-        product_title: The product title to infer attributes from (optional)
-        product_color: The product color if known (optional)
-        product_size: The product size if known (optional)
-    
-    Returns:
-        List of attribute dictionaries in the format required by Trendyol API
+    This is a wrapper for the enhanced TrendyolCategoryFinder's method.
     """
-  logger.info(f"Getting required attributes for category ID={category_id}")
-
-  try:
-    client = get_api_client()
-    if not client:
-      logger.warning("API client could not be obtained")
-      return []
-
-    # İyileştirilmiş kategori bulucu kullanarak öznitelikleri al
-    from .category_finder_new import TrendyolCategoryFinder
-    finder = TrendyolCategoryFinder(client)
-
-    # Doğrudan API'den kategoriye özgü öznitelikleri al
-    try:
-      attributes = finder.get_required_attributes(category_id)
-      logger.info(
-          f"Kategorinin zorunlu özellikleri API'den alındı: {len(attributes)} özellik"
-      )
-      logger.debug(f"Özellikler: {json.dumps(attributes, ensure_ascii=False)}")
-    except Exception as e:
-      logger.error(f"Kategori özellikleri alınırken hata: {str(e)}")
-      attributes = []
-
-    return attributes
-  except Exception as e:
-    logger.error(f"Error getting required attributes: {str(e)}")
-    # Return an empty list on error - we won't use hardcoded values anymore
-    # This will force the API to provide the correct values
-    return []
+  finder = TrendyolCategoryFinder(get_api_client())
+  return finder.get_required_attributes(category_id)
 
 
 def prepare_product_data(product: TrendyolProduct) -> Dict[str, Any]:
@@ -1424,144 +1339,120 @@ def prepare_product_data(product: TrendyolProduct) -> Dict[str, Any]:
     logger.error(f"No matching brand found for product {product.id}")
     raise ValueError("No matching brand found for product")
 
-  # Helper function to validate image URLs
-  def is_valid_image_url(url):
-    if not url:
-      return False
-    if not isinstance(url, str):
-      return False
-    # Reject admin panel URLs
-    if 'admin' in url:
-      return False
-    # Require proper protocol
-    if not url.startswith(('http://', 'https://')):
-      return False
-    # Check for common image file extensions or LCWaikiki image domains
-    if not any(ext in url.lower() for ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp']):
-      # For LCW, sometimes URLs don't have extensions, so check for image domains
-      if not any(domain in url.lower() for domain in ['img-lcwaikiki', 'mncdn', 'cloudfront', 'lcw.com']):
-        return False
-    return True
-
-  # Get image URLs with validation
+  # Get image URLs
   image_urls = []
-  if product.image_url and is_valid_image_url(product.image_url):
+  if product.image_url:
     image_urls.append(product.image_url)
-    logger.info(f"Using valid primary image URL: {product.image_url}")
-  else:
-    logger.warning(f"Invalid primary image URL rejected: {product.image_url}")
 
-  # Process additional images with validation
   if product.additional_images:
     if isinstance(product.additional_images, list):
-      valid_additional = [img for img in product.additional_images if is_valid_image_url(img)]
-      image_urls.extend(valid_additional)
-      logger.info(f"Added {len(valid_additional)} valid additional images")
+      image_urls.extend(product.additional_images)
     elif isinstance(product.additional_images, str):
       try:
         additional = json.loads(product.additional_images)
         if isinstance(additional, list):
-          valid_additional = [img for img in additional if is_valid_image_url(img)]
-          image_urls.extend(valid_additional)
-          logger.info(f"Added {len(valid_additional)} valid additional images from JSON")
+          image_urls.extend(additional)
       except json.JSONDecodeError:
-        logger.warning(f"Failed to decode additional images JSON for product {product.id}")
-        
-  # If no valid images found, use default fallback image
-  if not image_urls:
-    default_image = "https://img-lcwaikiki.mncdn.com/mnresize/1024/-/pim/productimages/20224/5841125/l_20224-w4bi51z8-ct5_a.jpg"
-    image_urls.append(default_image)
-    logger.warning(f"No valid images found for product {product.id}, using fallback image")
+        pass
 
-  # Prepare attributes - Using API data and not hard-coded values
+  # Prepare attributes - Using correct numeric IDs and values
   attributes = []
-
-  # Hard-coded color ID mapping is REMOVED - Categories may have different
-  # color IDs and values, so we'll rely on the API to supply the correct ones
-
+  
+  # Color ID mapping to use numeric IDs instead of string values
+  color_id_map = {
+      'Beyaz': 1001, 
+      'Siyah': 1002, 
+      'Mavi': 1003, 
+      'Kirmizi': 1004, 
+      'Pembe': 1005,
+      'Yeşil': 1006,
+      'Sarı': 1007,
+      'Mor': 1008,
+      'Gri': 1009,
+      'Kahverengi': 1010,
+      'Ekru': 1011,
+      'Bej': 1012,
+      'Lacivert': 1013,
+      'Turuncu': 1014,
+      'Krem': 1015,
+      'Petrol': 1016   # Petrol rengini ekledik
+  }
+      
   if product.attributes:
     if isinstance(product.attributes, dict):
       for key, value in product.attributes.items():
         try:
-          # For any attributes, try to convert to integers
-          # No special handling for color attribute
-          attr_id = int(key) if isinstance(key, str) and key.isdigit() else key
-          # Try to convert attributeValueId to integer if possible
-          attr_value_id = int(value) if isinstance(
-              value, str) and value.isdigit() else value
-          attributes.append({
-              "attributeId": attr_id,
-              "attributeValueId": attr_value_id
-          })
+          # Special handling for color attribute
+          if key == 'color' and isinstance(value, str):
+            # Use attribute ID 348 for color with proper numeric value ID
+            color_numeric_id = color_id_map.get(value)
+            if color_numeric_id:
+              attributes.append({"attributeId": 348, "attributeValueId": color_numeric_id})
+              logger.info(f"Converted color '{value}' to numeric ID {color_numeric_id}")
+            else:
+              # If we don't have a mapping, still use a numeric ID but log warning
+              logger.warning(f"No color ID mapping for '{value}', using default")
+              attributes.append({"attributeId": 348, "attributeValueId": 1001})  # Default to white
+          else:
+            # For other attributes, try to convert to integers
+            attr_id = int(key) if isinstance(key, str) and key.isdigit() else (348 if key == 'color' else key)
+            # Try to convert attributeValueId to integer if possible
+            attr_value_id = int(value) if isinstance(value, str) and value.isdigit() else value
+            attributes.append({"attributeId": attr_id, "attributeValueId": attr_value_id})
         except (ValueError, TypeError):
-          logger.warning(
-              f"Could not convert attribute ID/value to integer: {key}={value}"
-          )
+          logger.warning(f"Could not convert attribute ID/value to integer: {key}={value}")
     elif isinstance(product.attributes, str):
       try:
         attrs = json.loads(product.attributes)
         if isinstance(attrs, dict):
           for key, value in attrs.items():
             try:
-              # For any attributes, try to convert to integers
-              # No special handling for color attribute anymore
-              attr_id = int(key) if isinstance(key,
-                                               str) and key.isdigit() else key
-              # Try to convert attributeValueId to integer if possible
-              attr_value_id = int(value) if isinstance(
-                  value, str) and value.isdigit() else value
-              attributes.append({
-                  "attributeId": attr_id,
-                  "attributeValueId": attr_value_id
-              })
+              # Special handling for color attribute
+              if key == 'color' and isinstance(value, str):
+                # Use attribute ID 348 for color with proper numeric value ID
+                color_numeric_id = color_id_map.get(value)
+                if color_numeric_id:
+                  attributes.append({"attributeId": 348, "attributeValueId": color_numeric_id})
+                  logger.info(f"Converted color '{value}' to numeric ID {color_numeric_id}")
+                else:
+                  # If we don't have a mapping, still use a numeric ID but log warning
+                  logger.warning(f"No color ID mapping for '{value}', using default")
+                  attributes.append({"attributeId": 348, "attributeValueId": 1001})  # Default to white
+              else:
+                # For other attributes, try to convert to integers
+                attr_id = int(key) if isinstance(key, str) and key.isdigit() else (348 if key == 'color' else key)
+                # Try to convert attributeValueId to integer if possible
+                attr_value_id = int(value) if isinstance(value, str) and value.isdigit() else value
+                attributes.append({"attributeId": attr_id, "attributeValueId": attr_value_id})
             except (ValueError, TypeError):
-              logger.warning(
-                  f"Could not convert attribute ID/value to integer: {key}={value}"
-              )
+              logger.warning(f"Could not convert attribute ID/value to integer: {key}={value}")
       except json.JSONDecodeError:
         pass
 
-  # Even if we have existing attributes, we should ensure required ones are included
-  # Use our enhanced category finder to get required attributes with intelligent defaults
-  print(
-      f"[DEBUG-PRODUCT] Zorunlu özellikleri alıyoruz, Ürün: {product.id}, Kategori: {category_id}"
-  )
-
-  # We no longer need to extract color and size from existing attributes
-  # since we're not using hard-coded attribute values
-  print(
-      f"[DEBUG-PRODUCT] Mevcut özellikler: {json.dumps(attributes, ensure_ascii=False)}"
-  )
-
-  # Get required attributes with our enhanced finder
-  # This also ensures all mandatory fields are included, even if we already have some attributes
-  # We only provide category_id as positional argument, and handle others with defaults
-  required_attrs = get_required_attributes_for_category(category_id)
-
-  # Get existing attribute IDs
-  existing_attr_ids = {attr['attributeId'] for attr in attributes}
-
-  # Add required attributes if they don't exist yet
-  for attr in required_attrs:
-    if attr['attributeId'] not in existing_attr_ids:
-      attributes.append(attr)
-      print(
-          f"[DEBUG-PRODUCT] Zorunlu özellik eklendi: AttributeID={attr['attributeId']}, ValueID={attr['attributeValueId']}"
-      )
-
-  print(f"[DEBUG-PRODUCT] Toplam özellik sayısı: {len(attributes)}")
-  print(
-      f"[DEBUG-PRODUCT] Özellikler: {json.dumps(attributes, ensure_ascii=False)}"
-  )
+  # If no attributes are set, check if there are required attributes for the category
+  if not attributes:
+    required_attrs = get_required_attributes_for_category(category_id)
+    for attr in required_attrs:
+      attr_id = attr.get('id')
+      if attr_id and attr.get('allowCustom', False) and attr.get('values', []):
+        # Use the first value as a default
+        value_id = attr.get('values', [])[0].get('id')
+        if value_id:
+          # Make sure we're using integer IDs
+          attr_id_int = int(attr_id) if isinstance(attr_id, str) and attr_id.isdigit() else attr_id
+          value_id_int = int(value_id) if isinstance(value_id, str) and value_id.isdigit() else value_id
+          attributes.append({
+              "attributeId": attr_id_int,
+              "attributeValueId": value_id_int
+          })
 
   # Prepare product data
   # Normalize whitespace - replace multiple spaces with single space
   normalized_title = " ".join(product.title.split()) if product.title else ""
-
+  
   # Limit title to 100 characters to avoid "Ürün Adı 100 karakterden fazla olamaz" error
-  title = normalized_title[:100] if normalized_title and len(
-      normalized_title) > 100 else normalized_title
-
+  title = normalized_title[:100] if normalized_title and len(normalized_title) > 100 else normalized_title
+  
   product_data = {
       "barcode": product.barcode,
       "title": title,
@@ -1583,6 +1474,9 @@ def prepare_product_data(product: TrendyolProduct) -> Dict[str, Any]:
       # Removed shipmentAddressId per request
       # Removed deliveryDuration per request
       # Removed pimCategoryId per request
+      "gender": {
+          "id": 1  # Default to Unisex
+      },
       "attributes": attributes,
   }
 
@@ -1592,11 +1486,14 @@ def prepare_product_data(product: TrendyolProduct) -> Dict[str, Any]:
 
   # We no longer add a separate "color" field - it should only be in attributes
   # This was previously causing validation errors
-  # Color should only be in attributes with proper attributeId from the API
+  # Color should only be in attributes with attributeId: 348 (numeric)
   # See updated implementation in admin.py and retry_failed_trendyol_products.py
+  pass
 
   # Ensure all numeric values are proper floats/ints
-  for key in ["quantity", "listPrice", "salePrice", "vatRate"]:
+  for key in [
+      "quantity", "listPrice", "salePrice", "vatRate"
+  ]:
     if key in product_data and product_data[key] is not None:
       try:
         if key in ["listPrice", "salePrice"]:
@@ -1631,10 +1528,8 @@ def create_trendyol_product(product: TrendyolProduct) -> Optional[str]:
     error messages to make debugging easier. It validates required fields
     before submission and properly logs all operations.
     """
-  print(
-      f"[DEBUG-CREATE] Ürün oluşturma başlatılıyor: ID={product.id}, Başlık={product.title}"
-  )
-
+  print(f"[DEBUG-CREATE] Ürün oluşturma başlatılıyor: ID={product.id}, Başlık={product.title}")
+  
   client = get_api_client()
   if not client:
     error_message = "No active Trendyol API configuration found"
@@ -1650,9 +1545,7 @@ def create_trendyol_product(product: TrendyolProduct) -> Optional[str]:
     print(f"[DEBUG-CREATE] Ürün verileri hazırlanıyor...")
     try:
       product_data = prepare_product_data(product)
-      print(
-          f"[DEBUG-CREATE] Hazırlanan ürün verileri: {json.dumps(product_data, ensure_ascii=False, default=str)[:250]}..."
-      )
+      print(f"[DEBUG-CREATE] Hazırlanan ürün verileri: {json.dumps(product_data, ensure_ascii=False, default=str)[:250]}...")
     except ValueError as e:
       error_message = f"Error preparing product data: {str(e)}"
       print(f"[DEBUG-CREATE] HATA: Ürün verileri hazırlanamadı: {str(e)}")
@@ -1687,9 +1580,7 @@ def create_trendyol_product(product: TrendyolProduct) -> Optional[str]:
     logger.info(
         f"Product data: {json.dumps(product_data, default=str, indent=2)}")
     response = client.products.create_products([product_data])
-    print(
-        f"[DEBUG-CREATE] Trendyol'dan gelen yanıt: {json.dumps(response, ensure_ascii=False, default=str)}"
-    )
+    print(f"[DEBUG-CREATE] Trendyol'dan gelen yanıt: {json.dumps(response, ensure_ascii=False, default=str)}")
 
     # Handle different response error scenarios
     if not response:
@@ -1782,19 +1673,15 @@ def check_product_batch_status(product: TrendyolProduct) -> str:
     product.status_message = "No batch ID available to check status"
     product.save()
     return 'failed'
-
+    
   # Batch ID'yi yazdır
   original_batch_id = product.batch_id
-  print(
-      f"[DEBUG-BATCH] Ürün ID: {product.id} için orijinal batch ID: {original_batch_id}"
-  )
-
+  print(f"[DEBUG-BATCH] Ürün ID: {product.id} için orijinal batch ID: {original_batch_id}")
+  
   # Batch ID'de herhangi bir işleme yapılıyor mu kontrol et
   if '-' in original_batch_id:
     uuid_part = original_batch_id.split('-')[0]
-    print(
-        f"[DEBUG-BATCH] UUID kısmı: {uuid_part}, Tam batch ID: {original_batch_id}"
-    )
+    print(f"[DEBUG-BATCH] UUID kısmı: {uuid_part}, Tam batch ID: {original_batch_id}")
   else:
     print(f"[DEBUG-BATCH] Batch ID UUID formatında değil: {original_batch_id}")
 
@@ -1808,11 +1695,9 @@ def check_product_batch_status(product: TrendyolProduct) -> str:
 
   try:
     # Check batch status - tam batch ID kullanıldığından emin olalım
-    print(
-        f"[DEBUG-BATCH] API istemcisine gönderilecek batch ID: {product.batch_id}"
-    )
+    print(f"[DEBUG-BATCH] API istemcisine gönderilecek batch ID: {product.batch_id}")
     print(f"[DEBUG-BATCH] Batch durumu kontrol ediliyor...")
-
+    
     response = client.products.get_batch_request_status(product.batch_id)
     print(f"[DEBUG-BATCH] Trendyol API'den gelen yanıt: {response}")
     logger.info(f"Batch status response for product {product.id}: {response}")
@@ -1827,78 +1712,70 @@ def check_product_batch_status(product: TrendyolProduct) -> str:
 
     # Check if response is a dictionary or string
     if isinstance(response, dict):
-      # First check if the response has a status field
-      status = response.get('status')
-
-      # If no status field but we have a batchRequestId, check other indicators
-      if not status and 'batchRequestId' in response:
-        logger.info(
-            f"Found batch ID {response.get('batchRequestId')} but no status field"
-        )
-
-        # Check for dates - if we have creation or modification dates, the batch exists in the system
-        creation_date = response.get('creationDate')
-        last_modification = response.get('lastModification')
-        item_count = response.get('itemCount')
-        failed_item_count = response.get('failedItemCount')
-
-        # Log the details we found
-        logger.info(
-            f"Batch details: creation_date={creation_date}, last_modification={last_modification}, item_count={item_count}, failed_item_count={failed_item_count}"
-        )
-
-        # If we have item counts, use them to determine status
-        if failed_item_count is not None:
-          if failed_item_count > 0:
-            logger.info(f"Batch has {failed_item_count} failed items")
-            internal_status = 'failed'
-          elif item_count is not None and item_count > 0:
-            logger.info(f"Batch has {item_count} items with no failures")
-            internal_status = 'completed'
-          else:
-            logger.info("Batch has no items yet, assuming processing")
-            internal_status = 'processing'
-        else:
-          # Check if there are items to analyze
-          items = response.get('items', [])
-          if not items:
-            # Empty items list could mean the batch is still processing
-            # Since we're getting a valid response with the batch ID, we'll assume it's in progress
-            logger.info("Empty items list, assuming batch is still processing")
-            internal_status = 'processing'
-          else:
-            # Check if any items failed
-            failed_items = [
-                item for item in items
-                if item.get('status') in ['FAILED', 'INVALID']
-            ]
-            if failed_items:
-              logger.info(f"Found {len(failed_items)} failed items")
-              internal_status = 'failed'
+        # First check if the response has a status field
+        status = response.get('status')
+        
+        # If no status field but we have a batchRequestId, check other indicators
+        if not status and 'batchRequestId' in response:
+            logger.info(f"Found batch ID {response.get('batchRequestId')} but no status field")
+            
+            # Check for dates - if we have creation or modification dates, the batch exists in the system
+            creation_date = response.get('creationDate')
+            last_modification = response.get('lastModification')
+            item_count = response.get('itemCount')
+            failed_item_count = response.get('failedItemCount')
+            
+            # Log the details we found
+            logger.info(f"Batch details: creation_date={creation_date}, last_modification={last_modification}, item_count={item_count}, failed_item_count={failed_item_count}")
+            
+            # If we have item counts, use them to determine status
+            if failed_item_count is not None:
+                if failed_item_count > 0:
+                    logger.info(f"Batch has {failed_item_count} failed items")
+                    internal_status = 'failed'
+                elif item_count is not None and item_count > 0:
+                    logger.info(f"Batch has {item_count} items with no failures")
+                    internal_status = 'completed'
+                else:
+                    logger.info("Batch has no items yet, assuming processing")
+                    internal_status = 'processing'
             else:
-              # If we have items and none failed, assume completed
-              logger.info("No failed items found, assuming batch completed")
-              internal_status = 'completed'
-      else:
-        # Map Trendyol status to our status
-        status_mapping = {
-            'PROCESSING': 'processing',
-            'DONE': 'completed',
-            'FAILED': 'failed',
-            'SUCCESS': 'completed'
-        }
-
-        # If we don't have a standard status value, assume processing
-        internal_status = status_mapping.get(status, 'processing')
-        logger.info(
-            f"Using status from response: {status} -> {internal_status}")
+                # Check if there are items to analyze
+                items = response.get('items', [])
+                if not items:
+                    # Empty items list could mean the batch is still processing
+                    # Since we're getting a valid response with the batch ID, we'll assume it's in progress
+                    logger.info("Empty items list, assuming batch is still processing")
+                    internal_status = 'processing'
+                else:
+                    # Check if any items failed
+                    failed_items = [item for item in items if item.get('status') in ['FAILED', 'INVALID']]
+                    if failed_items:
+                        logger.info(f"Found {len(failed_items)} failed items")
+                        internal_status = 'failed'
+                    else:
+                        # If we have items and none failed, assume completed
+                        logger.info("No failed items found, assuming batch completed")
+                        internal_status = 'completed'
+        else:
+            # Map Trendyol status to our status
+            status_mapping = {
+                'PROCESSING': 'processing',
+                'DONE': 'completed',
+                'FAILED': 'failed',
+                'SUCCESS': 'completed'
+            }
+            
+            # If we don't have a standard status value, assume processing
+            internal_status = status_mapping.get(status, 'processing')
+            logger.info(f"Using status from response: {status} -> {internal_status}")
     else:
-      # If it's not a dictionary, handle it as a raw response (like string)
-      logger.info(f"Received non-dictionary response: {response}")
-
-      # Assume 'processing' status since we got a response but it's not in the expected format
-      # This is likely during the initial processing phase
-      internal_status = 'processing'
+        # If it's not a dictionary, handle it as a raw response (like string)
+        logger.info(f"Received non-dictionary response: {response}")
+        
+        # Assume 'processing' status since we got a response but it's not in the expected format
+        # This is likely during the initial processing phase
+        internal_status = 'processing'
 
     # Get error message if any
     error_message = ""
@@ -1929,12 +1806,12 @@ def check_product_batch_status(product: TrendyolProduct) -> str:
     product.batch_status = internal_status
     # Use a default status message if no error and we received a non-dictionary response
     if error_message:
-      product.status_message = error_message
+        product.status_message = error_message
     elif isinstance(response, dict):
-      status = response.get('status', 'unknown')
-      product.status_message = f"Batch status: {status}"
+        status = response.get('status', 'unknown')
+        product.status_message = f"Batch status: {status}"
     else:
-      product.status_message = f"Batch status: processing (raw response)"
+        product.status_message = f"Batch status: processing (raw response)"
     product.last_check_time = timezone.now()
 
     if internal_status == 'completed':
@@ -2224,16 +2101,6 @@ def lcwaikiki_to_trendyol_product(lcw_product) -> Optional[TrendyolProduct]:
     # Check if a Trendyol product already exists for this LCWaikiki product
     trendyol_product = TrendyolProduct.objects.filter(
         lcwaikiki_product=lcw_product).first()
-    
-    # If a product exists and is already successfully processed, just return it
-    if trendyol_product and trendyol_product.batch_status in ['success', 'completed'] and trendyol_product.trendyol_id:
-        logger.info(f"Product already successfully sent to Trendyol with ID: {trendyol_product.trendyol_id}")
-        return trendyol_product
-        
-    # If still processing, return as is to avoid duplicate submissions
-    if trendyol_product and trendyol_product.batch_status == 'processing' and trendyol_product.batch_id:
-        logger.info(f"Product is being processed by Trendyol with batch ID: {trendyol_product.batch_id}")
-        return trendyol_product
 
     # Extract and format product code properly
     product_code = None
@@ -2266,65 +2133,39 @@ def lcwaikiki_to_trendyol_product(lcw_product) -> Optional[TrendyolProduct]:
       discount = Decimal(lcw_product.discount_ratio) / Decimal('100')
       price = price * (Decimal('1.00') - discount)
 
-    # Process images with better error handling and validation
+    # Process images with better error handling
     images = []
-    
-    # Helper function to validate image URLs
-    def is_valid_image_url(url):
-        if not url:
-            return False
-        if not isinstance(url, str):
-            return False
-        # Reject admin panel URLs
-        if 'admin' in url:
-            return False
-        # Require proper protocol
-        if not url.startswith(('http://', 'https://')):
-            return False
-        # Check for common image file extensions or LCWaikiki image domains
-        if not any(ext in url.lower() for ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp']):
-            # For LCW, sometimes URLs don't have extensions, so check for image domains
-            if not any(domain in url.lower() for domain in ['img-lcwaikiki', 'mncdn', 'cloudfront', 'lcw.com']):
-                return False
-        return True
+    if lcw_product.images:
+      try:
+        if isinstance(lcw_product.images, str):
+          # Try to parse JSON string
+          images = json.loads(lcw_product.images)
+        elif isinstance(lcw_product.images, list):
+          images = lcw_product.images
 
-    # First check the image_url field directly
-    if hasattr(lcw_product, 'image_url') and is_valid_image_url(lcw_product.image_url):
-        images.append(lcw_product.image_url)
-        logger.info(f"Using direct image_url for product {lcw_product.id}: {lcw_product.image_url}")
-    
-    # Then process the images field
-    if lcw_product.images and not images:  # Only check if we haven't found a valid image yet
-        try:
-            img_list = lcw_product.images
-            if isinstance(img_list, str):
-                # Try to parse JSON string
-                img_list = json.loads(img_list)
-            
-            if isinstance(img_list, list):
-                # Filter valid image URLs
-                for img in img_list:
-                    if is_valid_image_url(str(img)):
-                        images.append(str(img))
-            
-            # Fix image URLs that don't have proper protocol
-            for i, img in enumerate(images):
-                if img and not img.startswith(('http://', 'https://')):
-                    images[i] = f"https:{img}" if img.startswith('//') else f"https://{img}"
-                    
-            logger.info(f"Processed {len(images)} images from images field for product {lcw_product.id}")
-        except json.JSONDecodeError:
-            logger.warning(f"Failed to decode images JSON for product {lcw_product.id}")
-        except Exception as e:
-            logger.warning(f"Error processing images for product {lcw_product.id}: {str(e)}")
+        # Ensure all image URLs are strings and properly formatted
+        images = [str(img) for img in images if img and 'http' in str(img)]
+
+        # Fix image URLs that don't have proper protocol
+        for i, img in enumerate(images):
+          if img and not img.startswith(('http://', 'https://')):
+            images[i] = f"https:{img}" if img.startswith(
+                '//') else f"https://{img}"
+      except json.JSONDecodeError:
+        logger.warning(
+            f"Failed to decode images JSON for product {lcw_product.id}")
+      except Exception as e:
+        logger.warning(
+            f"Error processing images for product {lcw_product.id}: {str(e)}")
 
     # If no images found, use a default placeholder image
     if not images:
-        # High-quality LCW default image
-        images = [
-            "https://img-lcwaikiki.mncdn.com/mnresize/1024/-/pim/productimages/20224/5841125/l_20224-w4bi51z8-ct5_a.jpg"
-        ]
-        logger.warning(f"No valid images found for product {lcw_product.id}, using placeholder")
+      images = [
+          "https://img-lcwaikiki.mncdn.com/mnresize/1024/-/pim/productimages/20224/5841125/l_20224-w4bi51z8-ct5_a.jpg"
+      ]
+      logger.warning(
+          f"No valid images found for product {lcw_product.id}, using placeholder"
+      )
 
     # Get quantity with fallback
     quantity = 10  # Default to 10 for better Trendyol acceptance
@@ -2476,46 +2317,39 @@ def lcwaikiki_to_trendyol_product(lcw_product) -> Optional[TrendyolProduct]:
       )
     else:
       # Update existing Trendyol product with latest LCWaikiki data
-      # If the product has a failed or error status, reset it to pending
-      if trendyol_product.batch_status in ['failed', 'error', 'pending', 'retry']:
-          # Only update if the product has previously failed or not yet been submitted
-          trendyol_product.title = lcw_product.title or trendyol_product.title or "LC Waikiki Product"
-          trendyol_product.description = lcw_product.description or lcw_product.title or trendyol_product.description or "LC Waikiki Product Description"
-          trendyol_product.price = price or trendyol_product.price or Decimal('100.00')
-          trendyol_product.quantity = quantity
-          trendyol_product.brand_id = brand_id or trendyol_product.brand_id
-          trendyol_product.category_id = category_id or trendyol_product.category_id
-          trendyol_product.pim_category_id = category_id or trendyol_product.pim_category_id
+      trendyol_product.title = lcw_product.title or trendyol_product.title or "LC Waikiki Product"
+      trendyol_product.description = lcw_product.description or lcw_product.title or trendyol_product.description or "LC Waikiki Product Description"
+      trendyol_product.price = price or trendyol_product.price or Decimal(
+          '100.00')
+      trendyol_product.quantity = quantity
+      trendyol_product.brand_id = brand_id or trendyol_product.brand_id
+      trendyol_product.category_id = category_id or trendyol_product.category_id
+      trendyol_product.pim_category_id = category_id or trendyol_product.pim_category_id
 
-          # Update attributes and add color if it exists
-          if hasattr(lcw_product, 'color') and lcw_product.color:
-              if not attributes:
-                  attributes = {}
-              attributes['color'] = lcw_product.color
+      # Update attributes and add color if it exists
+      if hasattr(lcw_product, 'color') and lcw_product.color:
+        if not attributes:
+          attributes = {}
+        attributes['color'] = lcw_product.color
 
-          trendyol_product.attributes = attributes
+      trendyol_product.attributes = attributes
 
-          # Only update barcode if it's not already been used with Trendyol
-          if not trendyol_product.trendyol_id:
-              trendyol_product.barcode = barcode
-              trendyol_product.product_main_id = product_code or barcode
-              trendyol_product.stock_code = product_code or barcode
+      # Only update barcode if it's not already been used with Trendyol
+      if not trendyol_product.trendyol_id and not trendyol_product.batch_status == 'completed':
+        trendyol_product.barcode = barcode
+        trendyol_product.product_main_id = product_code or barcode
+        trendyol_product.stock_code = product_code or barcode
 
-          # Update images if available
-          if images:
-              trendyol_product.image_url = images[0]
-              trendyol_product.additional_images = images[1:] if len(images) > 1 else []
+      # Update images if available
+      if images:
+        trendyol_product.image_url = images[0]
+        trendyol_product.additional_images = images[1:] if len(
+            images) > 1 else []
 
-          # Reset status to pending for retry
-          if trendyol_product.batch_status in ['failed', 'error']:
-              trendyol_product.batch_status = 'pending'
-              trendyol_product.status_message = "Retrying submission after previous failure"
-              logger.info(f"Resetting product {trendyol_product.id} status to pending for retry")
-
-          trendyol_product.save()
-          logger.info(f"Updated Trendyol product {trendyol_product.id} from LCW product {lcw_product.id}")
-      else:
-          logger.info(f"Not updating Trendyol product with status '{trendyol_product.batch_status}' to avoid disrupting current process")
+      trendyol_product.save()
+      logger.info(
+          f"Updated Trendyol product {trendyol_product.id} from LCW product {lcw_product.id}"
+      )
 
     return trendyol_product
   except Exception as e:

@@ -6,14 +6,10 @@ from django.db import transaction
 from django.db.models import Q
 from tqdm import tqdm
 
-# Import the updated API client module
+# Fix the import to reference the correct module
 from lcwaikiki.product_models import Product
 from trendyol.models import TrendyolProduct
-from trendyol.trendyol_api_working import (
-    get_api_client_from_config, find_best_category_match, find_best_brand_match,
-    create_trendyol_product, check_batch_status, check_product_batch_status,
-    sync_product_to_trendyol, batch_process_products
-)
+from trendyol import api_client
 
 logger = logging.getLogger(__name__)
 
@@ -51,12 +47,11 @@ class Command(BaseCommand):
         """
         try:
             self.stdout.write("Fetching brands from Trendyol...")
-            api_client = get_api_client_from_config()
-            brands = api_client.get_brands()
+            brands = api_client.fetch_brands()
             self.stdout.write(self.style.SUCCESS(f"Fetched {len(brands)} brands"))
             
             self.stdout.write("Fetching categories from Trendyol...")
-            categories = api_client.get_categories()
+            categories = api_client.fetch_categories()
             self.stdout.write(self.style.SUCCESS(f"Fetched {len(categories)} categories"))
         except Exception as e:
             self.stdout.write(self.style.ERROR(f"Error fetching reference data: {str(e)}"))
@@ -84,32 +79,15 @@ class Command(BaseCommand):
                 for lcw_product in lcw_products:
                     try:
                         with transaction.atomic():
-                            # Create a new Trendyol product from LCWaikiki product
-                            trendyol_product = TrendyolProduct.objects.create(
-                                title=lcw_product.title,
-                                barcode=lcw_product.sku or f"LCW-{lcw_product.id}",
-                                product_main_id=f"LCW-{lcw_product.id}",
-                                description=lcw_product.description,
-                                price=lcw_product.price,
-                                quantity=lcw_product.stock_count or 10,
-                                stock_code=lcw_product.sku or f"LCW-{lcw_product.id}",
-                                currency_type="TRY",
-                                vat_rate=20,
-                                brand_name="LCW",
-                                image_url=lcw_product.image_url,
-                                lcwaikiki_product=lcw_product
-                            )
+                            # Convert LCWaikiki product to Trendyol product
+                            trendyol_product = api_client.lcwaikiki_to_trendyol_product(lcw_product)
                             
-                            # Find appropriate category and brand
-                            trendyol_product.category_id = find_best_category_match(trendyol_product)
-                            trendyol_product.brand_id = find_best_brand_match(trendyol_product)
-                            trendyol_product.save()
-                            
-                            # Try to sync with Trendyol
-                            if sync_product_to_trendyol(trendyol_product):
+                            if trendyol_product:
+                                # Try to sync with Trendyol
+                                api_client.sync_product_to_trendyol(trendyol_product)
                                 self.stdout.write(self.style.SUCCESS(f"Synced product {lcw_product.title}"))
                             else:
-                                self.stdout.write(self.style.WARNING(f"Failed to sync product {lcw_product.title}"))
+                                self.stdout.write(self.style.WARNING(f"Could not create Trendyol product for {lcw_product.title}"))
                     except Exception as e:
                         self.stdout.write(self.style.ERROR(f"Error syncing product {lcw_product.title}: {str(e)}"))
                     finally:
@@ -136,8 +114,8 @@ class Command(BaseCommand):
                 with tqdm(total=len(processing_products), desc="Checking processing products") as progress_bar:
                     for product in processing_products:
                         try:
-                            result = check_product_batch_status(product)
-                            self.stdout.write(f"Product {product.title} status: {product.batch_status}")
+                            status = api_client.check_product_batch_status(product)
+                            self.stdout.write(f"Product {product.title} status: {status}")
                         except Exception as e:
                             self.stdout.write(self.style.ERROR(f"Error checking status for {product.title}: {str(e)}"))
                         finally:
@@ -166,18 +144,12 @@ class Command(BaseCommand):
                                     product.lcwaikiki_product.timestamp > product.last_sync_time):
                                     
                                     # Update Trendyol product from LCWaikiki data
-                                    product.title = product.lcwaikiki_product.title
-                                    product.description = product.lcwaikiki_product.description
-                                    product.price = product.lcwaikiki_product.price
-                                    product.quantity = product.lcwaikiki_product.stock_count or 10
-                                    product.image_url = product.lcwaikiki_product.image_url
-                                    product.save()
+                                    updated_product = api_client.lcwaikiki_to_trendyol_product(product.lcwaikiki_product)
                                     
-                                    # Sync with Trendyol
-                                    if sync_product_to_trendyol(product):
+                                    if updated_product:
+                                        # Sync with Trendyol
+                                        api_client.sync_product_to_trendyol(updated_product)
                                         self.stdout.write(self.style.SUCCESS(f"Updated product {product.title}"))
-                                    else:
-                                        self.stdout.write(self.style.WARNING(f"Failed to update product {product.title}"))
                         except Exception as e:
                             self.stdout.write(self.style.ERROR(f"Error updating product {product.title}: {str(e)}"))
                         finally:

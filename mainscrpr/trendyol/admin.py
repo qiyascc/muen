@@ -124,101 +124,58 @@ class TrendyolProductAdmin(ModelAdmin):
     
     def sync_with_trendyol(self, request, queryset):
         """
-        Synchronize selected products with Trendyol using the updated API client.
-        This implementation uses the direct working API endpoints.
+        Synchronize selected products with Trendyol.
         """
-        # Using the updated API client
-        from .trendyol_api_working import sync_product_to_trendyol, get_api_client_from_config
-        from django.utils import timezone
+        from . import api_client
         
-        # Verify API client is working
-        api_client = get_api_client_from_config()
-        if not api_client or not api_client.config:
-            self.message_user(request, "API istemcisi başlatılamadı. API yapılandırmasını kontrol edin.", level='error')
-            return
-            
-        self.message_user(request, f"API istemcisi başarıyla başlatıldı: {api_client.config.name} ({api_client.config.seller_id})")
-        
-        success_count = 0
-        error_count = 0
-        
+        count = 0
         for product in queryset:
             try:
-                # Set status to pending
-                product.batch_status = 'pending'
-                product.status_message = 'İşleme alındı'
-                product.save()
-                
-                self.message_user(request, f"'{product.title}' ürünü Trendyol'a gönderiliyor...")
-                
-                # Use the sync_product_to_trendyol function which properly handles the product
-                result = sync_product_to_trendyol(product)
-                
-                if result:
-                    # Update last sync time
-                    product.last_sync_time = timezone.now()
-                    product.save()
-                    
-                    success_count += 1
-                    self.message_user(request, f"'{product.title}' ürünü başarıyla senkronize edildi. Batch ID: {product.batch_id}")
-                else:
-                    error_count += 1
-                    self.message_user(request, f"'{product.title}' ürünü senkronize edilemedi. Detaylar: {product.status_message}", level='warning')
+                batch_id = api_client.create_trendyol_product(product)
+                if batch_id:
+                    count += 1
             except Exception as e:
-                error_count += 1
-                self.message_user(request, f"Hata: {product.title} için senkronizasyon hatası: {str(e)}", level='error')
+                self.message_user(request, f"Error syncing product {product.title}: {str(e)}", level='error')
         
-        summary = []
-        if success_count > 0:
-            summary.append(f"{success_count} ürün başarıyla senkronize edildi")
-        if error_count > 0:
-            summary.append(f"{error_count} ürün senkronize edilemedi")
-            
-        if summary:
-            self.message_user(request, ". ".join(summary) + ".")
-    
-    sync_with_trendyol.short_description = "Seçili ürünleri Trendyol ile senkronize et"
+        if count:
+            self.message_user(request, f"Successfully initiated sync for {count} products. Check status in a few minutes.")
+    sync_with_trendyol.short_description = "Sync selected products with Trendyol"
     
     def check_sync_status(self, request, queryset):
         """
-        Check synchronization status for selected products using the updated API client.
+        Check synchronization status for selected products.
         """
-        from .trendyol_api_working import check_product_batch_status
-        from django.utils import timezone
+        from . import api_client
         
         count = 0
         for product in queryset:
             if product.batch_id:
                 try:
-                    self.message_user(request, f"'{product.title}' ürününün batch durumu kontrol ediliyor...")
-                    result = check_product_batch_status(product)
-                    
-                    # The status is updated directly in the product by the check_product_batch_status function
-                    product.last_check_time = timezone.now()
-                    product.save()
-                    
-                    self.message_user(request, f"'{product.title}' durumu: {product.batch_status.upper()} - {product.status_message}")
+                    api_client.check_product_batch_status(product)
                     count += 1
                 except Exception as e:
-                    self.message_user(request, f"Hata: {product.title} durumu kontrol edilemedi: {str(e)}", level='error')
+                    self.message_user(request, f"Error checking status for {product.title}: {str(e)}", level='error')
         
         if count:
-            self.message_user(request, f"{count} ürünün durumu başarıyla kontrol edildi.")
+            self.message_user(request, f"Successfully checked status for {count} products.")
         else:
-            self.message_user(request, "Batch ID'ye sahip ürün bulunamadı.", level='warning')
-    check_sync_status.short_description = "Seçili ürünlerin senkronizasyon durumunu kontrol et"
+            self.message_user(request, "No products with batch IDs were found.", level='warning')
+    check_sync_status.short_description = "Check sync status for selected products"
     
     def retry_failed_products(self, request, queryset):
         """
-        Retry failed products with improved attribute handling using the updated API client.
-        Specifically uses the TrendyolAPI class which correctly formats attributes.
+        Retry failed products with improved attribute handling.
+        Specifically removes the problematic 'color' field and uses proper attribute IDs.
         """
-        from .trendyol_api_working import create_trendyol_product, get_api_client_from_config, TrendyolCategoryFinder
-        from django.utils import timezone
+        from . import api_client
         import json
         import re
         
-        # Color ID mapping for Trendyol
+        fixed_count = 0
+        success_count = 0
+        already_pending_count = 0
+        
+        # Color ID mapping to use numeric IDs instead of string values
         color_id_map = {
             'Beyaz': 1001, 
             'Siyah': 1002, 
@@ -235,22 +192,8 @@ class TrendyolProductAdmin(ModelAdmin):
             'Lacivert': 1013,
             'Turuncu': 1014,
             'Krem': 1015,
-            'Petrol': 1016
+            'Petrol': 1016   # Petrol rengini ekledik
         }
-        
-        fixed_count = 0
-        success_count = 0
-        already_pending_count = 0
-        
-        # Get API client and category finder
-        api_client = get_api_client_from_config()
-        if not api_client or not api_client.config:
-            self.message_user(request, "API istemcisi başlatılamadı. API yapılandırmasını kontrol edin.", level='error')
-            return
-            
-        self.message_user(request, f"API istemcisi başarıyla başlatıldı: {api_client.config.name} ({api_client.config.seller_id})")
-        
-        category_finder = TrendyolCategoryFinder(api_client)
         
         for product in queryset:
             try:
@@ -258,62 +201,72 @@ class TrendyolProductAdmin(ModelAdmin):
                 if product.batch_status in ['pending', 'processing']:
                     already_pending_count += 1
                     continue
+                    
+                # Step 1: Fix product attributes (extract color from title if possible)
+                color = None
+                if product.title:
+                    color_match = re.search(r'(Beyaz|Siyah|Mavi|Kirmizi|Pembe|Yeşil|Sarı|Mor|Gri|Kahverengi|Ekru|Bej|Lacivert|Turuncu|Krem|Petrol)', 
+                                            product.title, re.IGNORECASE)
+                    if color_match:
+                        color = color_match.group(1)
                 
-                self.message_user(request, f"'{product.title}' ürünü yeniden gönderiliyor...")
+                # Apply proper numeric color ID attribute
+                if color and color in color_id_map:
+                    color_id = color_id_map[color]
+                    product.attributes = [{"attributeId": 348, "attributeValueId": color_id}]
+                    fixed_count += 1
                 
                 # Set to pending status with a placeholder message
                 product.batch_status = 'pending'
-                product.status_message = 'Yeniden gönderim işlemi başlatıldı'
+                product.status_message = 'Pending retry after fix'
                 product.save()
                 
-                # Fix color attribute from title if possible
-                if not product.attributes or not any(attr.get('attributeId') == 348 for attr in product.attributes):
-                    color_match = re.search(r'(Beyaz|Siyah|Mavi|Kirmizi|Pembe|Yeşil|Sarı|Mor|Gri|Kahverengi|Ekru|Bej|Lacivert|Turuncu|Krem|Petrol)', 
-                                           product.title, re.IGNORECASE)
-                    if color_match:
-                        color = color_match.group(1)
-                        if color in color_id_map:
-                            color_id = color_id_map[color]
-                            product.attributes = [{"attributeId": 348, "attributeValueId": color_id}]
-                            fixed_count += 1
-                            self.message_user(request, f"Renk özelliği eklendi: {color} (ID: {color_id})")
+                # Step 2: Create a temporary function to prepare product data without the 'color' field
+                def prepare_product_data_fixed(product_obj):
+                    # Get standard product data
+                    data = api_client.prepare_product_data(product_obj)
+                    
+                    # Remove problematic 'color' field if it exists
+                    if 'color' in data:
+                        del data['color']
+                        
+                    return data
                 
-                # Find appropriate category if not set
-                if not product.category_id:
-                    product.category_id = category_finder.find_best_category(product.title, product.description)
-                    if product.category_id:
-                        fixed_count += 1
-                        self.message_user(request, f"Kategori bulundu: ID {product.category_id}")
-                
-                # Use create_trendyol_product function from trendyol_api_working.py
-                batch_id = create_trendyol_product(product)
-                if batch_id:
-                    product.batch_id = batch_id
-                    product.batch_status = 'processing'
-                    product.last_sync_time = timezone.now()
-                    product.save()
-                    success_count += 1
-                    self.message_user(request, f"'{product.title}' başarıyla gönderildi. Batch ID: {batch_id}")
-                else:
-                    self.message_user(request, f"'{product.title}' gönderilemedi.", level='warning')
+                # Step 3: Call API client with our modified data
+                client = api_client.get_api_client()
+                if client:
+                    # Prepare data using our fixed function
+                    api_data = prepare_product_data_fixed(product)
+                    if api_data:
+                        # Submit to API
+                        response = client.products.create_products([api_data])
+                        
+                        # Update status based on response
+                        if response and isinstance(response, dict) and 'batchId' in response:
+                            batch_id = response['batchId']
+                            product.batch_id = batch_id
+                            product.batch_status = 'processing'
+                            product.save()
+                            
+                            success_count += 1
             except Exception as e:
-                self.message_user(request, f"Hata: {product.title} için gönderim hatası: {str(e)}", level='error')
+                self.message_user(request, f"Error retrying product {product.title}: {str(e)}", level='error')
         
         # Report results
         message_parts = []
         if fixed_count:
-            message_parts.append(f"{fixed_count} ürünün özellikleri düzeltildi")
+            message_parts.append(f"Fixed attributes for {fixed_count} products")
         if success_count:
-            message_parts.append(f"{success_count} ürün başarıyla Trendyol'a gönderildi")
+            message_parts.append(f"Successfully submitted {success_count} products to Trendyol")
         if already_pending_count:
-            message_parts.append(f"{already_pending_count} ürün zaten işlemde olduğu için atlandı")
+            message_parts.append(f"Skipped {already_pending_count} products already in pending/processing state")
             
         if message_parts:
             self.message_user(request, ". ".join(message_parts) + ".")
         else:
-            self.message_user(request, "Yeniden gönderilecek uygun ürün bulunamadı.", level='warning')
+            self.message_user(request, "No products were eligible for retry.", level='warning')
     
-    retry_failed_products.short_description = "Başarısız ürünleri yeniden gönder (öznitelikleri düzelt)"
+    retry_failed_products.short_description = "Retry failed products (fix attributes & color)"
     
     def refresh_product_data(self, request, queryset):
         """
@@ -322,7 +275,7 @@ class TrendyolProductAdmin(ModelAdmin):
         """
         import re
         from django.utils import timezone
-        from lcwaikiki.product_models import Product as LCWaikikiProduct
+        from lcwaikiki.models import Product as LCWaikikiProduct
         
         updated_count = 0
         not_linked_count = 0
@@ -345,7 +298,7 @@ class TrendyolProductAdmin(ModelAdmin):
             'Lacivert': 1013,
             'Turuncu': 1014,
             'Krem': 1015,
-            'Petrol': 1016
+            'Petrol': 1016   # Petrol rengini ekledik
         }
         
         for product in queryset:
@@ -369,7 +322,7 @@ class TrendyolProductAdmin(ModelAdmin):
                         product.lcwaikiki_product = matching_product
                         self.message_user(
                             request, 
-                            f"'{product.title}' ürünü, LC Waikiki ürünü '{matching_product.title}' ile ilişkilendirildi.", 
+                            f"Linked product '{product.title}' to LCWaikiki product '{matching_product.title}'", 
                             level='success'
                         )
                     else:
@@ -379,8 +332,6 @@ class TrendyolProductAdmin(ModelAdmin):
                 # Get linked LCWaikiki product
                 lcw_product = product.lcwaikiki_product
                 if lcw_product:
-                    self.message_user(request, f"'{product.title}' ürünü LC Waikiki kaynağından güncelleniyor...")
-                    
                     # Update product data
                     product.title = lcw_product.title or product.title
                     product.description = lcw_product.description or product.description
@@ -400,28 +351,26 @@ class TrendyolProductAdmin(ModelAdmin):
                         color_id = color_id_map[color]
                         product.attributes = [{"attributeId": 348, "attributeValueId": color_id}]
                         attribute_fixed_count += 1
-                        self.message_user(request, f"Renk özelliği eklendi: {color} (ID: {color_id})")
                     
                     # Update timestamp
                     product.updated_at = timezone.now()
                     product.save()
                     updated_count += 1
-                    self.message_user(request, f"'{product.title}' ürünü başarıyla güncellendi.")
                 
             except Exception as e:
-                self.message_user(request, f"Hata: {product.title} güncellenirken sorun oluştu: {str(e)}", level='error')
+                self.message_user(request, f"Error refreshing product {product.title}: {str(e)}", level='error')
         
         # Report results
         if updated_count:
             self.message_user(
                 request, 
-                f"{updated_count} ürün başarıyla güncellendi. {attribute_fixed_count} ürünün renk özellikleri düzeltildi."
+                f"Successfully refreshed {updated_count} products. Fixed attributes for {attribute_fixed_count} products."
             )
         if not_linked_count:
             self.message_user(
                 request, 
-                f"{not_linked_count} ürün için LC Waikiki verisi bulunamadı.", 
+                f"Could not find LCWaikiki data for {not_linked_count} products.", 
                 level='warning'
             )
     
-    refresh_product_data.short_description = "LC Waikiki'den ürün verilerini güncelle"
+    refresh_product_data.short_description = "Refresh product data from LCWaikiki"

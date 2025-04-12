@@ -11,7 +11,6 @@ class TrendyolAPIConfig(models.Model):
     name = models.CharField(max_length=100, help_text="Name for this configuration")
     seller_id = models.CharField(max_length=100, help_text="Trendyol Seller ID")
     api_key = models.CharField(max_length=255, help_text="Trendyol API Key")
-    auth_token = models.CharField(max_length=255, blank=True, help_text='Base64 encoded auth token')
     api_secret = models.CharField(max_length=255, help_text="Trendyol API Secret")
     base_url = models.URLField(default="https://api.trendyol.com/sapigw", help_text="Trendyol API base URL - should be 'https://api.trendyol.com/sapigw'")
     user_agent = models.CharField(max_length=150, blank=True, help_text="User-Agent header for API requests. Format: 'SellerID - SelfIntegration'")
