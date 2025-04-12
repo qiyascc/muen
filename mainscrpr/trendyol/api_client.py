@@ -40,19 +40,29 @@ class TrendyolApi:
 
   def make_request(self, method, endpoint, data=None, params=None):
     """Make a request to the Trendyol API"""
+    # Endpoint işlenmeden önce debug logu
+    print(f"[DEBUG-API] make_request çağrısı. Orijinal endpoint: {endpoint}")
+    
     # Make sure endpoint starts with a slash
     if not endpoint.startswith('/'):
         endpoint = f'/{endpoint}'
+        print(f"[DEBUG-API] Endpoint başına / eklendi: {endpoint}")
         
     # Remove any duplicate /integration prefix from the endpoint
     if endpoint.startswith('/integration') and 'integration' in self.api_url:
+        endpoint_before = endpoint
         endpoint = endpoint.replace('/integration', '', 1)
+        print(f"[DEBUG-API] /integration prefix kaldırıldı: {endpoint_before} -> {endpoint}")
     
     # Build the URL with proper formatting
     url = f"{self.api_url}{endpoint}"
+    print(f"[DEBUG-API] Oluşturulan URL: {url}")
     
     # Additional safeguard against duplicate integration paths
+    url_before = url
     url = url.replace('/integration/integration/', '/integration/')
+    if url != url_before:
+        print(f"[DEBUG-API] Duplicate integration fixes: {url_before} -> {url}")
 
     # Format the auth string and encode as Base64 for Basic Authentication
     auth_string = f"{self.api_key}:{self.api_secret}"
@@ -64,7 +74,12 @@ class TrendyolApi:
         'User-Agent': self.user_agent,
     }
 
-    logger.info(f"Making {method} request to {url}")
+    # Debug bilgilerini detaylı yazdır
+    print(f"[DEBUG-API] SON İSTEK: {method} {url}")
+    print(f"[DEBUG-API] İSTEK HEADERS: {headers}")
+    logger.info(f"Making request: {method} {url}")
+    logger.info(f"Request headers: {headers}")
+    
     if data:
       logger.info(f"Request data: {json.dumps(data)}")
 
@@ -272,10 +287,22 @@ class ProductsAPI:
     # Tüm batch ID'yi olduğu gibi kullanacağız - UUID kısmını çıkarmadan
     # Batch ID'yi parçalamak API hatalarına neden olabilir
     
+    # Debugging - bu fonksiyona gelen batch ID
+    print(f"[DEBUG-API] _get_batch_request_endpoint fonksiyonuna gelen batch ID: {batch_id}")
+    
+    # Eğer '-' varsa, bu kısım için özel debug yapalım
+    if '-' in batch_id:
+        original_id = batch_id
+        uuid_part = batch_id.split('-')[0]
+        print(f"[DEBUG-API] [UYARI BUNU DEĞİŞTİRMİYORUZ] Orijinal ID: {original_id}, UUID kısmı: {uuid_part}")
+        
     # Log for debugging purposes
     logger.info(f"Using full batch ID for request: {batch_id}")
+    
+    endpoint = f'/integration/product/sellers/{self.client.supplier_id}/products/batch-requests/{batch_id}'
+    print(f"[DEBUG-API] Oluşturulan endpoint: {endpoint}")
       
-    return f'/integration/product/sellers/{self.client.supplier_id}/products/batch-requests/{batch_id}'
+    return endpoint
 
   def create_products(self, products):
     """Create products on Trendyol"""
@@ -299,19 +326,35 @@ class ProductsAPI:
     if not batch_id:
       logger.warning("Attempted to check batch status with empty batch ID")
       return None
+    
+    # Debugging için orijinal batch ID'yi yazdır
+    print(f"[DEBUG-API] get_batch_request_status fonksiyonuna gelen orijinal batch ID: {batch_id}")
+    
+    # Orijinal değeri sakla ve log'la
+    original_batch_id = batch_id
       
-    # Batch ID'yi olduğu gibi kullan, herhangi bir işlem yapma
     # Eğer URL ise sadece son kısmı al
     if '/' in batch_id:
       # Handle potential URL format
       batch_id = batch_id.split('/')[-1]
+      print(f"[DEBUG-API] URL biçimi algılandı, temizlendi: {batch_id}")
     
     # Trim any whitespace
     batch_id = batch_id.strip()
     
+    # Debug için orijinal ve kullanılan batch ID'yi karşılaştır
+    print(f"[DEBUG-API] Orijinal batch ID: {original_batch_id}")
+    print(f"[DEBUG-API] Kullanılan batch ID: {batch_id}")
+    
+    # ÖNEMLİ! Orijinal batch ID'yi kullan!
+    batch_id = original_batch_id
+    print(f"[DEBUG-API] SON KARAR: Orijinal batch ID kullanılacak: {batch_id}")
+    
     logger.info(f"Checking batch status for batch ID: {batch_id}")
     
     endpoint = self._get_batch_request_endpoint(batch_id)
+    print(f"[DEBUG-API] Oluşturulan API endpoint: {endpoint}")
+    
     response = self.client.make_request('GET', endpoint)
     
     # Log the response for debugging

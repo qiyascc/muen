@@ -101,8 +101,11 @@ class BatchStatusView(TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         
-        batch_id = kwargs.get('batch_id')
-        context['batch_id'] = batch_id
+        original_batch_id = kwargs.get('batch_id')
+        context['batch_id'] = original_batch_id
+        
+        # DEBUG: Konsola tam batch ID'yi yazdır (original_batch_id)
+        print(f"[DEBUG-VIEW] Orijinal batch ID: {original_batch_id}")
         
         # Get the API client
         client = get_api_client()
@@ -111,10 +114,14 @@ class BatchStatusView(TemplateView):
             return context
         
         try:
-            # Tam batch ID'yi olduğu gibi kullan - regex kaldırıldı
-            # İstek doğrudan orijinal ID ile yapılacak 
-            # Daha önce sadece UUID veya timestamp kullanılıyordu, şimdi tüm ID kullanılacak
-            batch_id = batch_id
+            # Debug için batch ID'yi yazdır, API istemcisine gönderilmeden önce
+            print(f"[DEBUG-VIEW] API istemcisine gönderilecek batch ID: {original_batch_id}")
+            
+            # Batch ID'yi değiştirmeden kullan (orijinal olarak tut)
+            batch_id = original_batch_id
+            
+            # Debug için son durumu yazdır
+            print(f"[DEBUG-VIEW] API isteği öncesi son batch ID: {batch_id}")
             
             # Get batch status from API
             response = client.products.get_batch_request_status(batch_id)
