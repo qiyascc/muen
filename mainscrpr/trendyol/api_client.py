@@ -1528,9 +1528,12 @@ def create_trendyol_product(product: TrendyolProduct) -> Optional[str]:
     error messages to make debugging easier. It validates required fields
     before submission and properly logs all operations.
     """
+  print(f"[DEBUG-CREATE] Ürün oluşturma başlatılıyor: ID={product.id}, Başlık={product.title}")
+  
   client = get_api_client()
   if not client:
     error_message = "No active Trendyol API configuration found"
+    print(f"[DEBUG-CREATE] HATA: API yapılandırması bulunamadı")
     logger.error(error_message)
     product.batch_status = 'failed'
     product.status_message = error_message
@@ -1539,10 +1542,13 @@ def create_trendyol_product(product: TrendyolProduct) -> Optional[str]:
 
   try:
     # Prepare product data
+    print(f"[DEBUG-CREATE] Ürün verileri hazırlanıyor...")
     try:
       product_data = prepare_product_data(product)
+      print(f"[DEBUG-CREATE] Hazırlanan ürün verileri: {json.dumps(product_data, ensure_ascii=False, default=str)[:250]}...")
     except ValueError as e:
       error_message = f"Error preparing product data: {str(e)}"
+      print(f"[DEBUG-CREATE] HATA: Ürün verileri hazırlanamadı: {str(e)}")
       logger.error(f"{error_message} for product ID {product.id}")
       product.batch_status = 'failed'
       product.status_message = error_message
@@ -1568,11 +1574,13 @@ def create_trendyol_product(product: TrendyolProduct) -> Optional[str]:
       return None
 
     # Create the product on Trendyol
+    print(f"[DEBUG-CREATE] Trendyol'a ürün gönderiliyor...")
     logger.info(
         f"Submitting product '{product.title}' (ID: {product.id}) to Trendyol")
     logger.info(
         f"Product data: {json.dumps(product_data, default=str, indent=2)}")
     response = client.products.create_products([product_data])
+    print(f"[DEBUG-CREATE] Trendyol'dan gelen yanıt: {json.dumps(response, ensure_ascii=False, default=str)}")
 
     # Handle different response error scenarios
     if not response:
@@ -1660,21 +1668,38 @@ def check_product_batch_status(product: TrendyolProduct) -> str:
     We need to handle these different response types and determine the status.
     """
   if not product.batch_id:
+    print(f"[DEBUG-BATCH] Ürün ID: {product.id} için batch ID bulunamadı")
     product.batch_status = 'failed'
     product.status_message = "No batch ID available to check status"
     product.save()
     return 'failed'
+    
+  # Batch ID'yi yazdır
+  original_batch_id = product.batch_id
+  print(f"[DEBUG-BATCH] Ürün ID: {product.id} için orijinal batch ID: {original_batch_id}")
+  
+  # Batch ID'de herhangi bir işleme yapılıyor mu kontrol et
+  if '-' in original_batch_id:
+    uuid_part = original_batch_id.split('-')[0]
+    print(f"[DEBUG-BATCH] UUID kısmı: {uuid_part}, Tam batch ID: {original_batch_id}")
+  else:
+    print(f"[DEBUG-BATCH] Batch ID UUID formatında değil: {original_batch_id}")
 
   client = get_api_client()
   if not client:
+    print(f"[DEBUG-BATCH] Aktif Trendyol API yapılandırması bulunamadı")
     product.batch_status = 'failed'
     product.status_message = "No active Trendyol API configuration found"
     product.save()
     return 'failed'
 
   try:
-    # Check batch status
+    # Check batch status - tam batch ID kullanıldığından emin olalım
+    print(f"[DEBUG-BATCH] API istemcisine gönderilecek batch ID: {product.batch_id}")
+    print(f"[DEBUG-BATCH] Batch durumu kontrol ediliyor...")
+    
     response = client.products.get_batch_request_status(product.batch_id)
+    print(f"[DEBUG-BATCH] Trendyol API'den gelen yanıt: {response}")
     logger.info(f"Batch status response for product {product.id}: {response}")
 
     if not response:
