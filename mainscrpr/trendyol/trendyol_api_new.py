@@ -452,8 +452,27 @@ class TrendyolProductManager:
         # Parse images
         images = []
         
+        # Default image if all else fails - this is a valid LCW image
+        default_image = "https://img-lcwaikiki.mncdn.com/mnresize/1024/-/pim/productimages/20224/5841125/l_20224-w4bi51z8-ct5_a.jpg"
+        
+        # Validate image URL - must be a proper image URL, not an admin URL
+        def is_valid_image_url(url):
+            if not url:
+                return False
+            if not isinstance(url, str):
+                return False
+            if 'admin' in url:
+                return False
+            if not url.startswith(('http://', 'https://')):
+                return False
+            if not any(ext in url.lower() for ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp']):
+                # For LCW, sometimes URLs don't have extensions, so check for image domains
+                if not any(domain in url.lower() for domain in ['img-lcwaikiki', 'mncdn', 'cloudfront']):
+                    return False
+            return True
+        
         # Add the main image if available
-        if hasattr(product, 'image_url') and product.image_url:
+        if hasattr(product, 'image_url') and product.image_url and is_valid_image_url(product.image_url):
             images.append({"url": product.image_url})
         
         # Add additional images if available
@@ -461,9 +480,9 @@ class TrendyolProductManager:
             try:
                 if isinstance(product.additional_images, list):
                     for img in product.additional_images:
-                        if isinstance(img, str) and img.strip():
+                        if isinstance(img, str) and img.strip() and is_valid_image_url(img.strip()):
                             images.append({"url": img.strip()})
-                        elif isinstance(img, dict) and 'url' in img and img['url'].strip():
+                        elif isinstance(img, dict) and 'url' in img and img['url'].strip() and is_valid_image_url(img['url'].strip()):
                             images.append({"url": img['url'].strip()})
             except Exception as e:
                 logger.warning(f"Error processing additional images: {str(e)}")
@@ -473,7 +492,20 @@ class TrendyolProductManager:
             # Try lcwaikiki_product relation if exists
             if hasattr(product, 'lcwaikiki_product') and product.lcwaikiki_product:
                 lc_product = product.lcwaikiki_product
-                if hasattr(lc_product, 'image_url') and lc_product.image_url:
+                if hasattr(lc_product, 'images') and lc_product.images:
+                    try:
+                        img_list = lc_product.images
+                        if isinstance(img_list, str):
+                            import json
+                            img_list = json.loads(img_list)
+                        if isinstance(img_list, list) and len(img_list) > 0:
+                            for img in img_list:
+                                if isinstance(img, str) and is_valid_image_url(img):
+                                    images.append({"url": img})
+                    except Exception as e:
+                        logger.warning(f"Error processing LCW product images: {str(e)}")
+                
+                if hasattr(lc_product, 'image_url') and lc_product.image_url and is_valid_image_url(lc_product.image_url):
                     images.append({"url": lc_product.image_url})
         
         # Prepare title - limit to 100 characters and normalize whitespace
@@ -484,6 +516,11 @@ class TrendyolProductManager:
             # Normalize whitespace to single spaces
             import re
             title = re.sub(r'\s+', ' ', title).strip()
+        
+        # If we still don't have any valid images, add the default image
+        if not images:
+            images.append({"url": default_image})
+            logger.warning(f"Using default image for product {product.barcode}")
         
         # Build the product item
         item = {
