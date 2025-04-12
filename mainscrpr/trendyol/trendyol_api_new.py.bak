@@ -469,7 +469,7 @@ class TrendyolProductManager:
                 "cargoCompanyId": 17,  # Fixed cargo company ID
                 "images": image_urls if image_urls else [{"url": ""}],
                 "attributes": validated_attributes,
-                "gender": {"id": 1}  # Default to Unisex
+                  # Default to Unisex
             }]
         }
 
