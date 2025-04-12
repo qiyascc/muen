@@ -1512,9 +1512,7 @@ def prepare_product_data(product: TrendyolProduct) -> Dict[str, Any]:
       # Removed shipmentAddressId per request
       # Removed deliveryDuration per request
       # Removed pimCategoryId per request
-      "gender": {
-          "id": 1  # Default to Unisex
-      },
+      # Removed gender field - will be handled through attributes
       "attributes": attributes,
   }
 

@@ -202,53 +202,25 @@ class TrendyolProductAdmin(ModelAdmin):
                     already_pending_count += 1
                     continue
                     
-                # Step 1: Fix product attributes (extract color from title if possible)
-                color = None
-                if product.title:
-                    color_match = re.search(r'(Beyaz|Siyah|Mavi|Kirmizi|Pembe|Yeşil|Sarı|Mor|Gri|Kahverengi|Ekru|Bej|Lacivert|Turuncu|Krem|Petrol)', 
-                                            product.title, re.IGNORECASE)
-                    if color_match:
-                        color = color_match.group(1)
-                
-                # Apply proper numeric color ID attribute
-                if color and color in color_id_map:
-                    color_id = color_id_map[color]
-                    product.attributes = [{"attributeId": 348, "attributeValueId": color_id}]
-                    fixed_count += 1
+                # Clear existing attributes to let the API provide the correct ones
+                product.attributes = []
+                fixed_count += 1
                 
                 # Set to pending status with a placeholder message
                 product.batch_status = 'pending'
                 product.status_message = 'Pending retry after fix'
                 product.save()
                 
-                # Step 2: Create a temporary function to prepare product data without the 'color' field
-                def prepare_product_data_fixed(product_obj):
-                    # Get standard product data
-                    data = api_client.prepare_product_data(product_obj)
-                    
-                    # Remove problematic 'color' field if it exists
-                    if 'color' in data:
-                        del data['color']
-                        
-                    return data
+                # Step 2: Just use the regular prepare_product_data - no need for customization
+                # as we've already cleared attributes and removed the gender field
                 
-                # Step 3: Call API client with our modified data
-                client = api_client.get_api_client()
-                if client:
-                    # Prepare data using our fixed function
-                    api_data = prepare_product_data_fixed(product)
-                    if api_data:
-                        # Submit to API
-                        response = client.products.create_products([api_data])
-                        
-                        # Update status based on response
-                        if response and isinstance(response, dict) and 'batchId' in response:
-                            batch_id = response['batchId']
-                            product.batch_id = batch_id
-                            product.batch_status = 'processing'
-                            product.save()
-                            
-                            success_count += 1
+                # Call the standard API client which now works correctly without color field
+                try:
+                    batch_id = api_client.create_trendyol_product(product)
+                    if batch_id:
+                        success_count += 1
+                except Exception as e:
+                    self.message_user(request, f"API error for {product.title}: {str(e)}", level='error')
             except Exception as e:
                 self.message_user(request, f"Error retrying product {product.title}: {str(e)}", level='error')
         
@@ -338,19 +310,10 @@ class TrendyolProductAdmin(ModelAdmin):
                     product.price = lcw_product.price or product.price
                     product.image_url = lcw_product.images[0] if lcw_product.images else product.image_url
                     
-                    # Fix color attribute
-                    color = lcw_product.color or None
-                    if not color and product.title:
-                        color_match = re.search(r'(Beyaz|Siyah|Mavi|Kirmizi|Pembe|Yeşil|Sarı|Mor|Gri|Kahverengi|Ekru|Bej|Lacivert|Turuncu|Krem|Petrol)', 
-                                               product.title, re.IGNORECASE)
-                        if color_match:
-                            color = color_match.group(1)
-                    
-                    # Apply proper numeric color ID attribute
-                    if color and color in color_id_map:
-                        color_id = color_id_map[color]
-                        product.attributes = [{"attributeId": 348, "attributeValueId": color_id}]
-                        attribute_fixed_count += 1
+                        # Atributes are now set by the API automatically
+                    # Clear any existing attributes to let the API handle them correctly
+                    product.attributes = []
+                    attribute_fixed_count += 1
                     
                     # Update timestamp
                     product.updated_at = timezone.now()
