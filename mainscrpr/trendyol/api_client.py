@@ -2249,39 +2249,65 @@ def lcwaikiki_to_trendyol_product(lcw_product) -> Optional[TrendyolProduct]:
       discount = Decimal(lcw_product.discount_ratio) / Decimal('100')
       price = price * (Decimal('1.00') - discount)
 
-    # Process images with better error handling
+    # Process images with better error handling and validation
     images = []
-    if lcw_product.images:
-      try:
-        if isinstance(lcw_product.images, str):
-          # Try to parse JSON string
-          images = json.loads(lcw_product.images)
-        elif isinstance(lcw_product.images, list):
-          images = lcw_product.images
+    
+    # Helper function to validate image URLs
+    def is_valid_image_url(url):
+        if not url:
+            return False
+        if not isinstance(url, str):
+            return False
+        # Reject admin panel URLs
+        if 'admin' in url:
+            return False
+        # Require proper protocol
+        if not url.startswith(('http://', 'https://')):
+            return False
+        # Check for common image file extensions or LCWaikiki image domains
+        if not any(ext in url.lower() for ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp']):
+            # For LCW, sometimes URLs don't have extensions, so check for image domains
+            if not any(domain in url.lower() for domain in ['img-lcwaikiki', 'mncdn', 'cloudfront', 'lcw.com']):
+                return False
+        return True
 
-        # Ensure all image URLs are strings and properly formatted
-        images = [str(img) for img in images if img and 'http' in str(img)]
-
-        # Fix image URLs that don't have proper protocol
-        for i, img in enumerate(images):
-          if img and not img.startswith(('http://', 'https://')):
-            images[i] = f"https:{img}" if img.startswith(
-                '//') else f"https://{img}"
-      except json.JSONDecodeError:
-        logger.warning(
-            f"Failed to decode images JSON for product {lcw_product.id}")
-      except Exception as e:
-        logger.warning(
-            f"Error processing images for product {lcw_product.id}: {str(e)}")
+    # First check the image_url field directly
+    if hasattr(lcw_product, 'image_url') and is_valid_image_url(lcw_product.image_url):
+        images.append(lcw_product.image_url)
+        logger.info(f"Using direct image_url for product {lcw_product.id}: {lcw_product.image_url}")
+    
+    # Then process the images field
+    if lcw_product.images and not images:  # Only check if we haven't found a valid image yet
+        try:
+            img_list = lcw_product.images
+            if isinstance(img_list, str):
+                # Try to parse JSON string
+                img_list = json.loads(img_list)
+            
+            if isinstance(img_list, list):
+                # Filter valid image URLs
+                for img in img_list:
+                    if is_valid_image_url(str(img)):
+                        images.append(str(img))
+            
+            # Fix image URLs that don't have proper protocol
+            for i, img in enumerate(images):
+                if img and not img.startswith(('http://', 'https://')):
+                    images[i] = f"https:{img}" if img.startswith('//') else f"https://{img}"
+                    
+            logger.info(f"Processed {len(images)} images from images field for product {lcw_product.id}")
+        except json.JSONDecodeError:
+            logger.warning(f"Failed to decode images JSON for product {lcw_product.id}")
+        except Exception as e:
+            logger.warning(f"Error processing images for product {lcw_product.id}: {str(e)}")
 
     # If no images found, use a default placeholder image
     if not images:
-      images = [
-          "https://img-lcwaikiki.mncdn.com/mnresize/1024/-/pim/productimages/20224/5841125/l_20224-w4bi51z8-ct5_a.jpg"
-      ]
-      logger.warning(
-          f"No valid images found for product {lcw_product.id}, using placeholder"
-      )
+        # High-quality LCW default image
+        images = [
+            "https://img-lcwaikiki.mncdn.com/mnresize/1024/-/pim/productimages/20224/5841125/l_20224-w4bi51z8-ct5_a.jpg"
+        ]
+        logger.warning(f"No valid images found for product {lcw_product.id}, using placeholder")
 
     # Get quantity with fallback
     quantity = 10  # Default to 10 for better Trendyol acceptance
