@@ -275,7 +275,7 @@ class TrendyolProductAdmin(ModelAdmin):
         """
         import re
         from django.utils import timezone
-        from lcwaikiki.models import Product as LCWaikikiProduct
+        from lcwaikiki.product_models import Product as LCWaikikiProduct
         
         updated_count = 0
         not_linked_count = 0
