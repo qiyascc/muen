@@ -7,186 +7,146 @@ error, ensuring that all products have a valid color attribute in the correct fo
 Run this script with: python manage.py shell < fix_color_attributes.py
 """
 
+import json
+import logging
 import os
 import sys
-import re
-import django
-import json
 
-# Setup Django
+# Set up Django environment
+import django
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "mainscrpr.settings")
 django.setup()
 
 from trendyol.models import TrendyolProduct
-from trendyol.api_client import get_api_client, prepare_product_data, sync_product_to_trendyol
+from trendyol.fetch_api_data import get_color_attribute_id, get_color_value_id
 
-# Color mapping for Trendyol (Renk attributeId is 348)
-COLOR_ID_MAP = {
-    'Beyaz': 686230,
-    'Siyah': 686234,
-    'Mavi': 686239,
-    'Kırmızı': 686241,
-    'Pembe': 686247,
-    'Yeşil': 686238,
-    'Sarı': 686245,
-    'Mor': 686246,
-    'Gri': 686233,
-    'Kahverengi': 686231,
-    'Ekru': 686236,
-    'Bej': 686228,
-    'Lacivert': 686232,
-    'Turuncu': 686244,
-    'Krem': 686251,
-    # Add more accurate color IDs as needed
-}
+# Set up logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 def fix_color_attribute(product):
     """
     Ensure product has a valid color attribute in the correct format
     """
-    changed = False
-    
-    # Extract color from title or source product
-    color = None
-    color_match = None
-    
-    if product.title:
-        # Try different Turkish color patterns with case insensitivity
-        color_pattern = r'(Beyaz|Siyah|Mavi|Kırmızı|Pembe|Yeşil|Sarı|Mor|Gri|Kahverengi|Ekru|Bej|Lacivert|Turuncu|Krem|Sari|Yesil|Kirmizi)'
-        color_match = re.search(color_pattern, product.title, re.IGNORECASE)
+    try:
+        # Get the product's attributes
+        attributes = product.attributes
         
-    if color_match:
-        color = color_match.group(1)
-        # Normalize Turkish characters (handle both with and without accents)
-        color_map = {
-            'Yesil': 'Yeşil',
-            'Sari': 'Sarı',
-            'Kirmizi': 'Kırmızı'
-        }
-        color = color_map.get(color, color)
-    
-    # If no color found in title, check if linked to a source product with color
-    if not color and hasattr(product, 'lcwaikiki_product') and product.lcwaikiki_product:
-        if hasattr(product.lcwaikiki_product, 'color') and product.lcwaikiki_product.color:
-            color = product.lcwaikiki_product.color
-    
-    # Default to black if no color found
-    if not color:
-        color = 'Siyah'
-        print(f"No color found for product {product.id}, defaulting to {color}")
-    
-    # Get color ID from mapping
-    color_id = COLOR_ID_MAP.get(color)
-    if not color_id:
-        color = 'Siyah'  # Default to black if undefined color
-        color_id = COLOR_ID_MAP[color]
-        print(f"Unmapped color {color} for product {product.id}, defaulting to Siyah")
-    
-    # Initialize attributes if None
-    if product.attributes is None:
-        product.attributes = []
-        changed = True
-    
-    # Check if existing attributes are a string and try to parse them
-    if isinstance(product.attributes, str):
-        try:
-            product.attributes = json.loads(product.attributes)
-            changed = True
-            print(f"Converted string attributes to JSON for product {product.id}")
-        except Exception as e:
-            print(f"Error parsing attribute string for product {product.id}: {str(e)}")
-            product.attributes = []
-            changed = True
-    
-    # Find existing color attribute (attributeId 348 is for color in Trendyol)
-    color_attribute_exists = False
-    for i, attr in enumerate(product.attributes):
-        if isinstance(attr, dict) and attr.get('attributeId') == 348:
-            if attr.get('attributeValueId') != color_id:
-                product.attributes[i]['attributeValueId'] = color_id
-                changed = True
-                print(f"Updated color attribute for product {product.id} to {color} (ID: {color_id})")
-            color_attribute_exists = True
-            break
-    
-    # Add color attribute if it doesn't exist
-    if not color_attribute_exists:
-        product.attributes.append({
-            "attributeId": 348,
-            "attributeValueId": color_id
-        })
-        changed = True
-        print(f"Added color attribute for product {product.id}: {color} (ID: {color_id})")
-    
-    # Save if changes were made
-    if changed:
+        # Check if attributes is a string, and if so, convert to object
+        if isinstance(attributes, str):
+            try:
+                attributes = json.loads(attributes)
+            except json.JSONDecodeError:
+                attributes = []
+        
+        # If attributes is None, initialize as empty list
+        if attributes is None:
+            attributes = []
+        
+        # Ensure attributes is a list
+        if not isinstance(attributes, list):
+            if isinstance(attributes, dict):
+                # Convert dict to list format expected by API
+                attributes_list = []
+                for key, value in attributes.items():
+                    if key.isdigit():
+                        attributes_list.append({
+                            'attributeId': int(key),
+                            'attributeValueId': value
+                        })
+                    else:
+                        attributes_list.append({
+                            'attributeId': key,
+                            'attributeValueId': value
+                        })
+                attributes = attributes_list
+            else:
+                attributes = []
+        
+        # Check if there's already a color attribute
+        has_color = False
+        color_attribute_id = get_color_attribute_id(product.category_id)
+        
+        for attr in attributes:
+            if attr.get('attributeId') == color_attribute_id:
+                has_color = True
+                break
+        
+        # If no color attribute, try to determine a sensible default
+        if not has_color:
+            # Try to extract color from title or description
+            color_keywords = {
+                'Beyaz': 'Beyaz',
+                'Siyah': 'Siyah',
+                'Mavi': 'Mavi',
+                'Kırmızı': 'Kirmizi',
+                'Pembe': 'Pembe',
+                'Yeşil': 'Yeşil',
+                'Sarı': 'Sarı',
+                'Mor': 'Mor',
+                'Gri': 'Gri',
+                'Kahverengi': 'Kahverengi',
+                'Lacivert': 'Lacivert',
+                'Turuncu': 'Turuncu',
+                'Bej': 'Bej',
+                'Ekru': 'Ekru',
+                'Krem': 'Krem',
+                'Petrol': 'Petrol'
+            }
+            
+            found_color = None
+            for color, api_color in color_keywords.items():
+                if color.lower() in product.title.lower() or (product.description and color.lower() in product.description.lower()):
+                    found_color = api_color
+                    break
+            
+            # Default to "Bej" if no color found, as this is a safe neutral
+            if not found_color:
+                found_color = "Bej"
+            
+            # Get the color value ID
+            color_value_id = get_color_value_id(product.category_id, found_color)
+            
+            # Add the color attribute
+            attributes.append({
+                'attributeId': color_attribute_id,
+                'attributeValueId': color_value_id
+            })
+            
+            logger.info(f"Added color '{found_color}' to product {product.id} ({product.title})")
+        
+        # Update the product's attributes
+        product.attributes = attributes
         product.save()
-        print(f"Saved changes to product {product.id}")
-    
-    return changed, color
+        
+        return True
+    except Exception as e:
+        logger.error(f"Error fixing color attribute for product {product.id}: {str(e)}")
+        return False
 
 def main():
     """Fix color attributes for Trendyol products"""
-    # Get failed products with color-related errors
-    failed_products = TrendyolProduct.objects.filter(
-        batch_status='failed',
-        status_message__contains='Renk'
-    )
-    print(f"Found {failed_products.count()} products with color-related failures")
+    # Get all products
+    products = TrendyolProduct.objects.all()
+    total = products.count()
+    success = 0
+    failed = 0
     
-    # Also get pending products that haven't been processed yet
-    pending_products = TrendyolProduct.objects.filter(batch_status='pending')
-    print(f"Found {pending_products.count()} pending products")
+    logger.info(f"Found {total} products to process")
     
-    # Get all products for comprehensive fix
-    all_products = TrendyolProduct.objects.all()
-    print(f"Total products in database: {all_products.count()}")
-    
-    # Process each failed product first
-    fixed_count = 0
-    retried_count = 0
-    success_count = 0
-    
-    print("\n===== Processing failed products with color errors =====")
-    for product in failed_products:
-        print(f"Processing product {product.id}: {product.title}")
-        print(f"Current status: {product.batch_status}, Error: {product.status_message}")
+    # Process each product
+    for product in products:
+        result = fix_color_attribute(product)
+        if result:
+            success += 1
+        else:
+            failed += 1
         
-        # Fix color attribute
-        fixed, color = fix_color_attribute(product)
-        if fixed:
-            fixed_count += 1
-            
-            # Try to resend the product
-            try:
-                print(f"Retrying product {product.id} with color {color}")
-                result = sync_product_to_trendyol(product)
-                
-                if result and product.batch_id:
-                    print(f"Successfully resubmitted product with batch ID: {product.batch_id}")
-                    success_count += 1
-                else:
-                    print(f"Failed to resubmit product: {product.status_message}")
-                    
-                retried_count += 1
-            except Exception as e:
-                print(f"Error retrying product {product.id}: {str(e)}")
+        # Log progress every 10 products
+        if (success + failed) % 10 == 0:
+            logger.info(f"Processed {success + failed}/{total} products ({success} succeeded, {failed} failed)")
     
-    # Now process pending products to ensure they have correct color format
-    print("\n===== Processing pending products to prevent color errors =====")
-    for product in pending_products:
-        print(f"Processing pending product {product.id}: {product.title}")
-        
-        # Fix color attribute
-        fixed, color = fix_color_attribute(product)
-        if fixed:
-            fixed_count += 1
-            print(f"Fixed color attribute for pending product to {color}")
-    
-    print(f"\nSummary: Fixed {fixed_count} products, retried {retried_count}, succeeded {success_count}")
+    logger.info(f"Completed processing {total} products ({success} succeeded, {failed} failed)")
 
 if __name__ == "__main__":
-    main()
-else:
-    # When running with python manage.py shell < script.py
     main()

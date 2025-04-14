@@ -6,16 +6,10 @@ from django.forms.widgets import PasswordInput
 from unfold.admin import ModelAdmin, TabularInline
 
 from .models import TrendyolAPIConfig, TrendyolBrand, TrendyolCategory, TrendyolProduct
-from .openai_processor import create_trendyol_product_with_ai, prepare_product_with_ai
+from .fetch_api_data import fetch_all_categories, fetch_all_brands
 
-# Import improved modules (with fallback to originals if import fails)
-try:
-    from .category_finder_improved import TrendyolCategoryFinderImproved
-    from .openai_processor_improved import ProductAttributeProcessor
-    IMPROVED_MODULES_AVAILABLE = True
-except ImportError:
-    IMPROVED_MODULES_AVAILABLE = False
-    from .category_finder import TrendyolCategoryFinder
+# Import api_helpers for direct API-based product submission
+from .api_helpers import submit_product_to_trendyol, prepare_product_for_submission
 
 
 @admin.register(TrendyolAPIConfig)
@@ -130,243 +124,41 @@ class TrendyolProductAdmin(ModelAdmin):
         return "Not available"
     display_batch_id.short_description = "Batch ID"
     
-    actions = ['sync_with_trendyol', 'sync_with_trendyol_ai', 'sync_with_improved_ai', 'check_sync_status', 'retry_failed_products', 'refresh_product_data']
+    from .admin_actions import (
+        send_to_trendyol,
+        check_sync_status,
+        retry_failed_products,
+        refresh_from_api,
+        refresh_product_data
+    )
     
-    def sync_with_trendyol(self, request, queryset):
-        """
-        Synchronize selected products with Trendyol.
-        """
-        from . import api_client
-        
-        count = 0
-        for product in queryset:
-            try:
-                batch_id = api_client.create_trendyol_product(product)
-                if batch_id:
-                    count += 1
-            except Exception as e:
-                self.message_user(request, f"Error syncing product {product.title}: {str(e)}", level='error')
-        
-        if count:
-            self.message_user(request, f"Successfully initiated sync for {count} products. Check status in a few minutes.")
-    sync_with_trendyol.short_description = "Sync selected products with Trendyol"
+    actions = [
+        'send_to_trendyol',
+        'check_sync_status',
+        'retry_failed_products',
+        'refresh_from_api',
+        'refresh_product_data'
+    ]
     
-    def sync_with_trendyol_ai(self, request, queryset):
-        """
-        Synchronize selected products with Trendyol using OpenAI for optimizing attributes.
-        """
-        count = 0
-        for product in queryset:
-            try:
-                batch_id = create_trendyol_product_with_ai(product)
-                if batch_id:
-                    count += 1
-            except Exception as e:
-                self.message_user(request, f"Error syncing product with AI {product.title}: {str(e)}", level='error')
-        
-        if count:
-            self.message_user(request, f"Successfully initiated AI-powered sync for {count} products. OpenAI was used to optimize product details and attributes. Check status in a few minutes.")
-        else:
-            self.message_user(request, "No products were sent to Trendyol. Please check error messages.", level='warning')
-    sync_with_trendyol_ai.short_description = "Sync with Trendyol (AI-powered)"
-    
-    def sync_with_improved_ai(self, request, queryset):
-        """
-        Synchronize products with Trendyol using improved category finder and OpenAI processor.
-        This method doesn't require mandatory fields and works without storing categories locally.
-        """
-        from . import api_client
-        count = 0
-        
-        if not IMPROVED_MODULES_AVAILABLE:
-            self.message_user(request, 
-                "Improved AI modules are not available. Using standard AI processing instead.", 
-                level='warning')
-            return self.sync_with_trendyol_ai(request, queryset)
-            
-        # Initialize the improved category finder and processor
-        try:
-            api = api_client.get_api_client()
-            category_finder = TrendyolCategoryFinderImproved(api)
-            processor = ProductAttributeProcessor(category_finder)
-            
-            for product in queryset:
-                try:
-                    # Get LCWaikiki product if linked
-                    lcw_product = product.lcwaikiki_product
-                    
-                    if lcw_product:
-                        # Create a hybrid object with consistent attribute access
-                        hybrid_product = type('HybridProduct', (), {})()
-                        
-                        # Copy LCWaikiki attributes
-                        hybrid_product.title = lcw_product.title if hasattr(lcw_product, 'title') else product.title
-                        hybrid_product.description = lcw_product.description if hasattr(lcw_product, 'description') else product.description
-                        hybrid_product.price = lcw_product.price if hasattr(lcw_product, 'price') else None
-                        hybrid_product.category_name = lcw_product.category if hasattr(lcw_product, 'category') else None
-                        hybrid_product.color = lcw_product.color if hasattr(lcw_product, 'color') else None
-                        
-                        # Copy any Trendyol-specific attributes that might be needed
-                        if hasattr(product, 'category_id'):
-                            hybrid_product.category_id = product.category_id
-                        
-                        # Process with AI - no mandatory fields required
-                        enhanced_data = processor.optimize_product_data(hybrid_product)
-                        
-                        # Update product with enhanced data
-                        if 'title' in enhanced_data:
-                            product.title = enhanced_data['title']
-                        
-                        if 'description' in enhanced_data:
-                            product.description = enhanced_data['description']
-                        
-                        if 'categoryId' in enhanced_data:
-                            product.category_id = enhanced_data['categoryId']
-                        
-                        if 'attributes' in enhanced_data:
-                            product.attributes = enhanced_data['attributes']
-                        
-                        product.batch_status = 'pending'
-                        product.status_message = 'Prepared with improved AI processing'
-                        product.save()
-                        
-                        # Send to Trendyol
-                        batch_id = api_client.create_trendyol_product(product)
-                        if batch_id:
-                            count += 1
-                    else:
-                        self.message_user(
-                            request, 
-                            f"Product '{product.title}' is not linked to an LCWaikiki product", 
-                            level='warning'
-                        )
-                        
-                except Exception as e:
-                    self.message_user(
-                        request, 
-                        f"Error processing product '{product.title}' with improved AI: {str(e)}", 
-                        level='error'
-                    )
-            
-            if count:
-                self.message_user(
-                    request, 
-                    f"Successfully processed {count} products with improved AI. " +
-                    "This method doesn't require mandatory fields and works without local category storage."
-                )
-            else:
-                self.message_user(
-                    request, 
-                    "No products were sent to Trendyol. Please check error messages.", 
-                    level='warning'
-                )
-                
-        except Exception as e:
-            self.message_user(
-                request, 
-                f"Error initializing improved AI processing: {str(e)}", 
-                level='error'
-            )
-    sync_with_improved_ai.short_description = "Sync with Trendyol (Improved AI - No mandatory fields)"
+    def send_to_trendyol(self, request, queryset):
+        """Trendyol'a ürün gönderme işlemi"""
+        from .admin_actions import send_to_trendyol as send_to_trendyol_action
+        return send_to_trendyol_action(self, request, queryset)
     
     def check_sync_status(self, request, queryset):
-        """
-        Check synchronization status for selected products.
-        """
-        from . import api_client
-        
-        count = 0
-        for product in queryset:
-            if product.batch_id:
-                try:
-                    api_client.check_product_batch_status(product)
-                    count += 1
-                except Exception as e:
-                    self.message_user(request, f"Error checking status for {product.title}: {str(e)}", level='error')
-        
-        if count:
-            self.message_user(request, f"Successfully checked status for {count} products.")
-        else:
-            self.message_user(request, "No products with batch IDs were found.", level='warning')
-    check_sync_status.short_description = "Check sync status for selected products"
+        """Ürün durumunu kontrol etme işlemi"""
+        from .admin_actions import check_sync_status as check_sync_status_action
+        return check_sync_status_action(self, request, queryset)
     
     def retry_failed_products(self, request, queryset):
-        """
-        Retry failed products with improved attribute handling.
-        Specifically removes the problematic 'color' field and uses proper attribute IDs.
-        """
-        from . import api_client
-        import json
-        import re
-        
-        fixed_count = 0
-        success_count = 0
-        already_pending_count = 0
-        
-        # Color ID mapping to use numeric IDs instead of string values
-        color_id_map = {
-            'Beyaz': 1001, 
-            'Siyah': 1002, 
-            'Mavi': 1003, 
-            'Kirmizi': 1004, 
-            'Pembe': 1005,
-            'Yeşil': 1006,
-            'Sarı': 1007,
-            'Mor': 1008,
-            'Gri': 1009,
-            'Kahverengi': 1010,
-            'Ekru': 1011,
-            'Bej': 1012,
-            'Lacivert': 1013,
-            'Turuncu': 1014,
-            'Krem': 1015,
-            'Petrol': 1016   # Petrol rengini ekledik
-        }
-        
-        for product in queryset:
-            try:
-                # Skip products that are already in pending or processing status
-                if product.batch_status in ['pending', 'processing']:
-                    already_pending_count += 1
-                    continue
-                    
-                # Clear existing attributes to let the API provide the correct ones
-                product.attributes = []
-                fixed_count += 1
-                
-                # Set to pending status with a placeholder message
-                product.batch_status = 'pending'
-                product.status_message = 'Pending retry after fix'
-                product.save()
-                
-                # Step 2: Just use the regular prepare_product_data - no need for customization
-                # as we've already cleared attributes and removed the gender field
-                
-                # Call the standard API client which now works correctly without color field
-                try:
-                    batch_id = api_client.create_trendyol_product(product)
-                    if batch_id:
-                        success_count += 1
-                except Exception as e:
-                    self.message_user(request, f"API error for {product.title}: {str(e)}", level='error')
-            except Exception as e:
-                self.message_user(request, f"Error retrying product {product.title}: {str(e)}", level='error')
-        
-        # Report results
-        message_parts = []
-        if fixed_count:
-            message_parts.append(f"Fixed attributes for {fixed_count} products")
-        if success_count:
-            message_parts.append(f"Successfully submitted {success_count} products to Trendyol")
-        if already_pending_count:
-            message_parts.append(f"Skipped {already_pending_count} products already in pending/processing state")
-            
-        if message_parts:
-            self.message_user(request, ". ".join(message_parts) + ".")
-        else:
-            self.message_user(request, "No products were eligible for retry.", level='warning')
+        """Başarısız ürünleri yeniden deneme işlemi"""
+        from .admin_actions import retry_failed_products as retry_failed_products_action
+        return retry_failed_products_action(self, request, queryset)
     
-    retry_failed_products.short_description = "Retry failed products (fix attributes & color)"
+    def refresh_from_api(self, request, queryset):
+        """API'den ürün bilgilerini yenileme işlemi"""
+        from .admin_actions import refresh_from_api as refresh_from_api_action
+        return refresh_from_api_action(self, request, queryset)
     
     def refresh_product_data(self, request, queryset):
         """
