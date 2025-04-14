@@ -80,8 +80,31 @@ class TrendyolAPI:
       try:
         print(f"[DEBUG-API] SON İSTEK: {method} {url}")
         print(f"[DEBUG-API] İSTEK HEADERS: {self.session.headers}")
-
+        
+        # Debug request payload for POST requests
+        if method == 'POST' and 'json' in kwargs:
+            print(f"[DEBUG-API] İSTEK PAYLOAD: {json.dumps(kwargs.get('json', {}), indent=2, ensure_ascii=False)}")
+        
         response = self.session.request(method, url, **kwargs)
+        
+        # Debug response details
+        print(f"[DEBUG-API] YANIT KODU: {response.status_code}")
+        print(f"[DEBUG-API] YANIT HEADERS: {dict(response.headers)}")
+        
+        # Print response content (truncated if too long)
+        resp_text = response.text[:1000] + '...' if len(response.text) > 1000 else response.text
+        print(f"[DEBUG-API] YANIT İÇERİĞİ: {resp_text}")
+        
+        # More detailed error logging
+        if response.status_code >= 400:
+            print(f"[DEBUG-API] HATA DETAYI: Kod {response.status_code}")
+            try:
+                if 'application/json' in response.headers.get('Content-Type', ''):
+                    error_data = response.json()
+                    print(f"[DEBUG-API] JSON HATA DETAYI: {json.dumps(error_data, indent=2, ensure_ascii=False)}")
+            except Exception as e:
+                print(f"[DEBUG-API] JSON çözümlenemedi: {str(e)}")
+        
         response.raise_for_status()
 
         # Handle empty response
@@ -275,7 +298,33 @@ class TrendyolProductManager:
     try:
       category_attrs = self.category_finder.get_category_attributes(
           category_id)
+      
+      # Debug log the full category attributes
+      print(f"[DEBUG-API] Kategori {category_id} için özellikler: {json.dumps(category_attrs, indent=2, ensure_ascii=False)[:1000]}...")
+      
+      # Look specifically for color attribute as it's often required
+      color_attr = None
+      required_attrs = []
+      
+      # First pass - identify required attributes
+      for attr in category_attrs.get('categoryAttributes', []):
+        attr_name = attr['attribute']['name']
+        attr_id = attr['attribute']['id']
+        is_required = attr.get('required', False)
+        
+        if is_required:
+          required_attrs.append(f"{attr_name} (ID: {attr_id})")
+          
+        # Check if this is a color attribute (important for Trendyol)
+        if attr_name.lower() in ['renk', 'color', 'colour']:
+          color_attr = attr
+          print(f"[DEBUG-API] Renk özelliği bulundu: {attr_name} (ID: {attr_id})")
 
+      # Log required attributes
+      if required_attrs:
+        print(f"[DEBUG-API] Zorunlu özellikler: {', '.join(required_attrs)}")
+      
+      # Process all attributes
       for attr in category_attrs.get('categoryAttributes', []):
         # Skip if no attribute values and custom values not allowed
         if not attr.get('attributeValues') and not attr.get('allowCustom'):
@@ -291,20 +340,38 @@ class TrendyolProductManager:
             attribute["attributeValueId"] = attr['attributeValues'][0]['id']
             attribute["attributeValue"] = attr['attributeValues'][0]['name']
           else:
-            attribute[
-                "customAttributeValue"] = f"Sample {attr['attribute']['name']}"
+            attribute["customAttributeValue"] = f"Sample {attr['attribute']['name']}"
         elif attr.get('allowCustom'):
-          attribute[
-              "customAttributeValue"] = f"Sample {attr['attribute']['name']}"
+          attribute["customAttributeValue"] = f"Sample {attr['attribute']['name']}"
         else:
           continue
 
         attributes.append(attribute)
-
+      
+      # Add special handling for color if it's required but not found
+      if color_attr and not any(a.get('attributeName', '').lower() in ['renk', 'color', 'colour'] for a in attributes):
+        print("[DEBUG-API] Renk özelliği zorunlu fakat eklenmemiş. Manuel olarak ekleniyor.")
+        color_attribute = {
+            "attributeId": color_attr['attribute']['id'],
+            "attributeName": color_attr['attribute']['name']
+        }
+        
+        if color_attr.get('attributeValues') and len(color_attr['attributeValues']) > 0:
+          color_attribute["attributeValueId"] = color_attr['attributeValues'][0]['id']
+          color_attribute["attributeValue"] = color_attr['attributeValues'][0]['name']
+        else:
+          color_attribute["customAttributeValue"] = "Karışık Renkli"
+          
+        attributes.append(color_attribute)
+      
+      # Debug log the final attributes
+      print(f"[DEBUG-API] Oluşturulan özellikler: {json.dumps(attributes, indent=2, ensure_ascii=False)}")
+      
       return attributes
     except Exception as e:
       logger.error(
           f"Failed to get attributes for category {category_id}: {str(e)}")
+      print(f"[DEBUG-API] Kategori özellikleri alınırken hata: {str(e)}")
       # Throw error to prevent using fallback attributes, as per requirement
       raise
 
