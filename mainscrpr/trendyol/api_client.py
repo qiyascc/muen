@@ -4,15 +4,12 @@ import time
 import re
 import requests
 import base64
-import uuid
-import random
 from decimal import Decimal
 from typing import Dict, List, Optional, Any, Tuple, Union
-from urllib.parse import quote
 
 from django.utils import timezone
 
-from .models import TrendyolAPIConfig, TrendyolBrand, TrendyolCategory, TrendyolProduct, TrendyolBatchRequest
+from .models import TrendyolAPIConfig, TrendyolBrand, TrendyolCategory, TrendyolProduct
 # API'den doğrudan alacağız, sabit değerlere ihtiyacımız yok
 # Yeni yaklaşımımız: Her kategori için API'den doğru değerleri almak
 DEFAULT_REQUIRED_ATTRIBUTES = {}
@@ -422,114 +419,7 @@ class InventoryAPI:
     return self.client.make_request('POST', endpoint, data={"items": items})
 
 
-class TrendyolAPI:
-  """Base class for Trendyol API operations with retry mechanism"""
-  
-  def __init__(self, config):
-      self.config = config
-      self.session = requests.Session()
-      self.session.headers.update({
-          "Authorization": f"Basic {self.config.api_key}",
-          "User-Agent": f"{self.config.supplier_id} - SelfIntegration",
-          "Content-Type": "application/json"
-      })
-  
-  def _make_request(self, method, endpoint, **kwargs):
-      """Generic request method with retry logic"""
-      url = f"{self.config.base_url.rstrip('/')}/{endpoint.lstrip('/')}"
-      kwargs.setdefault('timeout', 15)  # Default timeout of 15 seconds
-      
-      for attempt in range(3):  # Try up to 3 times
-          try:
-              response = self.session.request(method, url, **kwargs)
-              response.raise_for_status()
-              return response.json()
-          except requests.exceptions.RequestException as e:
-              if attempt == 2:  # Last attempt
-                  logger.error(f"API request failed after 3 attempts: {str(e)}")
-                  raise
-              logger.warning(f"Attempt {attempt + 1} failed, retrying...")
-              time.sleep(1 * (attempt + 1))  # Exponential backoff
-  
-  def get(self, endpoint, params=None):
-      return self._make_request('GET', endpoint, params=params)
-  
-  def post(self, endpoint, data):
-      return self._make_request('POST', endpoint, json=data)
-
-
-class TrendyolProductManager:
-  """Handles product creation and management"""
-  
-  def __init__(self, api_client):
-      self.api = api_client
-      self.category_finder = TrendyolCategoryFinder(api_client)
-  
-  def get_brand_id(self, brand_name):
-      """Find brand ID by name"""
-      encoded_name = quote(brand_name)
-      try:
-          brands = self.api.get(f"product/brands/by-name?name={encoded_name}")
-          if isinstance(brands, list) and brands:
-              return brands[0]['id']
-          logger.warning(f"Brand not found: {brand_name}, using default LC Waikiki brand ID")
-          return 7651  # Default LC Waikiki brand ID
-      except Exception as e:
-          logger.error(f"Brand search failed for '{brand_name}': {str(e)}")
-          return 7651  # Default LC Waikiki brand ID as fallback
-  
-  def create_product(self, product_data):
-      """Create a new product on Trendyol"""
-      try:
-          category_id = self.category_finder.find_best_category(product_data.category_name)
-          brand_id = self.get_brand_id(product_data.brand_name)
-          attributes = self.category_finder.get_required_attributes_for_category(category_id)
-          
-          payload = self._build_product_payload(product_data, category_id, brand_id, attributes)
-          
-          logger.info("Submitting product creation request...")
-          response = self.api.post(f"product/sellers/{self.api.config.supplier_id}/products", payload)
-          
-          return response.get('batchRequestId')
-      except Exception as e:
-          logger.error(f"Product creation failed: {str(e)}")
-          raise
-  
-  def check_batch_status(self, batch_id):
-      """Check the status of a batch operation"""
-      try:
-          return self.api.get(f"product/sellers/{self.api.config.supplier_id}/products/batch-requests/{batch_id}")
-      except Exception as e:
-          logger.error(f"Failed to check batch status: {str(e)}")
-          raise
-  
-  def _build_product_payload(self, product, category_id, brand_id, attributes):
-      """Construct the complete product payload"""
-      return {
-          "items": [{
-              "barcode": product.barcode,
-              "title": product.title,
-              "productMainId": product.product_main_id,
-              "brandId": brand_id,
-              "categoryId": category_id,
-              "quantity": product.quantity,
-              "stockCode": product.stock_code,
-              "dimensionalWeight": 1,  # Default dimensional weight
-              "description": product.description,
-              "currencyType": product.currency_type,
-              "listPrice": product.price,
-              "salePrice": product.price,  # Use the same price for list and sale
-              "vatRate": product.vat_rate,
-              "images": [{"url": product.image_url}],
-              "attributes": attributes
-          }],
-          "batchRequestId": str(uuid.uuid4()),
-          "hasMultiSupplier": False,
-          "supplierId": int(self.api.config.supplier_id)
-      }
-
-
-def get_api_client() -> Optional[Union[TrendyolApi, TrendyolAPI]]:
+def get_api_client() -> Optional[TrendyolApi]:
   """
     Get a configured Trendyol API client.
     Returns None if no active API configuration is found.
@@ -540,27 +430,19 @@ def get_api_client() -> Optional[Union[TrendyolApi, TrendyolAPI]]:
       logger.error("No active Trendyol API configuration found")
       return None
 
-    # Decide which API client to use based on configuration
-    use_new_client = getattr(config, 'use_new_client', False)
-    
-    if use_new_client:
-      # Initialize the new TrendyolAPI client
-      client = TrendyolAPI(config)
-      logger.info("Using new TrendyolAPI client")
-    else:
-      # Get the user_agent from the config, or create a default one
-      user_agent = config.user_agent
-      if not user_agent:
-        user_agent = f"{config.seller_id} - SelfIntegration"
+    # Get the user_agent from the config, or create a default one
+    user_agent = config.user_agent
+    if not user_agent:
+      user_agent = f"{config.seller_id} - SelfIntegration"
 
-      # Initialize the traditional TrendyolApi client
-      client = TrendyolApi(
-          api_key=config.api_key,
-          api_secret=config.api_secret,
-          supplier_id=config.supplier_id or config.seller_id,
-          base_url=config.base_url,
-          user_agent=user_agent)
-      logger.info("Using traditional TrendyolApi client")
+    # Initialize the Trendyol API client
+    client = TrendyolApi(
+        api_key=config.api_key,
+        api_secret=config.api_secret,
+        supplier_id=config.supplier_id or config.
+        seller_id,  # Use supplier_id if set, otherwise fall back to seller_id
+        base_url=config.base_url,
+        user_agent=user_agent)
 
     return client
   except Exception as e:

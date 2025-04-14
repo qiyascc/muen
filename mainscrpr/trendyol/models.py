@@ -89,47 +89,6 @@ class TrendyolCategory(models.Model):
     return f"{self.name} (ID: {self.category_id})"
 
 
-class TrendyolBatchRequest(models.Model):
-  """
-    Trendyol Batch Request model.
-    Stores information about batch requests sent to Trendyol API.
-    """
-  REQUEST_TYPE_CHOICES = [
-      ('create', 'Create Products'),
-      ('update', 'Update Products'),
-      ('price_inventory', 'Update Price and Inventory'),
-      ('delete', 'Delete Products'),
-  ]
-  
-  BATCH_STATUS_CHOICES = [
-      ('pending', 'Pending'),
-      ('processing', 'Processing'),
-      ('completed', 'Completed'),
-      ('failed', 'Failed'),
-  ]
-  
-  batch_id = models.CharField(max_length=100, unique=True, help_text="Batch ID from Trendyol")
-  request_type = models.CharField(max_length=20, choices=REQUEST_TYPE_CHOICES)
-  status = models.CharField(max_length=20, choices=BATCH_STATUS_CHOICES, default='pending')
-  request_data = models.JSONField(default=dict, blank=True, help_text="Data sent in the request")
-  response_data = models.JSONField(default=dict, blank=True, help_text="Response data from Trendyol")
-  item_count = models.IntegerField(default=0, help_text="Number of items in the batch")
-  success_count = models.IntegerField(default=0, help_text="Number of successful items")
-  failed_count = models.IntegerField(default=0, help_text="Number of failed items")
-  error_message = models.TextField(blank=True, help_text="Error message if batch failed")
-  last_check_time = models.DateTimeField(null=True, blank=True)
-  created_at = models.DateTimeField(auto_now_add=True)
-  updated_at = models.DateTimeField(auto_now=True)
-
-  class Meta:
-    verbose_name = "Trendyol Batch Request"
-    verbose_name_plural = "Trendyol Batch Requests"
-    ordering = ['-created_at']
-    
-  def __str__(self):
-    return f"Batch {self.batch_id} ({self.request_type}) - {self.status}"
-
-
 class TrendyolProduct(models.Model):
   """
     Trendyol Product model.
