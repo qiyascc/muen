@@ -41,7 +41,7 @@ class ProductAdmin(ModelAdmin):
     readonly_fields = ('timestamp',)
     list_per_page = 20
     inlines = [ProductSizeInline]
-    actions = ['send_to_trendyol', 'send_to_trendyol_with_ai', 'send_to_trendyol_with_improved_ai']
+    actions = ['send_to_trendyol', 'send_to_trendyol_with_simple_finder']
     
     # Unfold specific configurations
     fieldsets = (
@@ -346,7 +346,7 @@ class ProductAdmin(ModelAdmin):
     
     send_to_trendyol_with_ai.short_description = "Send to Trendyol (AI-powered)"
     
-    def send_to_trendyol_with_improved_ai(self, request, queryset):
+    def send_to_trendyol_with_simple_finder(self, request, queryset):
         """
         Action to send selected products to Trendyol using simple category finder.
         This implementation uses the simple category finder to determine the best category
@@ -466,12 +466,12 @@ class ProductAdmin(ModelAdmin):
                     if result and trendyol_product.batch_id:
                         self.message_user(
                             request, 
-                            f"Product '{product.title}' sent to Trendyol with improved AI optimization. Batch ID: {trendyol_product.batch_id}", 
+                            f"Product '{product.title}' sent to Trendyol with simple category finder. Batch ID: {trendyol_product.batch_id}", 
                             level=messages.SUCCESS
                         )
                         return trendyol_product.batch_id
                     else:
-                        error_message = f"Failed to send '{product.title}' to Trendyol with improved AI"
+                        error_message = f"Failed to send '{product.title}' to Trendyol with simple category finder"
                         if trendyol_product.status_message:
                             error_message += f": {trendyol_product.status_message}"
                         self.message_user(
@@ -517,20 +517,20 @@ class ProductAdmin(ModelAdmin):
         if success_count > 0:
             self.message_user(
                 request, 
-                f"Successfully sent {success_count} products to Trendyol with improved AI optimization. " +
+                f"Successfully sent {success_count} products to Trendyol with simple category finder. " +
                 f"Batch IDs: {', '.join(batch_ids[:5])}{'...' if len(batch_ids) > 5 else ''} " +
-                "This method doesn't require mandatory fields and works without local category storage.",
+                "This method uses a simple approach to find categories.",
                 level=messages.SUCCESS
             )
         
         if error_count > 0:
             self.message_user(
                 request, 
-                f"{error_count} products failed to send with improved AI. Check the messages above for details.",
+                f"{error_count} products failed to send with simple category finder. Check the messages above for details.",
                 level=messages.WARNING if success_count > 0 else messages.ERROR
             )
     
-    send_to_trendyol_with_improved_ai.short_description = "Send to Trendyol (Improved AI - No mandatory fields)"
+    send_to_trendyol_with_simple_finder.short_description = "Send to Trendyol (Simple Category Finder)"
 
 
 @admin.register(City)
