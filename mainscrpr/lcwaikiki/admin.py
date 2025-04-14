@@ -402,14 +402,31 @@ class ProductAdmin(ModelAdmin):
                     )
                     return None
                 
-                # Initialize improved modules
+                # Initialize improved modules if available
                 try:
+                    if not IMPROVED_MODULES_AVAILABLE:
+                        raise ImportError("Improved AI modules not available")
+                        
                     api = api_client.get_api_client()
                     category_finder = TrendyolCategoryFinderImproved(api)
                     processor = ProductAttributeProcessor(category_finder)
                     
+                    # Create a hybrid object with consistent attribute access
+                    hybrid_product = type('HybridProduct', (), {})()
+                    
+                    # Copy LCWaikiki attributes
+                    hybrid_product.title = product.title
+                    hybrid_product.description = product.description
+                    hybrid_product.price = product.price
+                    hybrid_product.category_name = product.category
+                    hybrid_product.color = product.color
+                    
+                    # Copy any Trendyol-specific attributes that might be needed
+                    if hasattr(trendyol_product, 'category_id'):
+                        hybrid_product.category_id = trendyol_product.category_id
+                    
                     # Process with AI - no mandatory fields required
-                    enhanced_data = processor.optimize_product_data(product)
+                    enhanced_data = processor.optimize_product_data(hybrid_product)
                     
                     # Update Trendyol product with enhanced data
                     if 'title' in enhanced_data:

@@ -196,8 +196,22 @@ class TrendyolProductAdmin(ModelAdmin):
                     lcw_product = product.lcwaikiki_product
                     
                     if lcw_product:
+                        # Create a hybrid object with consistent attribute access
+                        hybrid_product = type('HybridProduct', (), {})()
+                        
+                        # Copy LCWaikiki attributes
+                        hybrid_product.title = lcw_product.title if hasattr(lcw_product, 'title') else product.title
+                        hybrid_product.description = lcw_product.description if hasattr(lcw_product, 'description') else product.description
+                        hybrid_product.price = lcw_product.price if hasattr(lcw_product, 'price') else None
+                        hybrid_product.category_name = lcw_product.category if hasattr(lcw_product, 'category') else None
+                        hybrid_product.color = lcw_product.color if hasattr(lcw_product, 'color') else None
+                        
+                        # Copy any Trendyol-specific attributes that might be needed
+                        if hasattr(product, 'category_id'):
+                            hybrid_product.category_id = product.category_id
+                        
                         # Process with AI - no mandatory fields required
-                        enhanced_data = processor.optimize_product_data(lcw_product)
+                        enhanced_data = processor.optimize_product_data(hybrid_product)
                         
                         # Update product with enhanced data
                         if 'title' in enhanced_data:
