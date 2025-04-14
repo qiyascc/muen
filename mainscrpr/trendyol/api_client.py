@@ -1220,13 +1220,48 @@ def find_best_category_match(product: TrendyolProduct) -> Optional[int]:
     Find the best matching category for a product.
     Returns the category ID if found, None otherwise.
     
-    Enhanced implementation that uses the TrendyolCategoryFinder class.
+    Enhanced implementation that uses our new API helpers for better category matching.
     """
   # If a specific category_id is already set, use that
   if product.category_id:
     logger.info(f"Using pre-set category ID: {product.category_id}")
     return product.category_id
 
+  # First try with our new API helpers
+  try:
+    from .api_helpers import find_category_for_product
+    from .new_api_client import get_api_client_from_config
+    
+    # Get current API configuration
+    active_config = TrendyolAPIConfig.objects.filter(is_active=True).first()
+    if active_config:
+      print(f"[DEBUG-CATEGORY] Yeni API yardımcılarını kullanarak kategori aranıyor...")
+      
+      # Create client from config
+      api_client = get_api_client_from_config(
+        active_config.api_key,
+        active_config.api_secret,
+        active_config.supplier_id,
+        active_config.base_url
+      )
+      
+      # Try to find category using both title and category_name
+      category_id = find_category_for_product(
+        api_client, 
+        product.title,
+        product.category_name
+      )
+      
+      if category_id:
+        print(f"[DEBUG-CATEGORY] Yeni API yardımcıları ile bulunan kategori ID: {category_id}")
+        logger.info(f"Found category ID {category_id} using new API helpers")
+        return category_id
+      else:
+        logger.warning("New API helpers couldn't find a category, falling back to original method")
+  except Exception as e:
+    logger.error(f"Error using new API helpers: {str(e)}, falling back to original method")
+
+  # Fall back to original implementation
   client = get_api_client()
   if not client:
     logger.error("Could not get API client to find category match")
@@ -1234,27 +1269,35 @@ def find_best_category_match(product: TrendyolProduct) -> Optional[int]:
 
   try:
     print(
-        f"[DEBUG-CATEGORY] Kategori arama: Ürün={product.id}, Başlık={product.title}"
+        f"[DEBUG-CATEGORY] Orijinal kategori arama: Ürün={product.id}, Başlık={product.title}"
     )
 
-    # Initialize the category finder with our API client
-    finder = TrendyolCategoryFinder(client)
+    # Try to find by exact category_name match in database first
+    if product.category_name:
+      db_category = TrendyolCategory.objects.filter(
+        name__iexact=product.category_name, 
+        is_active=True
+      ).first()
+      
+      if db_category:
+        logger.info(f"Found exact category match in database: {db_category.name} (ID: {db_category.category_id})")
+        return db_category.category_id
+      
+      # Try partial match
+      db_category = TrendyolCategory.objects.filter(
+        name__icontains=product.category_name, 
+        is_active=True
+      ).first()
+      
+      if db_category:
+        logger.info(f"Found partial category match in database: {db_category.name} (ID: {db_category.category_id})")
+        return db_category.category_id
 
-    # Get product title for category search
-    title = product.title if product.title else ""
-
-    # Find matching category using the enhanced finder
-    category_id = finder.find_best_category(title)
-
-    if category_id:
-      print(f"[DEBUG-CATEGORY] Bulunan kategori ID: {category_id}")
-      logger.info(f"Found category ID {category_id} for product '{title}'")
-      return category_id
-    else:
-      logger.warning(
-          f"Could not find a category match for product '{title}', using default"
-      )
-      return 385  # Default to Women's Clothing - Jacket
+    # If we get here, no match found - use default category for LC Waikiki
+    logger.warning(
+        f"Could not find a category match for product '{product.title}', using default"
+    )
+    return 385  # Default to Women's Clothing - Jacket
   except Exception as e:
     logger.error(f"Error finding category match: {str(e)}")
     # Return a default category on error
@@ -1265,6 +1308,8 @@ def find_best_brand_match(product: TrendyolProduct) -> Optional[int]:
   """
     Find the best matching brand for a product.
     Returns the brand ID if found, None otherwise.
+    
+    Enhanced implementation that uses our new API helpers for better brand matching.
     """
   logger.info(
       f"Finding brand for product: {product.title} (Brand name: {product.brand_name})"
@@ -1280,6 +1325,22 @@ def find_best_brand_match(product: TrendyolProduct) -> Optional[int]:
     except TrendyolBrand.DoesNotExist:
       logger.warning(f"Brand ID {product.brand_id} does not exist in database")
       pass
+
+  # Try to use our new API helpers
+  try:
+    from .api_helpers import find_brand_by_name
+    
+    if product.brand_name:
+      logger.info(f"Searching for brand using API helpers: {product.brand_name}")
+      brand_id = find_brand_by_name(product.brand_name)
+      
+      if brand_id:
+        logger.info(f"Found brand using API helpers: ID {brand_id}")
+        return brand_id
+      else:
+        logger.warning(f"API helpers could not find brand {product.brand_name}, falling back to original method")
+  except Exception as e:
+    logger.error(f"Error using API helpers for brand search: {str(e)}, falling back to original method")
 
   # Try to find by brand name
   if product.brand_name:
@@ -1360,7 +1421,7 @@ def find_best_brand_match(product: TrendyolProduct) -> Optional[int]:
   except Exception as e:
     logger.error(f"Error finding fallback brand: {str(e)}")
 
-  # No brand found, use default brand ID 7651
+  # No brand found, use default brand ID 7651 (LC Waikiki)
   logger.warning(
       f"No matching brand found for product: {product.title}, using default brand ID: 7651"
   )
@@ -1390,6 +1451,21 @@ def get_required_attributes_for_category(
     """
   logger.info(f"Getting required attributes for category ID={category_id}")
 
+  # First, try to use the new API helpers implementation
+  try:
+    # Use our new API helpers
+    from .api_helpers import get_required_attributes
+    attributes = get_required_attributes(category_id, product_title, product_color, product_size)
+    
+    if attributes:
+      logger.info(f"Got {len(attributes)} attributes for category {category_id} from API helpers")
+      return attributes
+    else:
+      logger.warning(f"API helpers returned no attributes for category {category_id}, falling back to direct API")
+  except Exception as e:
+    logger.error(f"Error using API helpers: {str(e)}, falling back to direct API")
+
+  # If above fails, fall back to direct API implementation
   try:
     # Get API client
     client = get_api_client()
@@ -1436,6 +1512,25 @@ def get_required_attributes_for_category(
         # Check if this is a 'color' attribute and log it
         if attribute_name.lower() in ['renk', 'color']:
           logger.info(f"Found color attribute with ID {attribute_id}")
+          
+          # Special handling for color attribute if provided
+          if product_color:
+            found_color_match = False
+            # Try to find a matching color value
+            if attr.get('attributeValues'):
+              for value in attr['attributeValues']:
+                if value.get('name', '').lower() == product_color.lower():
+                  attributes.append({
+                    "attributeId": attribute_id,
+                    "attributeValueId": value['id']
+                  })
+                  logger.info(f"Added color attribute: {attribute_name}={value.get('name', '')}")
+                  found_color_match = True
+                  break
+            
+            # If we found a match, continue to next attribute
+            if found_color_match:
+              continue
         
         # Skip if no values are available and custom is not allowed
         if not attr.get('attributeValues') and not attr.get('allowCustom'):
