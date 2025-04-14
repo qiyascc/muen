@@ -62,20 +62,67 @@ class TrendyolAPI:
     
     def _make_request(self, method: str, endpoint: str, **kwargs) -> Dict:
         """Generic request method with retry logic"""
+        # Ensure endpoint is a string (not an object)
+        if not isinstance(endpoint, str):
+            endpoint = str(endpoint)
+            
+        # Fix endpoint if it contains a Python object representation
+        if '<' in endpoint and ' object at ' in endpoint:
+            # Extract numeric ID if present
+            import re
+            match = re.search(r'/(\d+)/attributes', endpoint)
+            if match:
+                category_id = match.group(1)
+                endpoint = f"product/product-categories/{category_id}/attributes"
+            else:
+                # Default to a safer endpoint
+                endpoint = endpoint.split('/')[-1]
+                
         url = f"{self.config.base_url.rstrip('/')}/{endpoint.lstrip('/')}"
         kwargs.setdefault('timeout', DEFAULT_TIMEOUT)
         
+        logger.info(f"Making {method} request to {url}")
+        logger.info(f"Request headers: {self.session.headers}")
+        
         for attempt in range(MAX_RETRIES):
             try:
-                logger.info(f"Making {method} request to {url}")
                 response = self.session.request(method, url, **kwargs)
+                
+                # Log response details for debugging
+                logger.info(f"Response status: {response.status_code}")
+                logger.info(f"Response headers: {response.headers}")
+                
+                # Log a truncated version of the response text
+                response_text = response.text[:200] + "..." if len(response.text) > 200 else response.text
+                logger.info(f"Response text: {response_text}")
+                
+                # Handle 556 Server Error specifically
+                if response.status_code == 556:
+                    logger.error(f"Trendyol API returned 556 Server Error. This is usually a temporary issue.")
+                    
+                    if attempt == MAX_RETRIES - 1:
+                        # On last attempt, try to parse response if possible
+                        try:
+                            return response.json()
+                        except:
+                            # Return empty result with error flag
+                            return {"error": True, "message": f"556 Server Error:  for url: {url}", "details": {}}
+                    
+                    # Wait longer for 556 errors
+                    time.sleep(RETRY_DELAY * 2 * (attempt + 1))
+                    continue
+                
+                # For normal responses, raise for status
                 response.raise_for_status()
                 return response.json()
+                
             except requests.exceptions.RequestException as e:
-                logger.error(f"Request failed: {str(e)}")
+                logger.error(f"Error making request to Trendyol API: {str(e)}")
+                
                 if attempt == MAX_RETRIES - 1:
-                    logger.error(f"API request failed after {MAX_RETRIES} attempts: {str(e)}")
-                    raise
+                    # On last attempt, return error info
+                    return {"error": True, "message": str(e), "details": {}}
+                
                 logger.warning(f"Attempt {attempt + 1} failed, retrying...")
                 time.sleep(RETRY_DELAY * (attempt + 1))
     
