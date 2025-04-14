@@ -1391,27 +1391,82 @@ def get_required_attributes_for_category(
   logger.info(f"Getting required attributes for category ID={category_id}")
 
   try:
+    # Get API client
     client = get_api_client()
     if not client:
       logger.warning("API client could not be obtained")
       return []
-
-    # İyileştirilmiş kategori bulucu kullanarak öznitelikleri al
-    from .category_finder_new import TrendyolCategoryFinder
-    finder = TrendyolCategoryFinder(client)
-
-    # Doğrudan API'den kategoriye özgü öznitelikleri al
+    
+    # Directly fetch category attributes via API
     try:
-      attributes = finder.get_required_attributes(category_id)
-      logger.info(
-          f"Kategorinin zorunlu özellikleri API'den alındı: {len(attributes)} özellik"
-      )
-      logger.debug(f"Özellikler: {json.dumps(attributes, ensure_ascii=False)}")
-    except Exception as e:
-      logger.error(f"Kategori özellikleri alınırken hata: {str(e)}")
+      # Get all category attributes 
+      url = f"product/product-categories/{category_id}/attributes"
+      response = client.make_request("GET", url)
+      
+      if not response or response.status_code != 200:
+        error_msg = f"Error getting attributes: {response.status_code if response else 'No response'} {response.text if response else ''}"
+        logger.error(error_msg)
+        return []
+      
+      data = response.json()
       attributes = []
-
-    return attributes
+      
+      # Process category attributes
+      logger.info(f"Processing {len(data.get('categoryAttributes', []))} attributes for category {category_id}")
+      
+      for attr in data.get('categoryAttributes', []):
+        # Skip attributes without ID
+        if not attr.get('attribute') or not attr['attribute'].get('id'):
+          logger.warning(f"Skipping attribute without ID")
+          continue
+        
+        # Get attribute details
+        attribute_id = attr['attribute']['id']
+        attribute_name = attr['attribute'].get('name', 'Unknown')
+        
+        # Check if attribute is required and log it
+        is_required = attr.get('required', False)
+        logger.info(f"Processing attribute: {attribute_name} (ID: {attribute_id}, Required: {is_required})")
+        
+        # Only add required attributes
+        if not is_required:
+          logger.info(f"Skipping non-required attribute: {attribute_name}")
+          continue
+        
+        # Check if this is a 'color' attribute and log it
+        if attribute_name.lower() in ['renk', 'color']:
+          logger.info(f"Found color attribute with ID {attribute_id}")
+        
+        # Skip if no values are available and custom is not allowed
+        if not attr.get('attributeValues') and not attr.get('allowCustom'):
+          logger.info(f"Skipping attribute {attribute_name} with no values")
+          continue
+        
+        # Get a suitable value
+        attribute_value_id = None
+        attribute_value_name = None
+        
+        # If there are attribute values, use the first one
+        if attr.get('attributeValues') and len(attr['attributeValues']) > 0:
+          attribute_value_id = attr['attributeValues'][0]['id']
+          attribute_value_name = attr['attributeValues'][0].get('name', 'Unknown')
+          logger.info(f"Using attribute value: {attribute_value_name} (ID: {attribute_value_id})")
+        
+        # If we have a valid attribute ID and value ID, add to the list
+        if attribute_id and attribute_value_id:
+          attributes.append({
+              "attributeId": attribute_id,
+              "attributeValueId": attribute_value_id
+          })
+          logger.info(f"Added attribute: {attribute_name}={attribute_value_name}")
+      
+      # Log summary of attributes
+      logger.info(f"Returning {len(attributes)} attributes for category {category_id}")
+      return attributes
+      
+    except Exception as e:
+      logger.error(f"Error getting category attributes: {str(e)}")
+      return []
   except Exception as e:
     logger.error(f"Error getting required attributes: {str(e)}")
     # Return an empty list on error - we won't use hardcoded values anymore
