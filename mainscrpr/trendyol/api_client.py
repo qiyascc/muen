@@ -339,23 +339,31 @@ def lcwaikiki_to_trendyol_product(lcw_product) -> Optional[TrendyolProduct]:
         else:
             sale_price = price
 
-        # Get product images
+        # Get product images from the images field (JSONField that contains a list of image URLs)
         images = []
-        if lcw_product.image_url:
-            images.append(lcw_product.image_url)
-
-        # Parse additional images if available
-        if hasattr(lcw_product, 'additional_images') and lcw_product.additional_images:
-            try:
-                if isinstance(lcw_product.additional_images, str):
-                    additional_images = json.loads(lcw_product.additional_images)
-                    if isinstance(additional_images, list):
-                        images.extend(additional_images)
-                elif isinstance(lcw_product.additional_images, list):
-                    images.extend(lcw_product.additional_images)
-            except Exception as e:
-                logger.warning(
-                    f"Failed to process additional images for product {lcw_product.id}: {str(e)}")
+        if hasattr(lcw_product, 'images') and lcw_product.images:
+            # If it's already a list, use it directly
+            if isinstance(lcw_product.images, list):
+                images = lcw_product.images
+            # If it's a string (serialized JSON), parse it
+            elif isinstance(lcw_product.images, str):
+                try:
+                    img_data = json.loads(lcw_product.images)
+                    if isinstance(img_data, list):
+                        images = img_data
+                except Exception as e:
+                    logger.warning(f"Failed to parse images for product {lcw_product.id}: {str(e)}")
+            # Handle case when the images field contains a dictionary with image URLs
+            elif isinstance(lcw_product.images, dict) and 'urls' in lcw_product.images:
+                img_urls = lcw_product.images.get('urls', [])
+                if isinstance(img_urls, list):
+                    images = img_urls
+        
+        # Use first image as primary if available
+        if not images and hasattr(lcw_product, 'url'):
+            # If no images found but we have the product URL, use a default image or placeholder
+            logger.warning(f"No images found for product {lcw_product.id}, using placeholder")
+            images = [lcw_product.url]  # Use product URL as a reference
 
         # Ensure all image URLs are properly formatted
         for i in range(len(images)):

@@ -15,7 +15,7 @@ from django.utils.decorators import method_decorator
 
 from .models import TrendyolProduct, TrendyolBrand, TrendyolCategory, TrendyolAPIConfig
 from .serializers import TrendyolProductSerializer, TrendyolBrandSerializer, TrendyolCategorySerializer
-from .api_client import get_api_client, check_product_batch_status
+from .api_client import get_api_client, check_product_batch_status, get_product_manager
 
 
 class TrendyolProductViewSet(viewsets.ModelViewSet):
@@ -61,18 +61,35 @@ class TrendyolProductViewSet(viewsets.ModelViewSet):
         """
         Sync a product to Trendyol.
         """
+        # Import directly from our implementation
         from .api_client import sync_product_to_trendyol
         
         product = self.get_object()
-        result = sync_product_to_trendyol(product)
-        
-        return Response({
-            'success': result,
-            'message': f"Product {'synced' if result else 'failed to sync'} to Trendyol",
-            'product_id': product.id,
-            'batch_id': product.batch_id,
-            'batch_status': product.batch_status
-        })
+        try:
+            batch_id = sync_product_to_trendyol(product)
+            
+            # If we got a batch_id, the sync was successful
+            return Response({
+                'success': True,
+                'message': f"Product synced to Trendyol with batch ID: {batch_id}",
+                'product_id': product.id,
+                'batch_id': batch_id,
+                'batch_status': product.batch_status
+            })
+        except Exception as e:
+            # Log the error
+            import logging
+            logger = logging.getLogger('trendyol.views')
+            logger.error(f"Failed to sync product {product.id}: {str(e)}")
+            
+            # Return error response
+            return Response({
+                'success': False,
+                'message': f"Failed to sync product: {str(e)}",
+                'product_id': product.id,
+                'batch_id': product.batch_id,
+                'batch_status': product.batch_status
+            }, status=400)
 
 
 class TrendyolBrandViewSet(viewsets.ModelViewSet):
@@ -123,8 +140,11 @@ class BatchStatusView(TemplateView):
             # Debug için son durumu yazdır
             print(f"[DEBUG-VIEW] API isteği öncesi son batch ID: {batch_id}")
             
-            # Get batch status from API
-            response = client.products.get_batch_request_status(batch_id)
+            # Create product manager instance for checking batch status
+            product_manager = get_product_manager()
+            
+            # Get batch status from API using our manager
+            response = product_manager.check_batch_status(batch_id)
             
             # Process the response to build a structured status object
             if response:
