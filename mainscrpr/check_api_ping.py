@@ -84,13 +84,13 @@ def main():
     tests = [
         {
             "name": "Brand API",
-            "endpoint": "product/brands",
+            "endpoint": "integration/product/brands",
             "method": "GET",
             "params": {"page": 0, "size": 10},
         },
         {
             "name": "Categories API",
-            "endpoint": "product/product-categories",
+            "endpoint": "integration/product/product-categories",
             "method": "GET",
         },
         {
