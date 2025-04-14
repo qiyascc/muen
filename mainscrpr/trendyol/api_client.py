@@ -236,7 +236,7 @@ class BrandsAPI:
 
   def _get_brands_endpoint(self):
     """Get the brands endpoint for verification"""
-    return '/product/brands'
+    return '/integration/product/brands'
 
   def get_brands(self, page=0, size=1000):
     """Get all brands from Trendyol"""
@@ -246,7 +246,7 @@ class BrandsAPI:
 
   def _get_brand_by_name_endpoint(self):
     """Get the brand by name endpoint for verification"""
-    return '/product/brands/by-name'
+    return '/integration/product/brands/by-name'
 
   def get_brand_by_name(self, name):
     """Get brand by name"""
@@ -1244,7 +1244,7 @@ def find_best_category_match(product: TrendyolProduct) -> Optional[int]:
     title = product.title if product.title else ""
 
     # Find matching category using the enhanced finder
-    category_id = finder.find_best_category(title)
+    category_id = finder.find_category_id(product)
 
     if category_id:
       print(f"[DEBUG-CATEGORY] Bulunan kategori ID: {category_id}")
