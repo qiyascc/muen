@@ -74,9 +74,12 @@ def analyze_product_with_openai(product: TrendyolProduct, category_attrs: Dict) 
             "description": product.description,
             "brand": product.brand_name,
             "price": float(product.price) if product.price else 0,
-            "color": product.color,
             "images": [product.image_url] if product.image_url else []
         }
+        
+        # Color özelliği varsa ekle
+        if hasattr(product, 'color') and product.color:
+            product_info["color"] = product.color
         
         if product.additional_images:
             if isinstance(product.additional_images, list):
