@@ -1,152 +1,135 @@
 """
-Basit Trendyol kategori bulma modülü.
-
-Bu modül, LCWaikiki kategorilerini Trendyol kategorileriyle eşleştirmek için
-basit bir yöntem kullanır. Yapay zeka veya kompleks eşleştirme kullanmaz.
+Basit kategori bulmak için yardımcı fonksiyonlar.
 """
-
 import logging
-from typing import Optional
-from dataclasses import dataclass
-
-from .models import TrendyolCategory
-from . import api_client
+import re
+from typing import Dict, List, Optional, Any
 
 logger = logging.getLogger(__name__)
 
-# Kategori eşleştirme tablosu
-# LC Waikiki kategori adı -> Trendyol kategori ID'si
-CATEGORY_MAPPING = {
-    "Erkek": 1033,  # Erkek Giyim
-    "Kadın": 1032,  # Kadın Giyim
-    "Erkek Çocuk": 1034,  # Erkek Çocuk Giyim
-    "Kız Çocuk": 1035,  # Kız Çocuk Giyim
-    "Bebek": 1036,  # Bebek Giyim
-    "Ayakkabı": 1112,  # Ayakkabı
-    "Aksesuar": 1037,  # Aksesuar
-    "Spor Giyim": 1033,  # Spor Giyim (Erkek kategorisine)
-    "Plaj Giyim": 1032,  # Plaj Giyim (Kadın kategorisine)
-    # Daha fazla kategori eşleştirmesi eklenebilir
+# Varsayılan kategoriler
+DEFAULT_CATEGORIES = {
+    "kadın": 1,  # Kadın Giyim
+    "erkek": 2,  # Erkek Giyim
+    "çocuk": 3,  # Çocuk Giyim
+    "ayakkabı": 383,  # Ayakkabı
+    "çanta": 361,  # Çanta
+    "saat": 220,  # Saat & Aksesuar
+    "takı": 208,  # Takı & Mücevher
+    "elektronik": 58,  # Elektronik
+    "ev": 104,  # Ev & Yaşam
+    "kitap": 26,  # Kitap & Kırtasiye
+    "oyuncak": 28,  # Oyuncak
+    "spor": 107,  # Spor & Outdoor
+    "kozmetik": 113,  # Kozmetik & Kişisel Bakım
+    "süpermarket": 41,  # Süpermarket
+    "kıyafet": 1,  # Varsayılan olarak Kadın giyim
+    "tişört": 385,  # Tişört
+    "pantolon": 387,  # Pantolon
+    "elbise": 53,  # Elbise
+    "gömlek": 388,  # Gömlek
+    "mont": 389,  # Mont, Kaban vb.
+    "pijama": 726,  # Pijama
+    "iç giyim": 717,  # İç Giyim
+    "jean": 395,  # Jean
 }
 
-# Varsayılan kategori ID'si
-DEFAULT_CATEGORY_ID = 1033  # Erkek Giyim
+# Kadın kategorileri
+WOMEN_CATEGORIES = {
+    "tişört": 385,
+    "pantolon": 387,
+    "elbise": 53,
+    "gömlek": 388,
+    "mont": 389,
+    "pijama": 726,
+    "iç giyim": 717,
+    "jean": 395,
+}
 
-@dataclass
-class CategoryResult:
-    """Kategori sonuç sınıfı"""
-    category_id: int
-    category_name: str
+# Erkek kategorileri
+MEN_CATEGORIES = {
+    "tişört": 397,
+    "pantolon": 399,
+    "gömlek": 400,
+    "mont": 401,
+    "pijama": 761,
+    "iç giyim": 752,
+    "jean": 407,
+}
+
+# Çocuk kategorileri
+CHILDREN_CATEGORIES = {
+    "tişört": 441,
+    "pantolon": 443,
+    "elbise": 446,
+    "pijama": 939,
+    "iç giyim": 920,
+    "jean": 448,
+}
+
+# LCW kategorilerini Trendyol kategorilerine eşleştir
+LCW_TO_TRENDYOL = {
+    "kadın": 1,  # Kadın
+    "erkek": 2,  # Erkek
+    "kız çocuk": 60,  # Kız Çocuk
+    "erkek çocuk": 286,  # Erkek Çocuk
+    "bebek": 3,  # Bebek
+    "ayakkabı": 383,  # Ayakkabı
+}
 
 
-def find_best_category_match(category_name: str) -> Optional[CategoryResult]:
+def find_best_category(text: str) -> Optional[int]:
     """
-    LCWaikiki kategori adını Trendyol kategori ID'sine eşleştirir.
-    
-    Args:
-        category_name: LCWaikiki kategori adı
-        
-    Returns:
-        CategoryResult objesi veya eşleşme bulunamazsa None
+    Verilen metne en uygun kategoriyi bul
     """
-    if not category_name:
+    if not text:
         return None
     
-    # Kategoride tam eşleşme ara
-    if category_name in CATEGORY_MAPPING:
-        category_id = CATEGORY_MAPPING[category_name]
-        return CategoryResult(category_id=category_id, category_name=category_name)
+    text = text.lower()
     
-    # Alt dize eşleşmesi dene
-    for lcw_category, trendyol_id in CATEGORY_MAPPING.items():
-        if lcw_category.lower() in category_name.lower():
-            return CategoryResult(category_id=trendyol_id, category_name=lcw_category)
+    # Önce tam eşleşme kontrolü
+    for key, category_id in LCW_TO_TRENDYOL.items():
+        if key in text:
+            logger.info(f'Kategori bulundu: "{key}" -> {category_id}')
+            return category_id
     
-    # Veritabanından kontrolü dene
-    try:
-        db_category = TrendyolCategory.objects.filter(name__icontains=category_name).first()
-        if db_category:
-            return CategoryResult(
-                category_id=db_category.category_id,
-                category_name=db_category.name
-            )
-    except Exception as e:
-        logger.error(f"Veritabanı kategori araması sırasında hata: {str(e)}")
+    # Giyim türünü belirle
+    gender_type = None
+    if any(word in text for word in ["kadın", "bayan", "kız"]):
+        gender_type = "kadın"
+    elif any(word in text for word in ["erkek", "bay"]):
+        gender_type = "erkek"
+    elif any(word in text for word in ["çocuk", "kız çocuk", "erkek çocuk"]):
+        gender_type = "çocuk"
     
-    # Hiçbir eşleşme bulunamazsa varsayılan kategoriyi kullan
-    logger.warning(f"'{category_name}' için kategori eşleşmesi bulunamadı. Varsayılan kategori kullanılıyor.")
-    return CategoryResult(category_id=DEFAULT_CATEGORY_ID, category_name="Erkek Giyim")
-
-
-def load_categories_from_api():
-    """
-    Trendyol API'sinden tüm kategorileri yükler ve veritabanına kaydeder.
-    """
-    try:
-        client = api_client.get_api_client()
-        if not client:
-            logger.error("API client oluşturulamadı")
-            return
-        
-        response = client.categories.get_categories()
-        if not response or 'error' in response:
-            logger.error(f"Kategori yükleme hatası: {response.get('message', 'Bilinmeyen hata')}")
-            return
-        
-        categories = response.get('categories', [])
-        
-        # Kategorileri düz bir listede topla
-        flat_categories = []
-        _flatten_categories(categories, flat_categories)
-        
-        # Veritabanına kaydet
-        saved_count = 0
-        for cat in flat_categories:
-            try:
-                TrendyolCategory.objects.update_or_create(
-                    category_id=cat['id'],
-                    defaults={
-                        'name': cat['name'],
-                        'parent_id': cat.get('parentId')
-                    }
-                )
-                saved_count += 1
-            except Exception as e:
-                logger.error(f"Kategori kaydedilirken hata: {cat['name']} - {str(e)}")
-        
-        logger.info(f"{saved_count}/{len(flat_categories)} kategori başarıyla kaydedildi.")
-        
-    except Exception as e:
-        logger.error(f"Kategori yükleme işlemi sırasında hata: {str(e)}")
-
-
-def _flatten_categories(categories, result):
-    """
-    Kategori ağacını düz bir listeye dönüştürür
-    """
-    for cat in categories:
-        result.append({
-            'id': cat['id'],
-            'name': cat['name'],
-            'parentId': cat.get('parentId')
-        })
-        
-        if 'subCategories' in cat and cat['subCategories']:
-            _flatten_categories(cat['subCategories'], result)
-
-
-def get_attributes_for_category(category_id):
-    """
-    Belirli bir kategori için öznitelik listesi döndürür
-    """
-    client = api_client.get_api_client()
-    if not client:
-        logger.error("API client oluşturulamadı")
-        return None
+    # Giyim türüne göre kategori seç
+    if gender_type == "kadın":
+        for key, category_id in WOMEN_CATEGORIES.items():
+            if key in text:
+                logger.info(f'Kadın kategorisi bulundu: "{key}" -> {category_id}')
+                return category_id
+        return 1  # Varsayılan olarak Kadın giyim
     
-    response = client.categories.get_category_attributes(category_id)
-    if 'error' in response:
-        logger.error(f"Öznitelik yükleme hatası: {response.get('message', 'Bilinmeyen hata')}")
-        return None
+    elif gender_type == "erkek":
+        for key, category_id in MEN_CATEGORIES.items():
+            if key in text:
+                logger.info(f'Erkek kategorisi bulundu: "{key}" -> {category_id}')
+                return category_id
+        return 2  # Varsayılan olarak Erkek giyim
     
-    return response
+    elif gender_type == "çocuk":
+        for key, category_id in CHILDREN_CATEGORIES.items():
+            if key in text:
+                logger.info(f'Çocuk kategorisi bulundu: "{key}" -> {category_id}')
+                return category_id
+        return 3  # Varsayılan olarak Çocuk giyim
+    
+    # Giyim türü belirlenemezse, genel kategorilerde ara
+    for key, category_id in DEFAULT_CATEGORIES.items():
+        if key in text:
+            logger.info(f'Genel kategori bulundu: "{key}" -> {category_id}')
+            return category_id
+    
+    # Hiçbir eşleşme bulunamazsa varsayılan kategori olarak Kadın Giyim
+    logger.warning(f'Kategori bulunamadı: "{text}", varsayılan kategori kullanılıyor (1: Kadın Giyim)')
+    return 1

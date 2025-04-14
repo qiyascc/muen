@@ -325,9 +325,7 @@ class ProductAdmin(ModelAdmin):
     # Perform batch processing
     success_count, error_count, batch_ids = api_client.batch_process_products(
         valid_products,
-        process_product_with_ai,
-        batch_size=batch_size,
-        delay=1.0  # 1-second delay between OpenAI requests to avoid rate limits
+        max_count=batch_size
     )
 
     # Show summary message
@@ -500,9 +498,7 @@ class ProductAdmin(ModelAdmin):
     # Perform batch processing
     success_count, error_count, batch_ids = api_client.batch_process_products(
         valid_products,
-        process_product_with_simple_finder,
-        batch_size=batch_size,
-        delay=1.0  # 1-second delay between API requests to avoid rate limits
+        max_count=batch_size
     )
 
     # Show summary message

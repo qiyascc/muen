@@ -235,6 +235,110 @@ def get_api_client() -> Optional[TrendyolApi]:
         return None
 
 
+def lcwaikiki_to_trendyol_product(lcw_product):
+    """
+    LCWaikiki ürününü Trendyol ürününe dönüştür
+    """
+    from .simple_category_finder import find_best_category
+    from .models import TrendyolProduct
+    
+    if not lcw_product:
+        return None, "Source product is None"
+    
+    # API istemcisini al
+    api_client = get_api_client()
+    if not api_client:
+        return None, "Etkin Trendyol API yapılandırması bulunamadı"
+    
+    # Marka bulmaya çalış
+    brand_name = "LCW"  # Varsayılan marka
+    brand_response = api_client.brands.get_brand_by_name(brand_name)
+    
+    brand_id = None
+    if not isinstance(brand_response, dict) or 'error' not in brand_response:
+        if isinstance(brand_response, list) and len(brand_response) > 0:
+            brand_id = brand_response[0]['id']
+            logger.info(f"Mevcut marka ID kullanılıyor: {brand_id}")
+    
+    if not brand_id:
+        logger.warning(f"Marka bulunamadı: {brand_name}")
+        brand_id = 102  # Varsayılan marka ID (LCW)
+        
+    # En iyi kategori eşleşmesini bul
+    category_id = find_best_category(lcw_product.category or lcw_product.title)
+    if not category_id:
+        return None, f"Kategori bulunamadı: {lcw_product.category}"
+    
+    # Ürün barkodunu oluştur
+    barcode = f"LCW{lcw_product.id}"
+    
+    # Fiyatı düzgün bir şekilde ayarla
+    try:
+        price = float(lcw_product.price)
+    except (ValueError, TypeError):
+        price = 0.0
+        logger.warning(f"Fiyat dönüştürülemedi: {lcw_product.price}")
+    
+    # Resim URL'lerini hazırla
+    images = []
+    for image in lcw_product.images.all():
+        images.append({"url": image.image_url})
+    
+    # Öznitelikleri hazırla (Renk bilgisini içermeli)
+    attributes = []
+    
+    # Renk özniteliğini ekle (Trendyol'un şart koştuğu)
+    if hasattr(lcw_product, 'color') and lcw_product.color:
+        attributes.append({
+            "attributeId": 348,  # Renk öznitelik ID'si
+            "attributeValueId": 6530  # Siyah renk için varsayılan ID (gerçekte doğru ID bulunmalı)
+        })
+    
+    # Trendyol ürünü oluştur
+    trendyol_product = TrendyolProduct(
+        title=lcw_product.title,
+        description=lcw_product.description or lcw_product.title,
+        barcode=barcode,
+        product_main_id=barcode,
+        brand_name="LCW",
+        brand_id=brand_id,
+        category_name=lcw_product.category,
+        category_id=category_id,
+        price=price,
+        quantity=lcw_product.in_stock or 0,
+        vat_rate=18,  # Varsayılan KDV oranı
+        stock_code=barcode,
+        attributes=attributes,
+        image_url=lcw_product.images.first().image_url if lcw_product.images.exists() else "",
+        additional_images=images,
+        lcwaikiki_product=lcw_product,
+        batch_status='pending'
+    )
+    
+    # Veritabanına kaydet
+    trendyol_product.save()
+    
+    # Model verilerini Trendyol API formatına dönüştür
+    formatted_data = {
+        "barcode": trendyol_product.barcode,
+        "title": trendyol_product.title,
+        "productMainId": trendyol_product.product_main_id,
+        "brandId": trendyol_product.brand_id,
+        "categoryId": trendyol_product.category_id,
+        "listPrice": float(trendyol_product.price) * 1.5,  # liste fiyatı daha yüksek
+        "salePrice": float(trendyol_product.price),
+        "vatRate": trendyol_product.vat_rate,
+        "stockCode": trendyol_product.stock_code,
+        "dimensionalWeight": 1,  # Varsayılan değer
+        "description": trendyol_product.description,
+        "cargoCompanyId": 17,  # Varsayılan değer (genelde MNG)
+        "images": [{"url": trendyol_product.image_url}] if trendyol_product.image_url else [],
+        "attributes": trendyol_product.attributes
+    }
+    
+    return trendyol_product, formatted_data
+
+
 def send_product_to_trendyol(product):
     """
     Ürünü Trendyol'a gönder
@@ -243,26 +347,47 @@ def send_product_to_trendyol(product):
     if not api_client:
         return None, "Etkin Trendyol API yapılandırması bulunamadı"
     
-    # Ürün verisini Trendyol formatına dönüştür
-    product_data = {
-        "barcode": product.barcode,
-        "title": product.title,
-        "productMainId": product.barcode,
-        "brandId": product.brand_id,
-        "categoryId": product.category_id,
-        "listPrice": product.list_price,
-        "salePrice": product.sale_price,
-        "vatRate": product.vat_rate,
-        "stockCode": product.stock_code,
-        "cargoCompanyId": product.cargo_company_id,
-        "dimensionalWeight": product.dimensional_weight,
-        "description": product.description,
-        "attributes": product.attributes,
-        "images": product.images
-    }
+    # LCWaikiki ürünü ise, önce Trendyol ürününe dönüştür
+    if not hasattr(product, 'barcode'):
+        from lcwaikiki.models import Product as LcwProduct
+        if isinstance(product, LcwProduct):
+            trendyol_product, product_data = lcwaikiki_to_trendyol_product(product)
+            if not trendyol_product:
+                return None, str(product_data) if isinstance(product_data, str) else "Ürün dönüştürme hatası"
+    else:
+        # Zaten bir TrendyolProduct nesnesi
+        trendyol_product = product
+        
+        # Basit veri dönüşümü
+        product_data = {
+            "barcode": trendyol_product.barcode,
+            "title": trendyol_product.title,
+            "productMainId": trendyol_product.product_main_id or trendyol_product.barcode,
+            "brandId": trendyol_product.brand_id,
+            "categoryId": trendyol_product.category_id,
+            "listPrice": float(trendyol_product.price) * 1.5,  # Liste fiyatı daha yüksek ayarla
+            "salePrice": float(trendyol_product.price),
+            "vatRate": trendyol_product.vat_rate,
+            "stockCode": trendyol_product.stock_code or trendyol_product.barcode,
+            "dimensionalWeight": 1.0,  # Varsayılan değer
+            "description": trendyol_product.description,
+            "cargoCompanyId": 17,  # Varsayılan değer
+            "images": [{"url": trendyol_product.image_url}] if trendyol_product.image_url else [],
+            "attributes": trendyol_product.attributes if trendyol_product.attributes else []
+        }
+    
+    # Gerekli alanların mevcut olduğundan emin ol
+    if not product_data.get("barcode"):
+        return None, "Ürün barkodu tanımlanmamış"
+    
+    if not product_data.get("categoryId"):
+        return None, "Ürün kategorisi tanımlanmamış"
+    
+    if not product_data.get("brandId"):
+        return None, "Ürün markası tanımlanmamış"
     
     # Hata ayıklama bilgilerini yazdır
-    print(f"[DEBUG-CREATE] Ürün gönderiliyor: {product.title}")
+    print(f"[DEBUG-CREATE] Ürün gönderiliyor: {trendyol_product.title}")
     print(f"[DEBUG-CREATE] Gönderilen veri: {json.dumps(product_data, indent=2)}")
     
     # Ürünü Trendyol'a gönder
@@ -272,18 +397,27 @@ def send_product_to_trendyol(product):
     print(f"[DEBUG-CREATE] Trendyol'dan gelen yanıt: {json.dumps(response, indent=2)}")
     
     if 'error' in response:
-        return None, f"Ürün Trendyol'a gönderilirken hata: {response['message']}"
+        error_msg = f"Ürün Trendyol'a gönderilirken hata: {response.get('message', 'Bilinmeyen hata')}"
+        trendyol_product.status_message = error_msg
+        trendyol_product.batch_status = 'failed'
+        trendyol_product.save()
+        return None, error_msg
     
     if 'batchRequestId' in response:
         batch_id = response['batchRequestId']
-        product.batch_id = batch_id
-        product.batch_status = 'pending'
-        product.save()
+        trendyol_product.batch_id = batch_id
+        trendyol_product.batch_status = 'pending'
+        trendyol_product.status_message = "Trendyol'a gönderildi, işleme alındı"
+        trendyol_product.save()
         
-        logger.info(f"Product '{product.title}' (ID: {product.id}) submitted with batch ID: {batch_id}")
+        logger.info(f"Product '{trendyol_product.title}' (ID: {trendyol_product.id}) submitted with batch ID: {batch_id}")
         return batch_id, None
     
-    return None, "Ürün Trendyol'a gönderilirken bilinmeyen hata"
+    error_msg = "Ürün Trendyol'a gönderilirken bilinmeyen hata"
+    trendyol_product.status_message = error_msg
+    trendyol_product.batch_status = 'failed'
+    trendyol_product.save()
+    return None, error_msg
 
 
 def check_product_batch_status(batch_id):
