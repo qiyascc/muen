@@ -1,0 +1,73 @@
+Trendyol Batch Durumu
+Batch ID: e64f501f-457b-4a54-a64f-b118a57e6aec-1744655679
+Parametre	Değer
+Durum	COMPLETED
+Oluşturulma Tarihi	1744641279282
+Son Güncellenme	1744641280220
+Toplam Ürün	1
+Başarısız Ürün	1
+Detaylı Ürün Durumları
+Barkod	Durum	Mesaj
+FAILED	
+Orijinal Yanıt
+{
+  "batchRequestId": "e64f501f-457b-4a54-a64f-b118a57e6aec-1744655679",
+  "items": [
+    {
+      "requestItem": {
+        "product": {
+          "barcode": "LCWS5FE26Z8LSJ",
+          "title": "LCW Modest Lacivert Desenli Oversize Kad\u0131n G\u00f6mlek Tunik",
+          "productMainId": "S5FE26Z8LSJ",
+          "brandId": 7651,
+          "categoryId": 522,
+          "quantity": 10,
+          "stockCode": "S5FE26Z8LSJ",
+          "dimensionalWeight": null,
+          "description": "<div class=\"panel-body\">\n<div class=\"row\">\n<div class=\"col-xs-12\">\n<h5>\u00dcr\u00fcn A\u00e7\u0131klamas\u0131</h5>\n<ul>\n<li class=\"\">\r\n                                                                            Desenli uzun kollu oversize g\u00f6mlek tunik, pamuklu kuma\u015ftan \u00fcretilmi\u015ftir. Yumu\u015fak dokusu ve nefes alabilir yap\u0131s\u0131, g\u00fcn boyu rahatl\u0131k ve hafiflik sa\u011flar. \u00d6nden d\u00fc\u011fme kapamal\u0131 tasar\u0131m\u0131 sayesinde giyinme kolayl\u0131\u011f\u0131 sunar.\r\n                                                                        </li>\n</ul>\n</div>\n</div>\n<div class=\"row\">\n<div class=\"col-xs-12\">\n</div>\n</div>\n<div class=\"row\">\n<div class=\"col-xs-12\">\n<p><h5>Manken Bilgisi</h5></p>\n<p>\n<b>G\u00f6\u011f\u00fcs:</b> <span class=\"ltr-fix\">86 cm</span>\n<b>Bel:</b> <span class=\"ltr-fix\">65 cm</span>\n<b>Basen:</b> <span class=\"ltr-fix\">95 cm</span>\n<b>Boy:</b> <span class=\"ltr-fix\">179 cm</span>\n<br/>\r\n        Manken <b class=\"ltr-fix\">36</b> beden \u00fcr\u00fcn giyiyor.\r\n    </p>\n</div>\n</div>\n<div class=\"row\">\n<div class=\"col-xs-12\">\n<p><h5>Manken Bilgisi</h5></p>\n<p>\n<b>Boy:</b> 179 cm\r\n\r\n        <b>Kilo:</b> 65 kg\r\n        <br/>\n</p>\n</div>\n</div>\n<div class=\"row\">\n<div class=\"col-xs-12\">\n<h5>\u00dcr\u00fcn \u0130\u00e7eri\u011fi ve \u00d6zellikleri</h5>\n</div>\n<div class=\"col-xs-12\">\n<!--googleoff: all-->\n<b>\u00dcr\u00fcn \u0130\u00e7eri\u011fi:</b>\n<p><b>Ana Kuma\u015f:</b> %100 Pamuk</p>\n<!--googleon: all-->\n</div>\n<div class=\"col-xs-12\">\n<div class=\"col-md-6 option-info nopadding\">\n<p><b>\u00dcr\u00fcn \u00d6zellikleri:</b></p>\n<p><b>Sat\u0131c\u0131:</b> LC Waikiki Ma\u011fazac\u0131l\u0131k Hizmetleri Ticaret A.\u015e.</p>\n<p><b>Marka:</b> LCW Modest</p>\n<p><b>\u00dcr\u00fcn Tipi:</b> G\u00f6mlek Tunik</p>\n<p><b>Cinsiyet:</b> Kad\u0131n</p>\n<p><b>Desen:</b> Desenli</p>\n<p><b>Kal\u0131nl\u0131k:</b> \u0130nce</p>\n<p><b>Kal\u0131p:</b> Oversize</p>\n<p><b>Kol Boyu:</b> Uzun Kollu</p>\n<p><b>Koleksiyon:</b> Tesett\u00fcr Giyim</p>\n<p><b>Malzeme:</b> %100 Pamuk</p>\n<p><b>Uzunluk:</b> Basen Boy</p>\n<p><b>Yaka:</b> G\u00f6mlek Yaka</p>\n</div>\n</div>\n</div>\n</div>",
+          "currencyType": "TRY",
+          "listPrice": 779.99,
+          "salePrice": 779.99,
+          "vatRate": 10,
+          "images": [
+            {
+              "url": "https://img-lcwaikiki.mncdn.com/mnpadding/800/1066/ffffff/pim/productimages/20251/7767350/v2/l_20251-s5fe26z8-lsj-86-65-95-179_a.jpg"
+            },
+            {
+              "url": "https://img-lcwaikiki.mncdn.com/mnpadding/800/1066/ffffff/pim/productimages/20251/7767350/v2/l_20251-s5fe26z8-lsj-86-65-95-179_a1.jpg"
+            },
+            {
+              "url": "https://img-lcwaikiki.mncdn.com/mnpadding/800/1066/ffffff/pim/productimages/20251/7767350/v2/l_20251-s5fe26z8-lsj-86-65-95-179_a2.jpg"
+            },
+            {
+              "url": "https://img-lcwaikiki.mncdn.com/mnpadding/800/1066/ffffff/pim/productimages/20251/7767350/v2/l_20251-s5fe26z8-lsj-86-65-95-179_a3.jpg"
+            },
+            {
+              "url": "https://img-lcwaikiki.mncdn.com/mnpadding/800/1066/ffffff/pim/productimages/20251/7767350/v1/l_20251-s5fe26z8-lsj_u.jpg"
+            },
+            {
+              "url": "https://img-lcwaikiki.mncdn.com/mnpadding/800/1066/ffffff/pim/productimages/20251/7767350/v1/l_20251-s5fe26z8-lsj_u1.jpg"
+            }
+          ],
+          "attributes": [],
+          "cargoCompanyId": 17,
+          "shipmentAddressId": null,
+          "returningAddressId": null
+        },
+        "barcode": "LCWS5FE26Z8LSJ"
+      },
+      "status": "FAILED",
+      "failureReasons": [
+        "522 kategorisinden daha detayl\u0131 bir kategori se\u00e7imi yapmal\u0131s\u0131n\u0131z."
+      ]
+    }
+  ],
+  "status": "COMPLETED",
+  "creationDate": 1744641279282,
+  "lastModification": 1744641280220,
+  "sourceType": "API",
+  "itemCount": 1,
+  "failedItemCount": 1,
+  "batchRequestType": "ProductV2OnBoarding",
+  "notes": null
+}
