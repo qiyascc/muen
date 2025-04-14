@@ -607,6 +607,7 @@ class TrendyolProductManager:
     Generate attributes for a category based on API data and product description.
     
     If product_description is provided, tries to extract attribute values from the description.
+    This function performs advanced pattern matching to find the most accurate attributes.
     """
     attributes = []
     try:
@@ -622,18 +623,34 @@ class TrendyolProductManager:
       color_attr = None
       required_attrs = []
       
+      # Extract structured information from description
+      # Extract key-value pairs from the product description 
+      desc_info = {}
+      if product_description:
+          # Extract structured information from product description
+          desc_info = self._extract_structured_info_from_description(product_description)
+      
       # Extract description keywords - create a normalized version for matching
       # This will be used to try to match attribute values from the description
       desc_keywords = []
+      desc_phrases = []
       if product_description:
         # Clean and normalize the description
         clean_desc = product_description.lower()
         # Remove common HTML tags
         clean_desc = re.sub(r'<[^>]+>', ' ', clean_desc)
-        # Extract all potential keywords: capitalize each word for better matching with attribute values
+        # Extract all potential keywords for single-word matching
         desc_keywords = [w.strip() for w in re.findall(r'\b\w+\b', clean_desc) if len(w.strip()) > 2]
         
+        # Extract phrases (2-3 consecutive words) for better matching
+        words = [w.strip() for w in re.findall(r'\b\w+\b', clean_desc) if len(w.strip()) > 1]
+        for i in range(len(words)-1):
+            desc_phrases.append(f"{words[i]} {words[i+1]}")
+        for i in range(len(words)-2):
+            desc_phrases.append(f"{words[i]} {words[i+1]} {words[i+2]}")
+        
         print(f"[DEBUG-API] Açıklamadan çıkarılan anahtar kelimeler: {', '.join(desc_keywords[:20])}...")
+        print(f"[DEBUG-API] Açıklamadan çıkarılan anahtar ifadeler: {', '.join(desc_phrases[:10])}...")
 
       # First pass - identify required attributes
       for attr in category_attrs.get('categoryAttributes', []):
