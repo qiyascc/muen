@@ -9,6 +9,7 @@ from unfold.forms import AdminPasswordChangeForm, UserChangeForm, UserCreationFo
 from .models import Config, ProductAvailableUrl, ProductDeletedUrl, ProductNewUrl
 from .product_models import Product, ProductSize, City, Store, SizeStoreStock
 from trendyol import api_client
+from trendyol.openai_processor import create_trendyol_product_with_ai
 
 # Product Models Admin Configuration
 
@@ -33,7 +34,7 @@ class ProductAdmin(ModelAdmin):
     readonly_fields = ('timestamp',)
     list_per_page = 20
     inlines = [ProductSizeInline]
-    actions = ['send_to_trendyol']
+    actions = ['send_to_trendyol', 'send_to_trendyol_with_ai']
     
     # Unfold specific configurations
     fieldsets = (
@@ -204,6 +205,139 @@ class ProductAdmin(ModelAdmin):
             )
         
     send_to_trendyol.short_description = "Send selected products to Trendyol"
+    
+    def send_to_trendyol_with_ai(self, request, queryset):
+        """
+        Action to send selected products to Trendyol using OpenAI for optimization.
+        This implementation uses OpenAI to intelligently process product data and
+        set appropriate attributes for Trendyol.
+        """
+        if not queryset.exists():
+            self.message_user(request, "No products selected to send to Trendyol", level=messages.ERROR)
+            return
+        
+        # Filter out products that are not in stock
+        valid_products = []
+        skipped_products = []
+        
+        for product in queryset:
+            if not product.in_stock:
+                skipped_products.append(product)
+            else:
+                valid_products.append(product)
+        
+        # Show warnings for skipped products
+        for product in skipped_products:
+            self.message_user(
+                request, 
+                f"Product '{product.title}' is not in stock and was skipped", 
+                level=messages.WARNING
+            )
+        
+        if not valid_products:
+            self.message_user(request, "No in-stock products to send to Trendyol", level=messages.WARNING)
+            return
+        
+        # Define AI-powered processing function
+        def process_product_with_ai(product):
+            try:
+                # Convert to Trendyol product
+                trendyol_product = api_client.lcwaikiki_to_trendyol_product(product)
+                
+                if not trendyol_product:
+                    self.message_user(
+                        request, 
+                        f"Failed to convert '{product.title}' to Trendyol format", 
+                        level=messages.ERROR
+                    )
+                    return None
+                
+                # Check if category is set, if not, try to find one
+                if not trendyol_product.category_id:
+                    from trendyol.api_client import find_best_category_match
+                    from trendyol.models import TrendyolCategory
+                    import logging
+                    
+                    logger = logging.getLogger('trendyol.admin')
+                    
+                    category_id = find_best_category_match(trendyol_product)
+                    if category_id:
+                        trendyol_product.category_id = category_id
+                        try:
+                            category = TrendyolCategory.objects.get(category_id=category_id)
+                            trendyol_product.category_name = category.name
+                            trendyol_product.save()
+                            logger.info(f"Updated category for {trendyol_product.title} to {category.name} (ID: {category_id})")
+                        except TrendyolCategory.DoesNotExist:
+                            logger.warning(f"Found category ID {category_id} but it doesn't exist in database")
+                    else:
+                        self.message_user(
+                            request, 
+                            f"Failed to find category for '{product.title}'", 
+                            level=messages.ERROR
+                        )
+                        return None
+                
+                # Use OpenAI to process and send to Trendyol
+                batch_id = create_trendyol_product_with_ai(trendyol_product)
+                
+                if batch_id:
+                    self.message_user(
+                        request, 
+                        f"Product '{product.title}' sent to Trendyol with OpenAI optimization. Batch ID: {batch_id}", 
+                        level=messages.SUCCESS
+                    )
+                    return batch_id
+                else:
+                    error_message = f"Failed to send '{product.title}' to Trendyol with OpenAI"
+                    if trendyol_product.status_message:
+                        error_message += f": {trendyol_product.status_message}"
+                    self.message_user(
+                        request, 
+                        error_message, 
+                        level=messages.ERROR
+                    )
+                    return None
+            except Exception as e:
+                self.message_user(
+                    request, 
+                    f"Error sending '{product.title}' to Trendyol with OpenAI: {str(e)}", 
+                    level=messages.ERROR
+                )
+                return None
+        
+        # Process products in batches
+        batch_size = min(5, len(valid_products))  # Use smaller batch size for OpenAI processing
+        self.message_user(
+            request,
+            f"Processing {len(valid_products)} products with OpenAI in batches of {batch_size}... This may take a while.",
+            level=messages.INFO
+        )
+        
+        # Perform batch processing
+        success_count, error_count, batch_ids = api_client.batch_process_products(
+            valid_products, 
+            process_product_with_ai, 
+            batch_size=batch_size, 
+            delay=1.0  # 1-second delay between OpenAI requests to avoid rate limits
+        )
+        
+        # Show summary message
+        if success_count > 0:
+            self.message_user(
+                request, 
+                f"Successfully sent {success_count} products to Trendyol with OpenAI optimization. Batch IDs: {', '.join(batch_ids[:5])}{'...' if len(batch_ids) > 5 else ''}",
+                level=messages.SUCCESS
+            )
+        
+        if error_count > 0:
+            self.message_user(
+                request, 
+                f"{error_count} products failed to send with OpenAI. Check the messages above for details.",
+                level=messages.WARNING if success_count > 0 else messages.ERROR
+            )
+    
+    send_to_trendyol_with_ai.short_description = "Send to Trendyol (AI-powered)"
 
 
 @admin.register(City)
