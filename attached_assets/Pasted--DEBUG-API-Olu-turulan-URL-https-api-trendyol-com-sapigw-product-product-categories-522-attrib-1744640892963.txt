@@ -1,0 +1,19 @@
+
+[DEBUG-API] Oluşturulan URL: https://api.trendyol.com/sapigw/product/product-categories/522/attributes
+[DEBUG-API] SON İSTEK: GET https://api.trendyol.com/sapigw/product/product-categories/522/attributes
+[DEBUG-API] İSTEK HEADERS: {'Authorization': 'Basic cVNvaEtrTEtQV3dEZVNLand6OFI6eVlGM1ljbDlCNlZqczc3cTNNaEU=', 'Content-Type': 'application/json', 'User-Agent': '535623 - SelfIntegration'}
+Error making request to Trendyol API: 556 Server Error:  for url: https://api.trendyol.com/sapigw/product/product-categories/522/attributes
+[DEBUG-PRODUCT] Renk özelliği string ID ile bulundu, değeri: Siyah
+[DEBUG-PRODUCT] Toplam özellik sayısı: 0
+[DEBUG-PRODUCT] Özellikler: []
+[DEBUG-CREATE] Hazırlanan ürün verileri: {"barcode": "LCWS51526Z4CVL", "title": "LCW Kids Siyah Kapüşonlu Kız Çocuk Fermuarlı Sweatshirt", "productMainId": "S51526Z4CVL", "brandId": 7651, "categoryId": 522, "stockCode": "S51526Z4CVL", "quantity": 10, "description": "<div class=\"panel-body\...
+[DEBUG-CREATE] Trendyol'a ürün gönderiliyor...
+[DEBUG-API] make_request çağrısı. Orijinal endpoint: /integration/product/sellers/535623/products
+[DEBUG-API] Oluşturulan URL: https://api.trendyol.com/sapigw/integration/product/sellers/535623/products
+[DEBUG-API] SON İSTEK: POST https://api.trendyol.com/sapigw/integration/product/sellers/535623/products
+[DEBUG-API] İSTEK HEADERS: {'Authorization': 'Basic cVNvaEtrTEtQV3dEZVNLand6OFI6eVlGM1ljbDlCNlZqczc3cTNNaEU=', 'Content-Type': 'application/json', 'User-Agent': '535623 - SelfIntegration'}
+Error making request to Trendyol API: 556 Server Error:  for url: https://api.trendyol.com/sapigw/integration/product/sellers/535623/products
+[DEBUG-CREATE] Trendyol'dan gelen yanıt: {"error": true, "message": "556 Server Error:  for url: https://api.trendyol.com/sapigw/integration/product/sellers/535623/products", "details": {}}
+API error for product ID 136: 556 Server Error:  for url: https://api.trendyol.com/sapigw/integration/product/sellers/535623/products
+[14/Apr/2025 14:28:01] "POST /admin/lcwaikiki/product/ HTTP/1.1" 302 0
+[14/Apr/2025 14:28:03] "GET /admin/lcwaikiki/product/ HTTP/1.1" 200 193369
