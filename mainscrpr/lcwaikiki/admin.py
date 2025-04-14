@@ -412,9 +412,10 @@ class ProductAdmin(ModelAdmin):
                     if not config:
                         raise Exception("No Trendyol API configuration found")
                         
-                    api_key = config.auth_token
+                    api_key = config.api_key
+                    api_secret = config.api_secret
                     seller_id = config.supplier_id
-                    api_config = APIConfig(api_key=api_key, seller_id=seller_id, base_url=config.api_url)
+                    api_config = APIConfig(api_key=api_key, seller_id=seller_id, base_url=config.base_url)
                     api = TrendyolAPI(api_config)
                     
                     # Use simple category finder to find best category
