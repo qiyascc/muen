@@ -24,7 +24,7 @@ class TrendyolApi:
                api_key,
                api_secret,
                supplier_id,
-               base_url='https://apigw.trendyol.com',
+               base_url='https://api.trendyol.com/sapigw',
                user_agent=None):
     self.api_key = api_key
     self.api_secret = api_secret
@@ -1361,9 +1361,7 @@ def find_best_brand_match(product: TrendyolProduct) -> Optional[int]:
     logger.error(f"Error finding fallback brand: {str(e)}")
 
   # No brand found, use default brand ID 7651
-  logger.warning(
-      f"No matching brand found for product: {product.title}, using default brand ID: 7651"
-  )
+  logger.warning(f"No matching brand found for product: {product.title}, using default brand ID: 7651")
   return 7651
 
 
@@ -1441,8 +1439,7 @@ def prepare_product_data(product: TrendyolProduct) -> Dict[str, Any]:
   if not brand_id:
     # This should never happen now as find_best_brand_match always returns 7651 as a fallback
     # But keeping this check for safety
-    logger.warning(
-        f"No brand ID returned for product {product.id}, using default 7651")
+    logger.warning(f"No brand ID returned for product {product.id}, using default 7651")
     brand_id = 7651
 
   # Get image URLs
