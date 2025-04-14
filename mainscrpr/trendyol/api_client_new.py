@@ -689,11 +689,37 @@ class TrendyolProductManager:
               val_name = val['name'].lower()
               val_words = re.findall(r'\b\w+\b', val_name)
               
-              # Check if all words in the attribute value are in our keywords
-              if all(word.lower() in desc_keywords for word in val_words if len(word) > 2):
+              # Calculate match score based on how many words match
+              match_score = 0
+              matched_words = []
+              
+              for word in val_words:
+                if len(word) > 3 and word.lower() in desc_keywords:
+                  match_score += 1
+                  matched_words.append(word)
+              
+              # If we found matches that cover at least 50% of the attribute value words
+              if match_score > 0 and match_score >= max(1, 0.5 * len(val_words)):
                 matched_value = val
-                print(f"[DEBUG-API] Açıklamada kelime eşleşmesi bulundu: {attr['attribute']['name']} = {val['name']}")
+                print(f"[DEBUG-API] Açıklamada kelime eşleşmesi bulundu: {attr['attribute']['name']} = {val['name']} (kelimeler: {', '.join(matched_words)})")
                 break
+        
+        # Special handling for Model/Type attributes - check for Set/Takım patterns
+        if attr['attribute']['name'].lower() in ['model', 'model tip', 'tip', 'tür', 'type'] and not matched_value:
+          if product_description:
+            # Look for set/takım related terms in the product description
+            set_terms = ["set", "takım", "2'li", "3'lü", "ikili", "üçlü", "takımı"]
+            desc_lower = product_description.lower()
+            
+            # Check if any set term is in the description
+            if any(term in desc_lower for term in set_terms):
+              # Find an attribute value that matches set/takım
+              for val in attr['attributeValues']:
+                val_name = val['name'].lower()
+                if any(term in val_name for term in ["set", "takım"]):
+                  matched_value = val
+                  print(f"[DEBUG-API] Set/Takım özel eşleştirmesi: {attr['attribute']['name']} = {val['name']}")
+                  break
         
         # Use the matched value if found, otherwise use the first available value
         if matched_value:
@@ -724,16 +750,49 @@ class TrendyolProductManager:
             "attributeName": color_attr['attribute']['name']
         }
 
-        # Try to find color in the product description
+        # Try to find color in the product description with advanced matching
         if product_description and color_attr.get('attributeValues'):
           color_values = color_attr['attributeValues']
-          for color_val in color_values:
+          # Sort by name length (descending) to match more specific colors first
+          color_values_sorted = sorted(color_values, key=lambda v: len(v['name']), reverse=True)
+          
+          # First try exact color match
+          color_found = False
+          for color_val in color_values_sorted:
             color_name = color_val['name'].lower()
             if color_name in product_description.lower():
               color_attribute["attributeValueId"] = color_val['id']
               color_attribute["attributeValue"] = color_val['name']
-              print(f"[DEBUG-API] Açıklamada renk bulundu: {color_val['name']}")
+              print(f"[DEBUG-API] Açıklamada tam renk eşleşmesi bulundu: {color_val['name']}")
+              color_found = True
               break
+              
+          # If exact match not found, try word-by-word matching
+          if not color_found and desc_keywords:
+            best_match = None
+            best_match_score = 0
+            
+            for color_val in color_values_sorted:
+              color_name = color_val['name'].lower()
+              color_words = [w for w in re.findall(r'\b\w+\b', color_name) if len(w) > 2]
+              
+              # Calculate match score
+              match_score = 0
+              for word in color_words:
+                if word in desc_keywords:
+                  match_score += 1
+              
+              # If this is the best match so far, save it
+              if match_score > 0 and match_score > best_match_score:
+                best_match = color_val
+                best_match_score = match_score
+            
+            # Use the best match if found
+            if best_match:
+              color_attribute["attributeValueId"] = best_match['id']
+              color_attribute["attributeValue"] = best_match['name']
+              print(f"[DEBUG-API] Açıklamada kelime-bazlı renk eşleşmesi bulundu: {best_match['name']} (skor: {best_match_score})")
+              color_found = True
         
         # If no color found in description, use first available
         if not color_attribute.get("attributeValueId") and color_attr.get('attributeValues') and len(
@@ -1027,7 +1086,13 @@ def prepare_product_for_trendyol(trendyol_product: TrendyolProduct) -> Dict:
     description = re.sub(r'<p[^>]*>.*?Satıcı:.*?</p>', '', description, flags=re.DOTALL)
     # Also remove just the b tag with "Satıcı:" if it exists
     description = re.sub(r'<b[^>]*>.*?Satıcı:.*?</b>', '', description, flags=re.DOTALL)
+    # Add extra processing to extract more readable text
+    # Remove all HTML tags but keep their content
+    description_text = re.sub(r'<[^>]+>', ' ', description)
+    # Normalize spaces
+    description_text = re.sub(r'\s+', ' ', description_text).strip()
     print(f"[DEBUG-API] Açıklama temizlendi: {description[:200]}...")
+    print(f"[DEBUG-API] Metin formatında açıklama: {description_text[:200]}...")
     
   # Clean up product title - normalize spaces
   title = trendyol_product.title
