@@ -849,18 +849,29 @@ def lcwaikiki_to_trendyol_product(lcw_product, variant_data=None) -> Optional[Tr
     Args:
         lcw_product: The LCWaikiki product to convert
         variant_data: Optional dictionary with variant-specific data (size, stock quantity)
+            Example: {'size': 'M', 'stock': 10}
     
     This version ensures we fetch all required data from API and throws
     errors if data isn't available.
     """
+  # Process variant data if provided
+  is_variant = False
+  variant_size = None
+  variant_stock = None
+  
+  if variant_data:
+      is_variant = True
+      variant_size = variant_data.get('size')
+      variant_stock = variant_data.get('stock')
+      logger.info(f"Processing variant: Size={variant_size}, Stock={variant_stock}")
   if not lcw_product:
     return None
 
   try:
-    # Check if a product size variant is being created
-    is_variant = variant_data is not None
-    variant_size = variant_data.get('size') if is_variant else None
-    variant_stock = variant_data.get('stock') if is_variant else None
+    # We already set these variables above - no need to set them again
+    # is_variant = variant_data is not None
+    # variant_size = variant_data.get('size') if is_variant else None
+    # variant_stock = variant_data.get('stock') if is_variant else None
     
     # For variants, look for an existing variant with the same size
     if is_variant:
@@ -878,18 +889,21 @@ def lcwaikiki_to_trendyol_product(lcw_product, variant_data=None) -> Optional[Tr
       # If no product code, create a fallback
       product_code = f"LCW{lcw_product.id}"
       
-    # Create a stock counter object if it doesn't exist in the module
-    if not hasattr(lcwaikiki_to_trendyol_product, 'product_counter'):
-      lcwaikiki_to_trendyol_product.product_counter = 0
+    # Create a global counter for MUSTAFA pattern if it doesn't exist
+    # Using global variables to avoid function attribute issues
+    global _product_counter
+    if '_product_counter' not in globals():
+        global _product_counter
+        _product_counter = 0
       
     # Generate a unique barcode with MUSTAFA pattern
     # Every 7 products will start with M, U, S, T, A, F, A respectively
     mustafa_letters = ['M', 'U', 'S', 'T', 'A', 'F', 'A']
-    letter_index = lcwaikiki_to_trendyol_product.product_counter % 7
+    letter_index = _product_counter % 7
     first_letter = mustafa_letters[letter_index]
     
     # Increment the counter for next product
-    lcwaikiki_to_trendyol_product.product_counter += 1
+    _product_counter += 1
     
     # Generate random alphanumeric string (12 chars) for the rest of the barcode
     import random
@@ -954,9 +968,15 @@ def lcwaikiki_to_trendyol_product(lcw_product, variant_data=None) -> Optional[Tr
     if not images:
       raise ValueError(f"No valid images found for product {lcw_product.id}")
 
-    # Get quantity from product
+    # Get quantity from product or use specific variant quantity if provided
     quantity = 0
-    if hasattr(lcw_product, 'get_total_stock'):
+    
+    # If variant data is provided with stock information, use that
+    if is_variant and variant_stock is not None:
+        quantity = variant_stock
+        logger.info(f"Using variant-specific stock quantity: {quantity} for size {variant_size}")
+    # Otherwise get stock from the product
+    elif hasattr(lcw_product, 'get_total_stock'):
       try:
         stock = lcw_product.get_total_stock()
         if stock and stock > 0:
@@ -1019,10 +1039,16 @@ def lcwaikiki_to_trendyol_product(lcw_product, variant_data=None) -> Optional[Tr
     # Create or update Trendyol product
     if not trendyol_product:
       # Create a new Trendyol product
+      # If this is a variant, adjust the title to include the size
+      title = lcw_product.title or "LC Waikiki Product"
+      if is_variant and variant_size:
+          # Add size to the title if not already present
+          if variant_size not in title:
+              title = f"{title} - {variant_size}"
+              
       trendyol_product = TrendyolProduct.objects.create(
-          title=lcw_product.title or "LC Waikiki Product",
-          description=lcw_product.description or lcw_product.title
-          or "LC Waikiki Product Description",
+          title=title,
+          description=lcw_product.description or title or "LC Waikiki Product Description",
           barcode=barcode,
           product_main_id=product_code or barcode,
           stock_code=product_code or barcode,
@@ -1037,6 +1063,7 @@ def lcwaikiki_to_trendyol_product(lcw_product, variant_data=None) -> Optional[Tr
           additional_images=images[1:] if len(images) > 1 else [],
           attributes=[],  # We'll fetch from API when sending to Trendyol
           lcwaikiki_product=lcw_product,
+          variant_key=variant_size,  # Store the variant key (size)
           batch_status='pending',
           status_message="Created from LCWaikiki product",
           currency_type="TRY",  # Turkish Lira
@@ -1047,13 +1074,22 @@ def lcwaikiki_to_trendyol_product(lcw_product, variant_data=None) -> Optional[Tr
       )
     else:
       # Update existing Trendyol product with latest LCWaikiki data
-      trendyol_product.title = lcw_product.title or trendyol_product.title or "LC Waikiki Product"
-      trendyol_product.description = lcw_product.description or lcw_product.title or trendyol_product.description or "LC Waikiki Product Description"
+      # Update title including the variant
+      title = lcw_product.title or trendyol_product.title or "LC Waikiki Product"
+      if is_variant and variant_size and variant_size not in title:
+          title = f"{title} - {variant_size}"
+      
+      trendyol_product.title = title
+      trendyol_product.description = lcw_product.description or title or trendyol_product.description or "LC Waikiki Product Description"
       trendyol_product.price = price
       trendyol_product.quantity = quantity
       trendyol_product.brand_id = brand_id or trendyol_product.brand_id
       trendyol_product.category_id = category_id or trendyol_product.category_id
       trendyol_product.pim_category_id = category_id or trendyol_product.pim_category_id
+      
+      # Update variant_key if necessary
+      if is_variant and variant_size:
+          trendyol_product.variant_key = variant_size
 
       # We'll fetch attributes from API when sending to Trendyol
       if not trendyol_product.attributes:
@@ -1131,6 +1167,55 @@ def prepare_product_for_trendyol(trendyol_product: TrendyolProduct) -> Dict:
   product_manager = get_product_manager()
   attributes = product_manager._get_attributes_for_category(
       trendyol_product.category_id, description)
+      
+  # If this is a variant with size information, make sure it's included in the attributes
+  if trendyol_product.variant_key:
+      # Check if size attribute already exists
+      size_attribute_exists = False
+      for attr in attributes:
+          if attr.get('attributeName', '').lower() in ['beden', 'size', 'numara', 'ölçü']:
+              size_attribute_exists = True
+              break
+              
+      # If no size attribute exists, try to add it
+      if not size_attribute_exists:
+          try:
+              # Try to find size attribute in category attributes
+              category_attrs = product_manager.category_finder.get_category_attributes(
+                  trendyol_product.category_id)
+                  
+              for cat_attr in category_attrs.get('categoryAttributes', []):
+                  attr_name = cat_attr['attribute']['name']
+                  if attr_name.lower() in ['beden', 'size', 'numara', 'ölçü']:
+                      # Found size attribute, now check if variant size exists in values
+                      size_value_id = None
+                      size_value_name = None
+                      
+                      for val in cat_attr.get('attributeValues', []):
+                          if val['name'].lower() == trendyol_product.variant_key.lower():
+                              size_value_id = val['id']
+                              size_value_name = val['name']
+                              break
+                      
+                      # Add size attribute
+                      if size_value_id:
+                          attributes.append({
+                              "attributeId": cat_attr['attribute']['id'],
+                              "attributeName": attr_name,
+                              "attributeValueId": size_value_id,
+                              "attributeValue": size_value_name
+                          })
+                      elif cat_attr.get('allowCustom'):
+                          attributes.append({
+                              "attributeId": cat_attr['attribute']['id'],
+                              "attributeName": attr_name,
+                              "customAttributeValue": trendyol_product.variant_key
+                          })
+                      
+                      print(f"[DEBUG-API] Varyant boyutu eklendi: {attr_name} = {trendyol_product.variant_key}")
+                      break
+          except Exception as e:
+              print(f"[DEBUG-API] Varyant boyutu eklerken hata: {str(e)}")
 
   # Construct the payload
   payload = {
