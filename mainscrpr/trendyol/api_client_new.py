@@ -181,13 +181,61 @@ class TrendyolCategoryFinder:
           f"Failed to fetch attributes for category {category_id}: {str(e)}")
       raise Exception(f"Failed to load attributes for category {category_id}")
 
-  def find_best_category(self, search_term: str, deep_search: bool = True, fallback: bool = True) -> int:
-    """Find the most relevant category for a given search term using multiple strategies"""
+  def find_best_category(self, search_term: str, product_title: str = None, deep_search: bool = True, fallback: bool = True) -> int:
+    """
+    Find the most relevant category for a given search term using multiple strategies
+    
+    Args:
+        search_term: Primary category term to search for
+        product_title: Optional product title to consider for better matching (especially for 'Set & Takım' detection)
+        deep_search: Whether to use advanced search strategies
+        fallback: Whether to return best match if no exact match found
+    """
     try:
       categories = self.category_cache
       if not categories:
         raise ValueError("Empty category list received from API")
 
+      # Special handling for common category matches with specific terms
+      if product_title:
+        # Convert to lowercase for easier matching
+        product_title_lower = product_title.lower().strip()
+        
+        # Detect "Set" or "Takım" products - look for specific patterns
+        if ("2'li" in product_title_lower or "ikili" in product_title_lower or 
+            "3'lü" in product_title_lower or "üçlü" in product_title_lower or
+            "takım" in product_title_lower or "set" in product_title_lower):
+            
+            # For children products with set/takım, prioritize finding the right children set category
+            if "çocuk" in product_title_lower:
+                # Look for child set categories
+                for cat in self._get_all_leaf_categories(categories):
+                    cat_name_lower = cat['name'].lower()
+                    if ("çocuk" in cat_name_lower and 
+                        ("set" in cat_name_lower or "takım" in cat_name_lower)):
+                        # Further specialize between boy/girl if possible
+                        if "erkek" in product_title_lower and "erkek" in cat_name_lower:
+                            logger.info(f"Found specialized boy set category: {cat['name']} (ID: {cat['id']})")
+                            return cat['id']
+                        elif "kız" in product_title_lower and "kız" in cat_name_lower:
+                            logger.info(f"Found specialized girl set category: {cat['name']} (ID: {cat['id']})")
+                            return cat['id']
+                        # Keep as general match if no gender match found
+                        logger.info(f"Found general children set category: {cat['name']} (ID: {cat['id']})")
+                        return cat['id']
+        
+        # Special case for tshirt vs tisort spelling variations (common Turkish product)
+        if "tişört" in product_title_lower or "t-shirt" in product_title_lower:
+            search_term_with_tshirt = search_term.lower().replace("tişört", "t-shirt")
+            search_term_with_tisort = search_term.lower().replace("t-shirt", "tişört")
+            
+            # Try both spellings when searching for categories
+            for cat in self._get_all_leaf_categories(categories):
+                cat_name_lower = cat['name'].lower()
+                if search_term_with_tshirt in cat_name_lower or search_term_with_tisort in cat_name_lower:
+                    logger.info(f"Found t-shirt/tişört category match: {cat['name']} (ID: {cat['id']})")
+                    return cat['id']
+      
       # Strategy 1: Try for exact match first (case insensitive)
       leaf_categories = self._get_all_leaf_categories(categories)
       search_term_lower = search_term.lower().strip()
@@ -203,6 +251,32 @@ class TrendyolCategoryFinder:
           return cat['id']
         # Collect similarity scores for all categories
         similarity = self._calculate_similarity(search_term_lower, cat_name_lower)
+        
+        # If we have a product title, increase score for relevant category matches
+        if product_title:
+            # Check how many words from the product title appear in this category
+            product_words = [w for w in product_title.lower().split() if len(w) > 2]
+            cat_words = cat_name_lower.split()
+            
+            title_match_score = 0
+            matched_title_words = []
+            
+            # Count product title words that match this category
+            for word in product_words:
+                if word in cat_name_lower:
+                    title_match_score += 1
+                    matched_title_words.append(word)
+            
+            # If category has good match with product title, boost similarity
+            if title_match_score > 1 or (title_match_score == 1 and len(matched_title_words) > 0 and len(matched_title_words[0]) > 4):
+                # Boost by percentage of matching words (max 50% boost)
+                boost_factor = min(0.5, title_match_score / len(product_words))
+                adjusted_similarity = similarity * (1 + boost_factor)
+                
+                # Log the boosted similarity
+                logger.info(f"Boosted category {cat['name']} similarity from {similarity:.2f} to {adjusted_similarity:.2f} based on product title")
+                similarity = adjusted_similarity
+            
         all_possible_matches.append({
             'category': cat,
             'score': similarity,
@@ -240,6 +314,22 @@ class TrendyolCategoryFinder:
           
           # Calculate what percentage of search words matched
           match_percentage = match_score / len(search_words) if search_words else 0
+          
+          # If we have a product title, check for significant product title words in the category name
+          if product_title:
+            product_words = [w for w in product_title.lower().split() if len(w) > 3]  # Only significant words
+            important_words = ["erkek", "kadın", "çocuk", "kız", "bebek", "takım", "set", "tişört", "t-shirt", "pantolon", "şort"]
+            
+            title_match_score = 0
+            for word in product_words:
+                if word in cat_name_lower:
+                    # Give more weight to important classifier words
+                    title_match_score += 1 if word not in important_words else 2
+            
+            # Boost score based on product title matches
+            if title_match_score > 0:
+                # Add a bonus to the match percentage (scaled by the number of matches)
+                match_percentage += 0.1 * title_match_score
           
           # Save this match info
           all_possible_matches.append({
@@ -832,9 +922,10 @@ def lcwaikiki_to_trendyol_product(lcw_product) -> Optional[TrendyolProduct]:
       # Try to find category from API
       try:
         if category_name:
+          # Use both category name and product title for better matching
           category_id = product_manager.category_finder.find_best_category(
-              category_name)
-          logger.info(f"Found category ID: {category_id} for {category_name}")
+              category_name, product_title=lcw_product.title)
+          logger.info(f"Found category ID: {category_id} for '{category_name}' (Product: '{lcw_product.title}')")
       except Exception as e:
         logger.error(
             f"Error finding category for product {lcw_product.id}: {str(e)}")
