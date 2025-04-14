@@ -1,80 +1,73 @@
-# Trendyol API Integration
+# Trendyol Integration
 
-This module provides a comprehensive integration with the Trendyol API for product management and synchronization.
+This module provides integration with the Trendyol Marketplace API, allowing products from LCWaikiki to be automatically synchronized with Trendyol.
 
-## Features
+## Architecture
 
-- **API Client**: Robust API client with authentication, endpoint management, and error handling
-- **Product Management**: Create, update, and delete products on Trendyol 
-- **Batch Processing**: Track batch operations with status checking
-- **Attribute Handling**: Proper color mapping with numeric IDs and attribute formatting
-- **Automatic Retry**: Tools for retrying failed product submissions
-- **Admin Integration**: Admin actions for synchronization and management
+The integration consists of several components:
 
-## Command Line Tools
+1. `api_integration.py` - Low-level API client for making requests to Trendyol
+2. `helpers.py` - Helper functions for data conversion and transformation
+3. `trendyol_client.py` - Higher-level client for Trendyol operations
+4. `sync_manager.py` - Manager for synchronizing products between LCWaikiki and Trendyol
+5. Management commands for various operations
 
-### Retry Failed Products
+## Management Commands
 
-You can retry failed product submissions using the command line tool:
+The following management commands are available:
+
+### Fetch data from Trendyol
 
 ```bash
-python manage.py retry_failed_trendyol_products --limit 10
+python manage.py fetch_trendyol_data --data-type brands
+python manage.py fetch_trendyol_data --data-type categories
+python manage.py fetch_trendyol_data --data-type all
 ```
 
-Options:
-- `--all`: Process all products, not just failed ones
-- `--limit N`: Limit processing to N products (default: 10)
+### Synchronize products from LCWaikiki to Trendyol
 
-### Other Commands
-
-- `python manage.py sync_trendyol`: Run Trendyol synchronization
-- `python manage.py test_trendyol_api`: Test Trendyol API connection
-
-## Admin Actions
-
-The following admin actions are available in the TrendyolProduct admin interface:
-
-1. **Sync with Trendyol**: Submit selected products to Trendyol
-2. **Check Sync Status**: Check synchronization status for products with batch IDs
-3. **Retry Failed Products**: Retry failed products with improved attribute handling
-4. **Refresh Product Data**: Refresh product data from LCWaikiki source
-
-## API Notes
-
-- The API base URL is `https://apigw.trendyol.com/integration`
-- Authentication uses Basic Auth with the Trendyol seller ID, API key, and API secret
-- The User-Agent header format should be `{seller_id} - SelfIntegration`
-- Color attributes must use numeric IDs (like 348 for color attributeId)
-- Do not include a separate "color" field outside the attributes array
-
-## Color ID Mapping
-
-For proper Trendyol integration, use these numeric color IDs:
-
-```
-'Beyaz': 1001, 
-'Siyah': 1002, 
-'Mavi': 1003, 
-'Kirmizi': 1004, 
-'Pembe': 1005,
-'Yeşil': 1006,
-'Sarı': 1007,
-'Mor': 1008,
-'Gri': 1009,
-'Kahverengi': 1010,
-'Ekru': 1011,
-'Bej': 1012,
-'Lacivert': 1013,
-'Turuncu': 1014,
-'Krem': 1015
+```bash
+python manage.py sync_from_lcwaikiki --max-items 100 --batch-size 10
 ```
 
-## Troubleshooting
+### Check batch status
 
-If products fail to send to Trendyol, check:
+```bash
+python manage.py check_batch_status
+python manage.py check_batch_status --batch-id <BATCH-ID>
+```
 
-1. Attribute format - must use numeric IDs
-2. Remove any redundant "color" field outside the attributes array
-3. Check image URLs are valid and accessible 
-4. Verify that required fields like barcode, title, and price are present
-5. Review API response errors in the product's status_message field
+### Create a Trendyol product from an LCWaikiki product
+
+```bash
+python manage.py create_trendyol_product <PRODUCT-ID>
+```
+
+## Configuration
+
+The integration uses the `TrendyolAPIConfig` model to store API credentials. Make sure you have a valid configuration set up before using the integration.
+
+Required credentials:
+- `supplier_id` - Your Trendyol seller ID
+- `api_key` - Your Trendyol API key
+- `api_secret` - Your Trendyol API secret
+- `base_url` - The Trendyol API base URL (defaults to `https://apigw.trendyol.com/integration/`)
+
+## Product Synchronization Process
+
+1. LCWaikiki products are fetched from the database
+2. For each product, a corresponding Trendyol product is created or updated
+3. The product is converted to Trendyol format with appropriate attributes
+4. The product is submitted to Trendyol using the API
+5. Batch status is checked to verify successful submission
+
+## Error Handling
+
+The integration includes robust error handling and logging. All API operations are logged to `trendyol_integration.log` and also to the standard output. Failed product submissions are marked as failed in the database with an appropriate error message.
+
+## API Limitations
+
+Note that the Trendyol API has the following limitations:
+- Maximum 1000 items per update
+- Maximum 20,000 items maximum stock
+- Maximum 50 requests per 10 seconds
