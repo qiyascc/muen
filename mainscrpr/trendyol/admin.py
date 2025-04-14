@@ -6,6 +6,7 @@ from django.forms.widgets import PasswordInput
 from unfold.admin import ModelAdmin, TabularInline
 
 from .models import TrendyolAPIConfig, TrendyolBrand, TrendyolCategory, TrendyolProduct
+from .openai_processor import create_trendyol_product_with_ai, prepare_product_with_ai
 
 
 @admin.register(TrendyolAPIConfig)
@@ -120,7 +121,7 @@ class TrendyolProductAdmin(ModelAdmin):
         return "Not available"
     display_batch_id.short_description = "Batch ID"
     
-    actions = ['sync_with_trendyol', 'check_sync_status', 'retry_failed_products', 'refresh_product_data']
+    actions = ['sync_with_trendyol', 'sync_with_trendyol_ai', 'check_sync_status', 'retry_failed_products', 'refresh_product_data']
     
     def sync_with_trendyol(self, request, queryset):
         """
@@ -140,6 +141,25 @@ class TrendyolProductAdmin(ModelAdmin):
         if count:
             self.message_user(request, f"Successfully initiated sync for {count} products. Check status in a few minutes.")
     sync_with_trendyol.short_description = "Sync selected products with Trendyol"
+    
+    def sync_with_trendyol_ai(self, request, queryset):
+        """
+        Synchronize selected products with Trendyol using OpenAI for optimizing attributes.
+        """
+        count = 0
+        for product in queryset:
+            try:
+                batch_id = create_trendyol_product_with_ai(product)
+                if batch_id:
+                    count += 1
+            except Exception as e:
+                self.message_user(request, f"Error syncing product with AI {product.title}: {str(e)}", level='error')
+        
+        if count:
+            self.message_user(request, f"Successfully initiated AI-powered sync for {count} products. OpenAI was used to optimize product details and attributes. Check status in a few minutes.")
+        else:
+            self.message_user(request, "No products were sent to Trendyol. Please check error messages.", level='warning')
+    sync_with_trendyol_ai.short_description = "Sync with Trendyol (AI-powered)"
     
     def check_sync_status(self, request, queryset):
         """
