@@ -484,7 +484,7 @@ class ProductAdmin(ModelAdmin):
                 except Exception as e:
                     self.message_user(
                         request, 
-                        f"Error processing '{product.title}' with improved AI: {str(e)}", 
+                        f"Error processing '{product.title}' with simple category finder: {str(e)}", 
                         level=messages.ERROR
                     )
                     return None
@@ -492,13 +492,13 @@ class ProductAdmin(ModelAdmin):
             except Exception as e:
                 self.message_user(
                     request, 
-                    f"Error sending '{product.title}' to Trendyol with improved AI: {str(e)}", 
+                    f"Error sending '{product.title}' to Trendyol with simple category finder: {str(e)}", 
                     level=messages.ERROR
                 )
                 return None
         
         # Process products in batches
-        batch_size = min(5, len(valid_products))  # Use smaller batch size for AI processing
+        batch_size = min(5, len(valid_products))  # Use smaller batch size for processing
         self.message_user(
             request,
             f"Processing {len(valid_products)} products with simple category finder in batches of {batch_size}... This may take a while.",
