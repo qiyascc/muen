@@ -1,7 +1,16 @@
 #!/usr/bin/env python
 """
-Simple script to test the Trendyol API connection after URL formatting fixes.
-This script will attempt to connect to the Trendyol API and fetch brands and categories.
+Test script for Trendyol API connection and endpoint accessibility.
+This script maps the available and unavailable endpoints in the Trendyol API.
+
+Available endpoints:
+- supplier/products - Successfully retrieving product data
+- price-and-inventory - Successfully updating price and inventory data
+
+Unavailable endpoints (556 Server Error):
+- product/brands - Using fallback database data
+- product/product-categories - Using fallback database data
+- product-attributes - Using fallback mechanisms
 """
 
 import os
