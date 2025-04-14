@@ -1,45 +1,33 @@
 """
-Yeni Trendyol Category Finder
+Trendyol Kategori Bulucu
 
 Bu modül, Trendyol API'sinden gelen kategorileri eşleştirmek için kullanılan
-TrendyolCategoryFinder sınıfının gelişmiş bir versiyonunu sağlar.
+TrendyolCategoryFinder sınıfını sağlar.
 
 Özellikler:
-1. Semantic search ile daha doğru kategori eşleştirmesi (sentence-transformers kütüphanesi kullanılarak)
-2. Kategori özniteliklerinin doğru şekilde alınması ve yönetilmesi
-3. Fallback mekanizmaları ile kütüphane yoksa basit string eşleştirmesi yapma
+1. Kategori özniteliklerinin doğru şekilde alınması ve yönetilmesi
+2. Basit string eşleştirmesi ile kategori bulma
+3. API'den gelen kategorileri önbelleğe alma
 
 Bu dosya, mevcut API istemcisiyle çalışacak şekilde tasarlanmıştır.
 """
 
 import logging
 import json
+import re
 from functools import lru_cache
 from typing import Dict, List, Any, Optional
+import difflib  # For basic string matching
 
-# Try to import sentence-transformers for advanced semantic similarity
-try:
-    from sentence_transformers import SentenceTransformer, util
-    from PyMultiDictionary import MultiDictionary
-    ADVANCED_SEARCH_AVAILABLE = True
-    logger = logging.getLogger(__name__)
-    logger.info("Advanced semantic search enabled with sentence-transformers")
-except ImportError:
-    ADVANCED_SEARCH_AVAILABLE = False
-    logger = logging.getLogger(__name__)
-    logger.warning("sentence-transformers not available, using basic search")
-    import difflib  # Fallback to difflib for basic string matching
+logger = logging.getLogger(__name__)
 
 
 class TrendyolCategoryFinder:
     """
-    Gelişmiş kategori bulucu sınıfı.
+    Basit kategori bulucu sınıfı.
     
     Bu sınıf, ürün adı veya kategorisine göre en uygun Trendyol kategori ID'sini bulmak için
-    gelişmiş semantik arama veya temel string eşleştirmesi kullanır.
-    
-    Sentence-transformers kütüphanesi mevcutsa semantik arama kullanılır, 
-    değilse difflib ile temel string eşleştirmesine düşer.
+    basit string eşleştirmesi kullanır.
     """
     
     def __init__(self, api_client):
@@ -51,22 +39,6 @@ class TrendyolCategoryFinder:
         """
         self.api = api_client
         self._category_cache = None
-        
-        # Try to initialize sentence-transformers if available
-        if ADVANCED_SEARCH_AVAILABLE:
-            try:
-                # Use multilingual model for Turkish
-                self.model = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
-                self.dictionary = MultiDictionary()
-                logger.info("Sentence Transformer model loaded successfully")
-            except Exception as e:
-                logger.error(f"Failed to initialize semantic model: {str(e)}")
-                # Fall back to basic search
-                self.model = None
-                self.dictionary = None
-        else:
-            self.model = None
-            self.dictionary = None
     
     @property
     def category_cache(self):
