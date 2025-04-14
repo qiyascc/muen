@@ -120,7 +120,14 @@ class ProductAdmin(ModelAdmin):
       return
 
     # Define processing function
-    def process_product(product):
+    def process_product(product, variant_data=None):
+      """
+      Process a product for Trendyol submission
+      
+      Args:
+          product: The LCWaikiki Product to process
+          variant_data: Optional dict with variant info, e.g. {'size': 'M', 'stock': 10}
+      """
       try:
         # Import from our new implementation
         from trendyol.api_client_new import lcwaikiki_to_trendyol_product, sync_product_to_trendyol
@@ -129,21 +136,33 @@ class ProductAdmin(ModelAdmin):
 
         logger = logging.getLogger('trendyol.admin')
         
-        # Convert to Trendyol product
-        try:
-            trendyol_product = lcwaikiki_to_trendyol_product(product)
-        except Exception as e:
+        # If this is a variant, log the variant information
+        if variant_data:
+            variant_size = variant_data.get('size')
+            variant_stock = variant_data.get('stock')
+            logger.info(f"Processing variant for product {product.id}: Size={variant_size}, Stock={variant_stock}")
             self.message_user(
                 request,
-                f"Failed to convert '{product.title}' to Trendyol format: {str(e)}",
+                f"Processing size variant '{variant_size}' with stock {variant_stock} for product '{product.title}'",
+                level=messages.INFO)
+        
+        # Convert to Trendyol product with potential variant data
+        try:
+            trendyol_product = lcwaikiki_to_trendyol_product(product, variant_data)
+        except Exception as e:
+            variant_desc = f" (Size: {variant_data.get('size')})" if variant_data else ""
+            self.message_user(
+                request,
+                f"Failed to convert '{product.title}{variant_desc}' to Trendyol format: {str(e)}",
                 level=messages.ERROR)
             logger.error(f"Error converting product {product.id}: {str(e)}")
             return None
 
         if not trendyol_product:
+          variant_desc = f" (Size: {variant_data.get('size')})" if variant_data else ""
           self.message_user(
               request,
-              f"Failed to convert '{product.title}' to Trendyol format",
+              f"Failed to convert '{product.title}{variant_desc}' to Trendyol format",
               level=messages.ERROR)
           return None
 
@@ -158,9 +177,10 @@ class ProductAdmin(ModelAdmin):
             trendyol_product.save()
             
             # If we get here, the sync was successful
+            variant_desc = f" (Size: {variant_data.get('size')})" if variant_data else ""
             self.message_user(
                 request,
-                f"Product '{product.title}' sent to Trendyol with batch ID: {batch_id}",
+                f"Product '{product.title}{variant_desc}' sent to Trendyol with batch ID: {batch_id}",
                 level=messages.SUCCESS)
             return batch_id
         except Exception as e:
@@ -201,15 +221,44 @@ class ProductAdmin(ModelAdmin):
         
         for product in batch:
             try:
-                batch_id = process_product(product)
-                if batch_id:
-                    success_count += 1
-                    batch_ids.append(batch_id)
-                else:
-                    error_count += 1
+                # Check if this product has size variants
+                sizes = product.sizes.filter(size_general_stock__gt=0)
+                
+                # If product has sizes with stock > 0, process each size as a variant
+                if sizes.exists():
+                    self.message_user(
+                        request, 
+                        f"Product '{product.title}' has {sizes.count()} size variants, processing each separately",
+                        level=messages.INFO
+                    )
                     
-                # Small delay to avoid overwhelming the API
-                time.sleep(0.5)
+                    # Process each size as a separate Trendyol product
+                    for size in sizes:
+                        variant_data = {
+                            'size': size.size_name,
+                            'stock': size.size_general_stock
+                        }
+                        
+                        batch_id = process_product(product, variant_data)
+                        if batch_id:
+                            success_count += 1
+                            batch_ids.append(batch_id)
+                        else:
+                            error_count += 1
+                        
+                        # Small delay to avoid overwhelming the API
+                        time.sleep(0.5)
+                else:
+                    # Process as a single product without variants
+                    batch_id = process_product(product)
+                    if batch_id:
+                        success_count += 1
+                        batch_ids.append(batch_id)
+                    else:
+                        error_count += 1
+                    
+                    # Small delay to avoid overwhelming the API
+                    time.sleep(0.5)
             except Exception as e:
                 error_count += 1
                 self.message_user(
