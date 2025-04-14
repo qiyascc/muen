@@ -2363,14 +2363,11 @@ def lcwaikiki_to_trendyol_product(lcw_product) -> Optional[TrendyolProduct]:
           f"Error finding brand for product {lcw_product.id}: {str(e)}")
 
     # Prepare basic attributes based on product data
-    attributes = {}
+    attributes = []
 
-    # Add color attribute if available
-    if hasattr(lcw_product, 'color') and lcw_product.color:
-      attributes["color"] = lcw_product.color
-
-    # Add size attributes if available (placeholder for now)
-    # We'll add a proper implementation for size mapping later
+    # We'll fetch the actual attributes from API once we have the category ID
+    # Setting this empty array ensures we check and populate it later in prepare_product_data
+    # Using the enhanced get_required_attributes_for_category function
 
     # Find category information
     category_id = None
@@ -2430,11 +2427,9 @@ def lcwaikiki_to_trendyol_product(lcw_product) -> Optional[TrendyolProduct]:
         logger.error(f"Error fetching categories: {str(e)}")
 
     if not trendyol_product:
-      # Store color in attributes if it exists
-      if hasattr(lcw_product, 'color') and lcw_product.color:
-        if not attributes:
-          attributes = {}
-        attributes['color'] = lcw_product.color
+      # We'll fetch attributes from API for the category later in prepare_product_data
+      # This ensures that even though we're initializing with an empty attributes array,
+      # it will be populated correctly before being sent to Trendyol
 
       # Create a new Trendyol product with enhanced data
       trendyol_product = TrendyolProduct.objects.create(
@@ -2474,13 +2469,13 @@ def lcwaikiki_to_trendyol_product(lcw_product) -> Optional[TrendyolProduct]:
       trendyol_product.category_id = category_id or trendyol_product.category_id
       trendyol_product.pim_category_id = category_id or trendyol_product.pim_category_id
 
-      # Update attributes and add color if it exists
-      if hasattr(lcw_product, 'color') and lcw_product.color:
-        if not attributes:
-          attributes = {}
-        attributes['color'] = lcw_product.color
-
-      trendyol_product.attributes = attributes
+      # We'll fetch attributes from API for the category later in prepare_product_data
+      # This ensures that even though we're initializing with an empty attributes array,
+      # it will be populated correctly before being sent to Trendyol
+      
+      # If product already has valid attributes, keep them, otherwise initialize empty
+      if not trendyol_product.attributes or len(trendyol_product.attributes) == 0:
+          trendyol_product.attributes = []
 
       # Only update barcode if it's not already been used with Trendyol
       if not trendyol_product.trendyol_id and not trendyol_product.batch_status == 'completed':
