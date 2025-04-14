@@ -257,7 +257,14 @@ class TrendyolCategoryFinder:
                 attribute_id = attr['attribute']['id']
                 attribute_name = attr['attribute'].get('name', 'Unknown')
                 
-                logger.info(f"Processing attribute: {attribute_name} (ID: {attribute_id})")
+                # Check if attribute is required and log it
+                is_required = attr.get('required', False)
+                logger.info(f"Processing attribute: {attribute_name} (ID: {attribute_id}, Required: {is_required})")
+                
+                # Only add required attributes
+                if not is_required:
+                    logger.info(f"Skipping non-required attribute: {attribute_name}")
+                    continue
                 
                 # Check if this is a 'color' attribute and log it
                 if attribute_name.lower() in ['renk', 'color']:
