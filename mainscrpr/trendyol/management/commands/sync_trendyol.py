@@ -7,8 +7,9 @@ from django.db.models import Q
 from tqdm import tqdm
 
 # Fix the import to reference the correct module
-from lcwaikiki.product_models import Product
+from lcwaikiki.product_models import Product, ProductSize
 from trendyol.models import TrendyolProduct
+from trendyol.api_client_new import lcwaikiki_to_trendyol_product, sync_product_to_trendyol, get_product_manager
 from trendyol import api_client
 
 logger = logging.getLogger(__name__)
@@ -46,19 +47,29 @@ class Command(BaseCommand):
         Fetch brands and categories from Trendyol.
         """
         try:
-            self.stdout.write("Fetching brands from Trendyol...")
-            brands = api_client.fetch_brands()
-            self.stdout.write(self.style.SUCCESS(f"Fetched {len(brands)} brands"))
+            self.stdout.write("Initializing API connections...")
             
-            self.stdout.write("Fetching categories from Trendyol...")
-            categories = api_client.fetch_categories()
-            self.stdout.write(self.style.SUCCESS(f"Fetched {len(categories)} categories"))
+            # Get the product manager which contains the category finder
+            product_manager = get_product_manager()
+            self.stdout.write(self.style.SUCCESS("Successfully initialized API connections"))
+            
+            # Fetch categories to populate the cache
+            if product_manager and hasattr(product_manager, 'category_finder'):
+                self.stdout.write("Fetching categories from Trendyol...")
+                categories = product_manager.category_finder.category_cache()
+                self.stdout.write(self.style.SUCCESS(f"Fetched {len(categories)} categories"))
+            else:
+                self.stdout.write(self.style.WARNING("Could not find category finder, using old API client"))
+                # Fallback to old API client
+                categories = api_client.fetch_categories()
+                self.stdout.write(self.style.SUCCESS(f"Fetched {len(categories)} categories using old API client"))
         except Exception as e:
             self.stdout.write(self.style.ERROR(f"Error fetching reference data: {str(e)}"))
             
     def sync_lcwaikiki_products(self, max_items):
         """
         Check for LCWaikiki products that need to be synced to Trendyol.
+        This includes handling variants (different sizes) as separate products.
         """
         try:
             # Get LCWaikiki products that are in stock and have no Trendyol product
@@ -75,19 +86,56 @@ class Command(BaseCommand):
             
             self.stdout.write(f"Found {lcw_products.count()} LCWaikiki products to sync")
             
+            processed_count = 0
             with tqdm(total=len(lcw_products), desc="Processing LCWaikiki products") as progress_bar:
                 for lcw_product in lcw_products:
                     try:
-                        with transaction.atomic():
-                            # Convert LCWaikiki product to Trendyol product
-                            trendyol_product = api_client.lcwaikiki_to_trendyol_product(lcw_product)
+                        # Check if product has sizes
+                        product_sizes = ProductSize.objects.filter(product=lcw_product)
+                        
+                        if product_sizes.exists():
+                            # Process each size as a separate variant
+                            self.stdout.write(f"Processing {product_sizes.count()} size variants for {lcw_product.title}")
                             
-                            if trendyol_product:
-                                # Try to sync with Trendyol
-                                api_client.sync_product_to_trendyol(trendyol_product)
-                                self.stdout.write(self.style.SUCCESS(f"Synced product {lcw_product.title}"))
-                            else:
-                                self.stdout.write(self.style.WARNING(f"Could not create Trendyol product for {lcw_product.title}"))
+                            for size in product_sizes:
+                                try:
+                                    with transaction.atomic():
+                                        # Create variant data with size and stock
+                                        variant_data = {
+                                            'size': size.name,
+                                            'stock': size.stock
+                                        }
+                                        
+                                        # Convert LCWaikiki product size variant to Trendyol product
+                                        trendyol_product = lcwaikiki_to_trendyol_product(
+                                            lcw_product, variant_data=variant_data)
+                                        
+                                        if trendyol_product:
+                                            # Try to sync with Trendyol
+                                            sync_product_to_trendyol(trendyol_product)
+                                            self.stdout.write(self.style.SUCCESS(
+                                                f"Synced product variant {lcw_product.title} - {size.name} with stock {size.stock}"))
+                                        else:
+                                            self.stdout.write(self.style.WARNING(
+                                                f"Could not create Trendyol product for variant {lcw_product.title} - {size.name}"))
+                                except Exception as e:
+                                    self.stdout.write(self.style.ERROR(
+                                        f"Error syncing product variant {lcw_product.title} - {size.name}: {str(e)}"))
+                                
+                                # Small delay between size variants to avoid API rate limits
+                                time.sleep(0.2)
+                        else:
+                            # Process as a single product without variants
+                            with transaction.atomic():
+                                # Convert LCWaikiki product to Trendyol product
+                                trendyol_product = lcwaikiki_to_trendyol_product(lcw_product)
+                                
+                                if trendyol_product:
+                                    # Try to sync with Trendyol
+                                    sync_product_to_trendyol(trendyol_product)
+                                    self.stdout.write(self.style.SUCCESS(f"Synced product {lcw_product.title}"))
+                                else:
+                                    self.stdout.write(self.style.WARNING(f"Could not create Trendyol product for {lcw_product.title}"))
                     except Exception as e:
                         self.stdout.write(self.style.ERROR(f"Error syncing product {lcw_product.title}: {str(e)}"))
                     finally:
@@ -114,7 +162,9 @@ class Command(BaseCommand):
                 with tqdm(total=len(processing_products), desc="Checking processing products") as progress_bar:
                     for product in processing_products:
                         try:
-                            status = api_client.check_product_batch_status(product)
+                            # Use the new product manager to check batch status
+                            product_manager = get_product_manager()
+                            status = product_manager.check_batch_status(product.batch_id)
                             self.stdout.write(f"Product {product.title} status: {status}")
                         except Exception as e:
                             self.stdout.write(self.style.ERROR(f"Error checking status for {product.title}: {str(e)}"))
@@ -143,12 +193,36 @@ class Command(BaseCommand):
                                 if (not product.last_sync_time or 
                                     product.lcwaikiki_product.timestamp > product.last_sync_time):
                                     
-                                    # Update Trendyol product from LCWaikiki data
-                                    updated_product = api_client.lcwaikiki_to_trendyol_product(product.lcwaikiki_product)
+                                    # Check if this is a variant product
+                                    if product.variant_key:
+                                        # Find the size object that matches the variant key
+                                        size = ProductSize.objects.filter(
+                                            product=product.lcwaikiki_product,
+                                            name=product.variant_key
+                                        ).first()
+                                        
+                                        if size:
+                                            # Create variant data with size and stock
+                                            variant_data = {
+                                                'size': size.name,
+                                                'stock': size.stock
+                                            }
+                                            
+                                            # Update Trendyol product from LCWaikiki data with variant info
+                                            updated_product = lcwaikiki_to_trendyol_product(
+                                                product.lcwaikiki_product, variant_data=variant_data)
+                                        else:
+                                            # If size no longer exists, skip the update
+                                            self.stdout.write(self.style.WARNING(
+                                                f"Size {product.variant_key} no longer exists for product {product.title}"))
+                                            continue
+                                    else:
+                                        # Update Trendyol product from LCWaikiki data (no variant)
+                                        updated_product = lcwaikiki_to_trendyol_product(product.lcwaikiki_product)
                                     
                                     if updated_product:
                                         # Sync with Trendyol
-                                        api_client.sync_product_to_trendyol(updated_product)
+                                        sync_product_to_trendyol(updated_product)
                                         self.stdout.write(self.style.SUCCESS(f"Updated product {product.title}"))
                         except Exception as e:
                             self.stdout.write(self.style.ERROR(f"Error updating product {product.title}: {str(e)}"))
