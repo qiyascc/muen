@@ -1230,7 +1230,7 @@ def find_best_category_match(product: TrendyolProduct) -> Optional[int]:
   client = get_api_client()
   if not client:
     logger.error("Could not get API client to find category match")
-    return 1184  # Default to more specific category under 522: Kadın - Giyim - Gömlek (1184)
+    return 385  # Default to Women's Clothing - Jacket if no client
 
   try:
     print(
@@ -1254,7 +1254,7 @@ def find_best_category_match(product: TrendyolProduct) -> Optional[int]:
       logger.warning(
           f"Could not find a category match for product '{title}', using default"
       )
-      return 1184  # Default to more specific category under 522: Kadın - Giyim - Gömlek (1184)
+      return 385  # Default to Women's Clothing - Jacket
   except Exception as e:
     logger.error(f"Error finding category match: {str(e)}")
     # Return a default category on error
