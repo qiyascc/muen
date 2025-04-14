@@ -438,7 +438,7 @@ class TrendyolProductManager:
                 "categoryId": product.category_id,
                 "quantity": product.quantity,
                 "stockCode": product.stock_code,
-                "dimensionalWeight": product.dimensional_weight,
+                # "dimensionalWeight": product.dimensional_weight,
                 "description": product.description,
                 "currencyType": product.currency_type,
                 "listPrice": float(product.price),
