@@ -8,66 +8,47 @@ python manage.py shell < clean_default_data.py
 """
 
 import os
-import django
-from django.db import connection
+import logging
 
-# Django setup
+import django
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "mainscrpr.settings")
 django.setup()
 
-from trendyol.models import TrendyolCategory, TrendyolBrand
-from trendyol.models import TrendyolAPIConfig
+from django.db import transaction
+from trendyol.models import TrendyolCategory, TrendyolAttribute, TrendyolAttributeValue
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, 
+                   format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 def clean_all_default_data():
     """Tüm default/önceden kaydedilmiş verileri temizle"""
-    
-    # Kategorileri sil
-    categories_count = TrendyolCategory.objects.count()
-    TrendyolCategory.objects.all().delete()
-    print(f"✓ {categories_count} kategori silindi.")
-    
-    # Markaları sil
-    brands_count = TrendyolBrand.objects.count()
-    TrendyolBrand.objects.all().delete()
-    print(f"✓ {brands_count} marka silindi.")
-    
-    # Başarısız ürünleri bekliyor durumuna getir
-    with connection.cursor() as cursor:
-        cursor.execute("""
-        UPDATE trendyol_trendyolproduct
-        SET batch_status = 'pending',
-            status_message = 'API yenileme sonrası yeniden işlenecek'
-        WHERE batch_status = 'failed'
-        """)
-        
-        updated_rows = cursor.rowcount
-    
-    print(f"✓ {updated_rows} başarısız ürün bekliyor durumuna getirildi.")
-    
-    # API yapılandırmasını kontrol et
-    configs = TrendyolAPIConfig.objects.all()
-    if configs.exists():
-        print("\nMevcut API yapılandırması:")
-        for config in configs:
-            print(f"- Tedarikçi ID: {config.supplier_id}")
-            print(f"- API Temel URL: {config.base_url}")
+    try:
+        with transaction.atomic():
+            # Kategorileri temizle
+            category_count = TrendyolCategory.objects.count()
+            TrendyolCategory.objects.all().delete()
+            logger.info(f"{category_count} adet kategori veritabanından silindi")
             
-            # API URL'sini güncelle
-            if config.base_url != "https://api.trendyol.com/sapigw":
-                config.base_url = "https://api.trendyol.com/sapigw"
-                config.save()
-                print("✓ API URL güncellendi: https://api.trendyol.com/sapigw")
-    else:
-        print("! API yapılandırması bulunamadı. Lütfen yeni bir yapılandırma ekleyin.")
+            # Öznitelikleri temizle
+            attribute_count = TrendyolAttribute.objects.count()
+            TrendyolAttribute.objects.all().delete()
+            logger.info(f"{attribute_count} adet öznitelik veritabanından silindi")
+            
+            # Öznitelik değerlerini temizle
+            attribute_value_count = TrendyolAttributeValue.objects.count()
+            TrendyolAttributeValue.objects.all().delete()
+            logger.info(f"{attribute_value_count} adet öznitelik değeri veritabanından silindi")
+            
+            logger.info("Tüm veriler başarıyla temizlendi. Sistemde kategori ve öznitelik verisi kalmadı.")
+            logger.info("Bu öğeler artık API'den gerçek zamanlı olarak çekilecektir.")
+            
+    except Exception as e:
+        logger.error(f"Veri temizleme işlemi sırasında hata oluştu: {str(e)}")
+        raise
         
-    print("\nTüm default veriler temizlendi. Şimdi sistem API'den gerçek zamanlı veri alacak.")
-
 if __name__ == "__main__":
-    print("Default veri temizleme işlemi başlatılıyor...")
+    logger.info("Trendyol kategori ve öznitelik verilerini temizleme işlemi başlıyor...")
     clean_all_default_data()
-    print("İşlem tamamlandı.")
-else:
-    # Django shell içerisinden çalıştırıldığında
-    print("Default veri temizleme işlemi başlatılıyor...")
-    clean_all_default_data()
-    print("İşlem tamamlandı.")
+    logger.info("İşlem tamamlandı.")
