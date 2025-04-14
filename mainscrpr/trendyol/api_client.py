@@ -281,8 +281,12 @@ def lcwaikiki_to_trendyol_product(lcw_product):
     
     # Resim URL'lerini hazırla
     images = []
-    for image in lcw_product.images.all():
-        images.append({"url": image.image_url})
+    if isinstance(lcw_product.images, list):
+        for image in lcw_product.images:
+            if isinstance(image, dict) and "image_url" in image:
+                images.append({"url": image["image_url"]})
+            elif isinstance(image, str):
+                images.append({"url": image})
     
     # Öznitelikleri hazırla (Renk bilgisini içermeli)
     attributes = []
@@ -309,7 +313,7 @@ def lcwaikiki_to_trendyol_product(lcw_product):
         vat_rate=18,  # Varsayılan KDV oranı
         stock_code=barcode,
         attributes=attributes,
-        image_url=lcw_product.images.first().image_url if lcw_product.images.exists() else "",
+        image_url=lcw_product.images[0]["image_url"] if isinstance(lcw_product.images, list) and len(lcw_product.images) > 0 and "image_url" in lcw_product.images[0] else "",
         additional_images=images,
         lcwaikiki_product=lcw_product,
         batch_status='pending'
@@ -349,7 +353,7 @@ def send_product_to_trendyol(product):
     
     # LCWaikiki ürünü ise, önce Trendyol ürününe dönüştür
     if not hasattr(product, 'barcode'):
-        from lcwaikiki.models import Product as LcwProduct
+        from lcwaikiki.product_models import Product as LcwProduct
         if isinstance(product, LcwProduct):
             trendyol_product, product_data = lcwaikiki_to_trendyol_product(product)
             if not trendyol_product:
