@@ -660,3 +660,184 @@ def lcwaikiki_to_trendyol_product(lcw_product):
         logger.error(f"Error converting LCWaikiki to Trendyol: {str(e)}")
         logger.exception(e)
         return None
+
+
+def send_lcwaikiki_to_trendyol(lcw_product, max_retries=3, retry_delay=1):
+    """
+    Send an LCWaikiki product to Trendyol
+    
+    Args:
+        lcw_product: LCWaikiki product model instance
+        max_retries: Maximum number of retries for API requests
+        retry_delay: Delay in seconds between retries
+        
+    Returns:
+        Tuple (success, message, batch_id): 
+            - success: Boolean indicating success
+            - message: Status message
+            - batch_id: Trendyol batch ID if successful, None otherwise
+    """
+    if not lcw_product:
+        return False, "No product provided", None
+        
+    try:
+        # Create Trendyol product data from LCWaikiki product
+        logger.info(f"Converting LCWaikiki product {lcw_product.id} to Trendyol format")
+        product_data = lcwaikiki_to_trendyol_product(lcw_product)
+        
+        if not product_data:
+            logger.error(f"Failed to convert LCWaikiki product {lcw_product.id} to Trendyol format")
+            return False, "Failed to convert product to Trendyol format", None
+            
+        # Get product manager
+        product_manager = get_product_manager()
+        if not product_manager:
+            logger.error("Failed to initialize product manager")
+            return False, "Failed to initialize Trendyol API", None
+            
+        # Ensure product has required attributes, especially color
+        if not product_data.attributes:
+            try:
+                # Get required attributes
+                logger.info(f"Getting required attributes for category {product_data.category_id}")
+                required_attributes = product_manager.category_finder.get_required_attributes_for_category(product_data.category_id)
+                
+                # Check if color is required
+                color_attribute = next((attr for attr in required_attributes if attr['name'].lower() == 'renk'), None)
+                
+                if color_attribute:
+                    logger.info("Adding color attribute")
+                    # Try to get color from LCWaikiki product
+                    color_value = getattr(lcw_product, 'color', None)
+                    if color_value:
+                        # Find matching color value
+                        color_id = None
+                        for value in color_attribute.get('values', []):
+                            if color_value.lower() in value['name'].lower():
+                                color_id = value['id']
+                                break
+                                
+                        if color_id:
+                            product_data.attributes.append({
+                                'attributeId': color_attribute['id'],
+                                'attributeValueId': color_id
+                            })
+                        else:
+                            # Use default attribute ID 348 for color
+                            logger.warning(f"Color '{color_value}' not found in values, using attribute ID 348")
+                            product_data.attributes.append({
+                                'attributeId': 348,
+                                'customAttributeValue': color_value
+                            })
+            except Exception as e:
+                logger.error(f"Error getting required attributes: {str(e)}")
+                # Continue without attributes
+        
+        # Create or update the Trendyol product
+        from trendyol.models import TrendyolProduct
+        from django.db import transaction
+        
+        with transaction.atomic():
+            # Check if product already exists
+            trendyol_product = TrendyolProduct.objects.filter(
+                lcwaikiki_product=lcw_product
+            ).first()
+            
+            if not trendyol_product:
+                # Create new TrendyolProduct instance
+                trendyol_product = TrendyolProduct(
+                    lcwaikiki_product=lcw_product,
+                    barcode=product_data.barcode,
+                    title=product_data.title,
+                    product_main_id=product_data.product_main_id,
+                    stock_code=product_data.stock_code,
+                    brand_id=product_data.brand_id,
+                    brand_name="LC Waikiki",
+                    category_id=product_data.category_id,
+                    price=product_data.price,
+                    quantity=product_data.quantity,
+                    description=product_data.description,
+                    image_url=product_data.image_url,
+                    additional_images=product_data.additional_images,
+                    attributes=product_data.attributes,
+                    vat_rate=product_data.vat_rate,
+                    currency_type=product_data.currency_type,
+                    batch_status="pending"
+                )
+            else:
+                # Update existing TrendyolProduct
+                trendyol_product.title = product_data.title
+                trendyol_product.barcode = product_data.barcode
+                trendyol_product.product_main_id = product_data.product_main_id
+                trendyol_product.stock_code = product_data.stock_code
+                trendyol_product.brand_id = product_data.brand_id
+                trendyol_product.brand_name = "LC Waikiki"
+                trendyol_product.category_id = product_data.category_id
+                trendyol_product.price = product_data.price
+                trendyol_product.quantity = product_data.quantity
+                trendyol_product.description = product_data.description
+                trendyol_product.image_url = product_data.image_url
+                trendyol_product.additional_images = product_data.additional_images
+                trendyol_product.attributes = product_data.attributes
+                trendyol_product.vat_rate = product_data.vat_rate
+                trendyol_product.currency_type = product_data.currency_type
+                trendyol_product.batch_status = "pending"
+            
+            # Save the product
+            trendyol_product.save()
+            
+            # Send to Trendyol API
+            for attempt in range(max_retries):
+                try:
+                    logger.info(f"Sending product {trendyol_product.title} to Trendyol (attempt {attempt+1}/{max_retries})")
+                    batch_id = product_manager.create_product(product_data)
+                    
+                    if batch_id:
+                        # Update batch information
+                        trendyol_product.batch_id = batch_id
+                        trendyol_product.batch_status = "processing"
+                        trendyol_product.status_message = "Product sent to Trendyol, waiting for processing"
+                        trendyol_product.save()
+                        
+                        # Create batch request record
+                        from trendyol.models import TrendyolBatchRequest
+                        batch_request, created = TrendyolBatchRequest.objects.get_or_create(
+                            batch_id=batch_id,
+                            defaults={
+                                'operation_type': 'create',
+                                'status': 'processing',
+                                'status_message': 'Batch submitted to Trendyol',
+                                'items_count': 1
+                            }
+                        )
+                        
+                        # Link batch request to product
+                        trendyol_product.batch_request = batch_request
+                        trendyol_product.save()
+                        
+                        logger.info(f"Successfully sent product {trendyol_product.title} to Trendyol with batch ID {batch_id}")
+                        return True, "Product successfully sent to Trendyol", batch_id
+                    else:
+                        logger.error(f"Failed to get batch ID for product {trendyol_product.title}")
+                        time.sleep(retry_delay * (attempt + 1))
+                except Exception as e:
+                    logger.error(f"Error sending product {trendyol_product.title} to Trendyol: {str(e)}")
+                    if attempt < max_retries - 1:
+                        time.sleep(retry_delay * (attempt + 1))
+                    else:
+                        # Update error status
+                        trendyol_product.batch_status = "failed"
+                        trendyol_product.status_message = f"Error: {str(e)}"
+                        trendyol_product.save()
+                        return False, f"Error sending product to Trendyol: {str(e)}", None
+            
+            # If we get here, all retries failed
+            trendyol_product.batch_status = "failed"
+            trendyol_product.status_message = "All retry attempts failed"
+            trendyol_product.save()
+            return False, "Failed to send product to Trendyol after multiple attempts", None
+    
+    except Exception as e:
+        logger.error(f"Error in send_lcwaikiki_to_trendyol: {str(e)}")
+        logger.exception(e)
+        return False, f"Error: {str(e)}", None
