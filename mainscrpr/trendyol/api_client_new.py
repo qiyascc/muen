@@ -527,6 +527,113 @@ class TrendyolProductManager:
   def __init__(self, api_client: TrendyolAPI):
     self.api = api_client
     self.category_finder = TrendyolCategoryFinder(api_client)
+    
+  def _extract_structured_info_from_description(self, product_description: str) -> Dict[str, str]:
+    """
+    Extract structured key-value information from product descriptions.
+    
+    This function looks for structured patterns like:
+    - Key: Value
+    - Key - Value
+    - Key = Value
+    - Key (Value)
+    - And other common patterns in product descriptions
+    
+    Returns a dictionary of extracted attribute keys and values.
+    """
+    if not product_description:
+        return {}
+        
+    # Initialize result dictionary
+    result = {}
+    
+    # Clean and normalize description
+    desc = product_description.lower()
+    # Remove HTML tags
+    desc = re.sub(r'<[^>]+>', ' ', desc)
+    
+    # Extract key-value pairs with different patterns
+    # Pattern 1: Key: Value
+    kv_pairs = re.findall(r'(\w+[\w\s]*?):\s*([\w\s\-\.\,\%]+?)(?:\n|<br>|$|,\s*\w+:)', desc)
+    for key, value in kv_pairs:
+        key = key.strip()
+        value = value.strip()
+        if key and value and len(key) > 2 and len(value) > 1:
+            result[key] = value
+            
+    # Pattern 2: Key = Value
+    kv_pairs = re.findall(r'(\w+[\w\s]*?)\s*=\s*([\w\s\-\.\,\%]+?)(?:\n|<br>|$|,\s*\w+\s*=)', desc)
+    for key, value in kv_pairs:
+        key = key.strip()
+        value = value.strip()
+        if key and value and len(key) > 2 and len(value) > 1:
+            result[key] = value
+    
+    # Pattern 3: Key - Value
+    kv_pairs = re.findall(r'(\w+[\w\s]*?)\s*-\s*([\w\s\-\.\,\%]+?)(?:\n|<br>|$|,\s*\w+\s*-)', desc)
+    for key, value in kv_pairs:
+        key = key.strip()
+        value = value.strip()
+        if key and value and len(key) > 2 and len(value) > 1:
+            result[key] = value
+    
+    # Look for color-related information specifically
+    colors = re.findall(r'renk\s*[:-]?\s*([\w\s]+?)(?:\n|<br>|$|,)', desc)
+    if colors:
+        result['renk'] = colors[0].strip()
+    
+    # Look for material-related information
+    materials = re.findall(r'(?:kumaş|materyal|malzeme)\s*[:-]?\s*([\w\s\%]+?)(?:\n|<br>|$|,)', desc)
+    if materials:
+        result['malzeme'] = materials[0].strip()
+    
+    # Look for patterns like "100% Pamuk" or "60% Polyester"
+    fabric_pcts = re.findall(r'(\d+)[%\s]+([\w]+)', desc)
+    fabric_composition = []
+    for pct, fabric in fabric_pcts:
+        if fabric.strip() in ['pamuk', 'polyester', 'elastan', 'viskon', 'keten', 'yün', 'akrilik', 'polyamid']:
+            fabric_composition.append(f"{pct}% {fabric.strip().capitalize()}")
+    
+    if fabric_composition:
+        result['kumaş'] = ', '.join(fabric_composition)
+    
+    # Look for gender information
+    gender_terms = {
+        'erkek': ['erkek', 'erkekler için', 'erkek giyim'],
+        'kadın': ['kadın', 'kadınlar için', 'kadın giyim', 'bayan'],
+        'unisex': ['unisex', 'her ikisi için'],
+        'kız çocuk': ['kız çocuk', 'kız çocukları için'],
+        'erkek çocuk': ['erkek çocuk', 'erkek çocukları için'],
+        'bebek': ['bebek', 'bebek ürünü', 'bebekler için']
+    }
+    
+    for gender, terms in gender_terms.items():
+        if any(term in desc for term in terms):
+            result['cinsiyet'] = gender
+            break
+    
+    # Special parsing for product type/model
+    if 'set' in desc or 'takım' in desc:
+        result['model'] = 'Set Takım'
+        
+    if 'tişört' in desc:
+        result['ürün'] = 'Tişört'
+    elif 'pantolon' in desc:
+        result['ürün'] = 'Pantolon'
+    elif 'gömlek' in desc:
+        result['ürün'] = 'Gömlek'
+    elif 'elbise' in desc:
+        result['ürün'] = 'Elbise'
+    elif 'ceket' in desc:
+        result['ürün'] = 'Ceket'
+    elif 'ayakkabı' in desc:
+        result['ürün'] = 'Ayakkabı'
+    
+    # Print debug info
+    if result:
+        print(f"[DEBUG-API] Açıklamadan çıkarılan yapılandırılmış bilgiler: {json.dumps(result, ensure_ascii=False)}")
+    
+    return result
 
   def get_brand_id(self, brand_name: str) -> int:
     """Find brand ID by name"""
@@ -551,9 +658,10 @@ class TrendyolProductManager:
     """Create a new product on Trendyol"""
     try:
       category_id = self.category_finder.find_best_category(
-          product_data.category_name)
+          product_data.category_name, product_title=product_data.title)
       brand_id = self.get_brand_id(product_data.brand_name)
-      attributes = self._get_attributes_for_category(category_id)
+      # Pass product description to extract attributes
+      attributes = self._get_attributes_for_category(category_id, product_data.description)
 
       payload = self._build_product_payload(product_data, category_id,
                                             brand_id, attributes)
@@ -683,10 +791,43 @@ class TrendyolProductManager:
             "attributeName": attr['attribute']['name']
         }
         
-        # Try to find a matching attribute value from the description
+        # Try to find a matching attribute value from the structured data or description
         matched_value = None
+        attr_name_lower = attr['attribute']['name'].lower()
         
-        if attr.get('attributeValues') and product_description:
+        # First check the structured data extracted from the description
+        if desc_info:
+            # Try to match attribute name with extracted keys
+            for key, value in desc_info.items():
+                # Check if any key in the extracted info matches this attribute
+                if (key.lower() == attr_name_lower or 
+                    (len(key) > 3 and key.lower() in attr_name_lower) or 
+                    (len(attr_name_lower) > 3 and attr_name_lower in key.lower())):
+                    
+                    # Found a matching key, now see if the value matches any attribute value
+                    if attr.get('attributeValues'):
+                        for val in attr['attributeValues']:
+                            val_name = val['name'].lower()
+                            extracted_value = value.lower()
+                            
+                            # Check direct value match
+                            if (val_name == extracted_value or 
+                                (len(val_name) > 3 and val_name in extracted_value) or 
+                                (len(extracted_value) > 3 and extracted_value in val_name)):
+                                
+                                matched_value = val
+                                print(f"[DEBUG-API] Yapılandırılmış veri eşleşmesi: {attr['attribute']['name']} = {val['name']} (anahtar: {key})")
+                                break
+                    
+                    # If custom values allowed, use extracted value directly
+                    if not matched_value and attr.get('allowCustom'):
+                        attribute["customAttributeValue"] = value
+                        print(f"[DEBUG-API] Özel öznitelik kullanıldı: {attr['attribute']['name']} = {value}")
+                        # Skip the rest of the matching
+                        break
+        
+        # If no match in structured data and we have attribute values, try full description
+        if not matched_value and attr.get('attributeValues') and product_description:
           attr_values = attr['attributeValues']
           
           # Sort attribute values by name length (descending) to prefer more specific matches
@@ -700,7 +841,19 @@ class TrendyolProductManager:
               print(f"[DEBUG-API] Açıklamada tam eşleşme bulundu: {attr['attribute']['name']} = {val['name']}")
               break
           
-          # If no exact match, try word matches from our keywords
+          # Next try match in the extracted phrases (for better context)
+          if not matched_value and desc_phrases:
+            for val in attr_values_sorted:
+              val_name = val['name'].lower()
+              
+              # Check if any phrase contains this value name
+              matching_phrases = [phrase for phrase in desc_phrases if val_name in phrase]
+              if matching_phrases:
+                matched_value = val
+                print(f"[DEBUG-API] İfade eşleşmesi bulundu: {attr['attribute']['name']} = {val['name']} (ifade: {matching_phrases[0]})")
+                break
+          
+          # If still no match, try word matches from our keywords
           if not matched_value and desc_keywords:
             for val in attr_values_sorted:
               val_name = val['name'].lower()
@@ -767,14 +920,34 @@ class TrendyolProductManager:
             "attributeName": color_attr['attribute']['name']
         }
 
-        # Try to find color in the product description with advanced matching
-        if product_description and color_attr.get('attributeValues'):
+        # Try to find color in the structured information from description first
+        color_found = False
+        if desc_info and 'renk' in desc_info and color_attr.get('attributeValues'):
+            color_values = color_attr['attributeValues']
+            color_value_from_desc = desc_info['renk'].lower()
+            
+            # Look for a direct match with the extracted color value
+            for color_val in color_values:
+                color_name = color_val['name'].lower()
+                
+                # Check if color names match or are contained within each other
+                if (color_name == color_value_from_desc or 
+                    (len(color_name) > 3 and color_name in color_value_from_desc) or 
+                    (len(color_value_from_desc) > 3 and color_value_from_desc in color_name)):
+                    
+                    color_attribute["attributeValueId"] = color_val['id']
+                    color_attribute["attributeValue"] = color_val['name']
+                    print(f"[DEBUG-API] Yapılandırılmış veri renk eşleşmesi: {color_val['name']} (çıkarılan: {color_value_from_desc})")
+                    color_found = True
+                    break
+        
+        # If color not found in structured info, try to find color in the product description
+        if not color_found and product_description and color_attr.get('attributeValues'):
           color_values = color_attr['attributeValues']
           # Sort by name length (descending) to match more specific colors first
           color_values_sorted = sorted(color_values, key=lambda v: len(v['name']), reverse=True)
           
           # First try exact color match
-          color_found = False
           for color_val in color_values_sorted:
             color_name = color_val['name'].lower()
             if color_name in product_description.lower():
@@ -783,6 +956,20 @@ class TrendyolProductManager:
               print(f"[DEBUG-API] Açıklamada tam renk eşleşmesi bulundu: {color_val['name']}")
               color_found = True
               break
+          
+          # Next try match in the extracted phrases (for better context)
+          if not color_found and desc_phrases:
+            for color_val in color_values_sorted:
+              color_name = color_val['name'].lower()
+              
+              # Check if any phrase contains this color name
+              matching_phrases = [phrase for phrase in desc_phrases if color_name in phrase]
+              if matching_phrases:
+                color_attribute["attributeValueId"] = color_val['id']
+                color_attribute["attributeValue"] = color_val['name']
+                print(f"[DEBUG-API] İfade eşleşmesi ile renk bulundu: {color_val['name']} (ifade: {matching_phrases[0]})")
+                color_found = True
+                break
               
           # If exact match not found, try word-by-word matching
           if not color_found and desc_keywords:
