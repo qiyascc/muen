@@ -15,7 +15,7 @@ os.environ.setdefault("DJANGO_SETTINGS_MODULE", "mainscrpr.settings")
 django.setup()
 
 from django.db import transaction
-from trendyol.models import TrendyolCategory, TrendyolAttribute, TrendyolAttributeValue
+from trendyol.models import TrendyolCategory
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, 
