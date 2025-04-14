@@ -184,21 +184,23 @@ class ProductAdmin(ModelAdmin):
                 level=messages.SUCCESS)
             return batch_id
         except Exception as e:
+            variant_desc = f" (Size: {variant_data.get('size')})" if variant_data else ""
             self.message_user(
                 request,
-                f"Failed to send '{product.title}' to Trendyol: {str(e)}",
+                f"Failed to send '{product.title}{variant_desc}' to Trendyol: {str(e)}",
                 level=messages.ERROR)
             logger.error(f"Error syncing product {trendyol_product.id}: {str(e)}")
             
-            error_message = f"Failed to send '{product.title}' to Trendyol"
+            error_message = f"Failed to send '{product.title}{variant_desc}' to Trendyol"
             if trendyol_product.status_message:
                 error_message += f": {trendyol_product.status_message}"
             self.message_user(request, error_message, level=messages.ERROR)
             return None
       except Exception as e:
+        variant_desc = f" (Size: {variant_data.get('size')})" if variant_data else ""
         self.message_user(
             request,
-            f"Error sending '{product.title}' to Trendyol: {str(e)}",
+            f"Error sending '{product.title}{variant_desc}' to Trendyol: {str(e)}",
             level=messages.ERROR)
         return None
 
