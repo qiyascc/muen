@@ -1,13 +1,13 @@
 """
-Yeni Trendyol Category Finder
+Trendyol Category Finder
 
 Bu modül, Trendyol API'sinden gelen kategorileri eşleştirmek için kullanılan
-TrendyolCategoryFinder sınıfının gelişmiş bir versiyonunu sağlar.
+TrendyolCategoryFinder sınıfını içerir.
 
 Özellikler:
-1. Semantic search ile daha doğru kategori eşleştirmesi (sentence-transformers kütüphanesi kullanılarak)
-2. Kategori özniteliklerinin doğru şekilde alınması ve yönetilmesi
-3. Fallback mekanizmaları ile kütüphane yoksa basit string eşleştirmesi yapma
+1. Semantic search ile kategori eşleştirmesi (sentence-transformers kullanılarak)
+2. Kategori özniteliklerinin API'den alınması ve yönetilmesi
+3. Temel string eşleştirmesi için fallback mekanizması
 
 Bu dosya, mevcut API istemcisiyle çalışacak şekilde tasarlanmıştır.
 """
@@ -17,13 +17,13 @@ import json
 from functools import lru_cache
 from typing import Dict, List, Any, Optional
 
-# Try to import sentence-transformers for advanced semantic similarity
+# Try to import sentence-transformers for semantic similarity
 try:
     from sentence_transformers import SentenceTransformer, util
     from PyMultiDictionary import MultiDictionary
     ADVANCED_SEARCH_AVAILABLE = True
     logger = logging.getLogger(__name__)
-    logger.info("Advanced semantic search enabled with sentence-transformers")
+    logger.info("Semantic search enabled with sentence-transformers")
 except ImportError:
     ADVANCED_SEARCH_AVAILABLE = False
     logger = logging.getLogger(__name__)
@@ -33,13 +33,10 @@ except ImportError:
 
 class TrendyolCategoryFinder:
     """
-    Gelişmiş kategori bulucu sınıfı.
+    Trendyol için kategori bulucu sınıfı.
     
     Bu sınıf, ürün adı veya kategorisine göre en uygun Trendyol kategori ID'sini bulmak için
-    gelişmiş semantik arama veya temel string eşleştirmesi kullanır.
-    
-    Sentence-transformers kütüphanesi mevcutsa semantik arama kullanılır, 
-    değilse difflib ile temel string eşleştirmesine düşer.
+    semantik arama veya temel string eşleştirmesi kullanır.
     """
     
     def __init__(self, api_client):
@@ -47,7 +44,7 @@ class TrendyolCategoryFinder:
         TrendyolCategoryFinder sınıfını başlat.
         
         Args:
-            api_client: Trendyol API istemcisi (TrendyolApi sınıfı)
+            api_client: Trendyol API istemcisi
         """
         self.api = api_client
         self._category_cache = None
@@ -78,18 +75,18 @@ class TrendyolCategoryFinder:
     def _fetch_all_categories(self):
         """Tüm kategorileri Trendyol API'den getir"""
         try:
-            # Use the categories API from the client
-            data = self.api.categories.get_categories()
+            data = self.api.get("product/product-categories")
             return data.get('categories', [])
         except Exception as e:
             logger.error(f"Failed to fetch categories: {str(e)}")
-            raise Exception("Category loading failed. Check API credentials.")
+            raise Exception("Failed to load categories. Please check your API credentials.")
     
+    @lru_cache(maxsize=128)
     def get_category_attributes(self, category_id):
         """Belirli bir kategori için öznitelikleri API'den getir"""
         try:
-            # API istemcisinin categories.get_category_attributes metodunu kullan
-            return self.api.categories.get_category_attributes(category_id)
+            data = self.api.get(f"product/product-categories/{category_id}/attributes")
+            return data
         except Exception as e:
             logger.error(f"Failed to fetch attributes for category {category_id}: {str(e)}")
             return {"categoryAttributes": []}
@@ -99,7 +96,7 @@ class TrendyolCategoryFinder:
         try:
             categories = self.category_cache
             if not categories:
-                raise ValueError("Empty category list from API")
+                raise ValueError("Empty category list received from API")
             
             # Use advanced semantic search if available
             if ADVANCED_SEARCH_AVAILABLE and self.model is not None:
@@ -112,62 +109,43 @@ class TrendyolCategoryFinder:
                 return self._select_best_match(search_term, matches)['id']
             
         except Exception as e:
-            logger.error(f"Category search failed: {str(e)}")
+            logger.error(f"Category search failed for '{search_term}': {str(e)}")
             # If we can't find a suitable category, return a safe default
             logger.warning("Returning default category ID as fallback")
-            return 385  # Default to Women's Clothing - Jacket as a safe fallback
+            return 385  # Default to a safe fallback category
     
     def _find_best_category_semantic(self, search_term, categories):
-        """Sentence-transformers kullanarak semantik benzerlikle en iyi kategoriyi bul"""
+        """Semantik benzerlik ile en iyi kategoriyi bul"""
         try:
-            # Get expanded search terms with synonyms if possible
+            # Expand search terms with synonyms if possible
             search_terms = {search_term.lower()}
             try:
                 if self.dictionary:
                     synonyms = self.dictionary.synonym('tr', search_term.lower())
-                    search_terms.update(synonyms[:5])  # Limit to 5 synonyms to avoid noise
+                    search_terms.update(synonyms[:5])  # Limit to 5 synonyms
             except Exception as e:
                 logger.debug(f"Could not expand search terms: {str(e)}")
             
-            # Collect all leaf categories
-            leaf_categories = []
-            self._collect_leaf_categories(categories, leaf_categories)
+            all_matches = self._find_all_possible_matches(search_term, categories)
             
-            # Find matches using all search terms
-            matches = []
-            for term in search_terms:
-                for cat in leaf_categories:
-                    # Compute semantic similarity
-                    if self.model:
-                        try:
-                            search_embedding = self.model.encode(term, convert_to_tensor=True)
-                            cat_embedding = self.model.encode(cat['name'], convert_to_tensor=True)
-                            similarity = util.cos_sim(search_embedding, cat_embedding).item()
-                            cat['similarity'] = similarity
-                            matches.append(cat.copy())
-                        except Exception as e:
-                            logger.error(f"Semantic similarity error: {str(e)}")
-                            # Fall back to string similarity
-                            cat['similarity'] = difflib.SequenceMatcher(None, term, cat['name']).ratio()
-                            matches.append(cat.copy())
+            # Check for exact match first
+            for match in all_matches:
+                if search_term.lower() == match['name'].lower():
+                    logger.info(f"Found exact match: {match['name']} (ID: {match['id']})")
+                    return match['id']
             
-            # Sort by similarity and select best match
-            if matches:
-                matches_sorted = sorted(matches, key=lambda x: x['similarity'], reverse=True)
+            # Get all leaf categories if no direct matches
+            if not all_matches:
+                leaf_categories = []
+                self._collect_leaf_categories(categories, leaf_categories)
                 
-                # Log top matches for debugging
-                logger.info(f"Top matches for '{search_term}':")
-                for i, m in enumerate(matches_sorted[:3], 1):
-                    logger.info(f"{i}. {m['name']} (Score: {m['similarity']:.4f}, ID: {m['id']})")
-                
-                return matches_sorted[0]['id']
-            else:
-                # If semantic search fails, fall back to basic search
-                logger.warning("Semantic search found no matches, falling back to basic search")
-                matches = self._find_all_matches(search_term, categories)
-                if not matches:
-                    raise ValueError(f"No matches found for: {search_term}")
-                return self._select_best_match(search_term, matches)['id']
+                if leaf_categories:
+                    return self._select_best_match_semantic(search_term, leaf_categories)['id']
+                else:
+                    raise ValueError(f"No categories found to match with '{search_term}'")
+            
+            # Otherwise select best match from found matches
+            return self._select_best_match_semantic(search_term, all_matches)['id']
                 
         except Exception as e:
             logger.error(f"Semantic search failed: {str(e)}")
@@ -177,6 +155,44 @@ class TrendyolCategoryFinder:
                 raise ValueError(f"No matches found for: {search_term}")
             return self._select_best_match(search_term, matches)['id']
     
+    def _find_all_possible_matches(self, search_term, categories):
+        """Tüm olası eşleşmeleri bul (eş anlamlılar dahil)"""
+        search_terms = {search_term.lower()}
+        
+        try:
+            if self.dictionary:
+                synonyms = self.dictionary.synonym('tr', search_term.lower())
+                search_terms.update(synonyms[:5])
+        except Exception as e:
+            logger.debug(f"Couldn't fetch synonyms: {str(e)}")
+        
+        matches = []
+        for term in search_terms:
+            matches.extend(self._find_matches_for_term(term, categories))
+        
+        # Remove duplicates while preserving order
+        seen_ids = set()
+        return [m for m in matches if not (m['id'] in seen_ids or seen_ids.add(m['id']))]
+    
+    def _find_matches_for_term(self, term, categories):
+        """Kategori ağacında eşleşmeleri bulma"""
+        matches = []
+        term_lower = term.lower()
+        
+        for cat in categories:
+            cat_name_lower = cat['name'].lower()
+            
+            if term_lower == cat_name_lower or term_lower in cat_name_lower:
+                # Only include leaf categories
+                if not cat.get('subCategories'):
+                    matches.append(cat)
+            
+            # Recursive search in subcategories
+            if cat.get('subCategories'):
+                matches.extend(self._find_matches_for_term(term, cat['subCategories']))
+        
+        return matches
+    
     def _collect_leaf_categories(self, categories, result):
         """Alt kategorisi olmayan tüm kategorileri topla"""
         for cat in categories:
@@ -185,14 +201,40 @@ class TrendyolCategoryFinder:
             else:
                 self._collect_leaf_categories(cat['subCategories'], result)
     
+    def _select_best_match_semantic(self, search_term, candidates):
+        """Semantik benzerlik ile en iyi eşleşmeyi seç"""
+        if not self.model:
+            return self._select_best_match(search_term, candidates)
+            
+        search_embedding = self.model.encode(search_term, convert_to_tensor=True)
+        
+        for candidate in candidates:
+            try:
+                candidate_embedding = self.model.encode(candidate['name'], convert_to_tensor=True)
+                candidate['similarity'] = util.cos_sim(search_embedding, candidate_embedding).item()
+            except Exception as e:
+                logger.error(f"Error computing similarity: {str(e)}")
+                # Fallback to string similarity
+                candidate['similarity'] = self._string_similarity(search_term, candidate['name'])
+        
+        sorted_candidates = sorted(candidates, key=lambda x: x['similarity'], reverse=True)
+        
+        # Log top matches for debugging
+        logger.info(f"Top 3 matches for '{search_term}':")
+        for i, candidate in enumerate(sorted_candidates[:3], 1):
+            logger.info(f"{i}. {candidate['name']} (Similarity: {candidate['similarity']:.2f})")
+        
+        return sorted_candidates[0]
+    
     def _find_all_matches(self, search_term, categories):
         """Temel string eşleştirmesi ile tüm olası eşleşmeleri bul"""
         matches = []
-        normalized_term = self._normalize(search_term)
+        normalized_term = search_term.lower()
         
         def search_tree(category_tree):
             for cat in category_tree:
-                if self._is_match(normalized_term, cat['name']):
+                cat_name = cat['name'].lower()
+                if normalized_term in cat_name or cat_name in normalized_term:
                     matches.append(cat)
                 if cat.get('subCategories'):
                     search_tree(cat['subCategories'])
@@ -200,96 +242,72 @@ class TrendyolCategoryFinder:
         search_tree(categories)
         return matches
     
-    def _normalize(self, text):
-        """String normalizasyonu (Türkçe karakterlerin dönüşümü ve küçük harfe çevirme)"""
-        return text.lower().translate(
-            str.maketrans('çğıöşü', 'cgiosu')
-        ).strip()
-    
-    def _is_match(self, search_term, category_name):
-        """İki string arasında eşleşme kontrolü"""
-        normalized_name = self._normalize(category_name)
-        return (
-            search_term in normalized_name or
-            normalized_name in search_term
-        )
-    
     def _select_best_match(self, search_term, candidates):
-        """Difflib kullanarak en iyi eşleşmeyi seç (temel fallback)"""
-        normalized_search = self._normalize(search_term)
+        """String benzerliği ile en iyi eşleşmeyi seç"""
+        normalized_search = search_term.lower()
         
         for candidate in candidates:
-            normalized_name = self._normalize(candidate['name'])
-            # Calculate string similarity ratio (0.0 - 1.0)
-            candidate['similarity'] = difflib.SequenceMatcher(
-                None, normalized_search, normalized_name
-            ).ratio()
-            
-            # Bonus points for exact substring matches
-            if normalized_search in normalized_name:
-                candidate['similarity'] += 0.2
-            if normalized_name in normalized_search:
-                candidate['similarity'] += 0.1
-                
-            # Cap at 1.0
-            candidate['similarity'] = min(1.0, candidate['similarity'])
+            candidate['similarity'] = self._string_similarity(normalized_search, candidate['name'].lower())
         
         best_match = sorted(candidates, key=lambda x: x['similarity'], reverse=True)[0]
         logger.info(f"Best match for '{search_term}': {best_match['name']} (Score: {best_match['similarity']:.4f})")
         return best_match
     
-    def get_required_attributes(self, category_id):
-        """Belirli bir kategorinin tüm özniteliklerini API'den getir"""
+    def _string_similarity(self, s1, s2):
+        """İki string arasındaki benzerliği hesapla"""
+        # Use difflib for string similarity
+        similarity = difflib.SequenceMatcher(None, s1.lower(), s2.lower()).ratio()
+        
+        # Bonus points for exact substring matches
+        if s1.lower() in s2.lower():
+            similarity += 0.2
+        if s2.lower() in s1.lower():
+            similarity += 0.1
+            
+        # Cap at 1.0
+        return min(1.0, similarity)
+    
+    def get_required_attributes_for_category(self, category_id):
+        """Belirli bir kategori için gerekli öznitelikleri API'den getir"""
         try:
             attrs = self.get_category_attributes(category_id)
             attributes = []
             
-            # Process all category attributes and log details
-            logger.info(f"Processing {len(attrs.get('categoryAttributes', []))} attributes for category {category_id}")
+            logger.info(f"Processing attributes for category {category_id}")
             
             for attr in attrs.get('categoryAttributes', []):
-                # Skip attributes without ID
+                # Skip attributes without valid data
                 if not attr.get('attribute') or not attr['attribute'].get('id'):
-                    logger.warning(f"Skipping attribute without ID: {attr}")
                     continue
                     
-                # Get attribute details
                 attribute_id = attr['attribute']['id']
                 attribute_name = attr['attribute'].get('name', 'Unknown')
                 
-                logger.info(f"Processing attribute: {attribute_name} (ID: {attribute_id})")
-                
-                # Check if this is a 'color' attribute and log it
-                if attribute_name.lower() in ['renk', 'color']:
+                # Special handling for color attribute
+                is_color_attr = attribute_name.lower() in ['renk', 'color']
+                if is_color_attr:
                     logger.info(f"Found color attribute with ID {attribute_id}")
                 
-                # Skip if no values are available and custom is not allowed
-                if not attr.get('attributeValues') and not attr.get('allowCustom'):
-                    logger.info(f"Skipping attribute {attribute_name} with no values")
-                    continue
-                    
-                # Get a suitable value
-                attribute_value_id = None
-                attribute_value_name = None
+                attribute = {
+                    "attributeId": attribute_id,
+                    "attributeName": attribute_name
+                }
                 
-                # If there are attribute values, use the first one
+                # If there are attribute values and custom values not allowed, use the first one
                 if attr.get('attributeValues') and len(attr['attributeValues']) > 0:
-                    attribute_value_id = attr['attributeValues'][0]['id']
-                    attribute_value_name = attr['attributeValues'][0].get('name', 'Unknown')
-                    logger.info(f"Using attribute value: {attribute_value_name} (ID: {attribute_value_id})")
+                    if not attr.get('allowCustom'):
+                        attribute["attributeValueId"] = attr['attributeValues'][0]['id']
+                        attribute["attributeValue"] = attr['attributeValues'][0]['name']
+                    else:
+                        attribute["customAttributeValue"] = f"Sample {attribute_name}"
+                else:
+                    attribute["customAttributeValue"] = ""
                 
-                # If we have a valid attribute ID and value ID, add to the list
-                if attribute_id and attribute_value_id:
-                    attributes.append({
-                        "attributeId": attribute_id,
-                        "attributeValueId": attribute_value_id
-                    })
-                    logger.info(f"Added attribute: {attribute_name}={attribute_value_name}")
+                attributes.append(attribute)
             
-            # Log summary of attributes
-            logger.info(f"Returning {len(attributes)} attributes for category {category_id}")
+            logger.info(f"Found {len(attributes)} attributes for category {category_id}")
             return attributes
             
         except Exception as e:
-            logger.error(f"Error getting required attributes: {str(e)}")
+            logger.error(f"Error getting attributes for category {category_id}: {str(e)}")
             return []
