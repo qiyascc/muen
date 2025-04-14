@@ -20,12 +20,8 @@ from decimal import Decimal
 from django.utils import timezone
 from django.conf import settings
 
-try:
-    from sentence_transformers import SentenceTransformer, util
-    from PyMultiDictionary import MultiDictionary
-    SEMANTIC_SEARCH_AVAILABLE = True
-except ImportError:
-    SEMANTIC_SEARCH_AVAILABLE = False
+# Semantik arama kütüphaneleri olmadan basit eşleştirme kullanılacak
+SEMANTIC_SEARCH_AVAILABLE = False
     
 from trendyol.models import TrendyolAPIConfig, TrendyolProduct, TrendyolBrand, TrendyolCategory
 
@@ -60,11 +56,12 @@ class TrendyolAPI:
     
     def _make_request(self, method: str, endpoint: str, **kwargs) -> Dict:
         """Yeniden deneme mantığı ile genel istek metodu"""
-        url = f"{self.config.base_url.rstrip('/')}/suppliers/{self.config.seller_id}/{endpoint.lstrip('/')}"
+        # API isteklerini Trendyol'un dokümanlarında belirtildiği formatta oluştur
+        url = f"{self.config.base_url.rstrip('/')}/integration/{endpoint.lstrip('/')}"
         
-        # integration/ ile başlayan endpointler için özel düzenleme
-        if endpoint.startswith('integration/'):
-            url = f"{self.config.base_url.rstrip('/')}/{endpoint}"
+        # supplier_id gerektiren endpointler için özel düzenleme
+        if "{supplier_id}" in url:
+            url = url.replace("{supplier_id}", self.config.seller_id)
         
         # Tam URL sağlanmışsa direkt kullan
         if endpoint.startswith(('http://', 'https://')):
@@ -128,7 +125,7 @@ class TrendyolCategoryFinder:
     def _fetch_all_categories(self) -> List[Dict]:
         """Trendyol API'sinden tüm kategorileri getir"""
         try:
-            data = self.api.get("product/categories")
+            data = self.api.get("product-categories")
             return data.get('categories', [])
         except Exception as e:
             logger.error(f"Kategoriler alınamadı: {str(e)}")
@@ -138,7 +135,7 @@ class TrendyolCategoryFinder:
     def get_category_attributes(self, category_id: int) -> Dict:
         """Belirli bir kategori için öznitelikleri önbellekleme ile al"""
         try:
-            data = self.api.get(f"product/categories/{category_id}/attributes")
+            data = self.api.get(f"product-categories/{category_id}/attributes")
             return data
         except Exception as e:
             logger.error(f"Kategori {category_id} için öznitelikler alınamadı: {str(e)}")
