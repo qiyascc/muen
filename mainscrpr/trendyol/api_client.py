@@ -46,21 +46,20 @@ class TrendyolApi:
     # Endpoint işlenmeden önce debug logu
     print(f"[DEBUG-API] make_request çağrısı. Orijinal endpoint: {endpoint}")
 
-    # Make sure endpoint starts with a slash
-    if not endpoint.startswith('/'):
-      endpoint = f'/{endpoint}'
-      print(f"[DEBUG-API] Endpoint başına / eklendi: {endpoint}")
+    # Strip any leading slashes from the endpoint to ensure we don't get double slashes
+    endpoint = endpoint.lstrip('/')
+    print(f"[DEBUG-API] Endpoint leading slashes removed: {endpoint}")
 
-    # Remove any duplicate /integration prefix from the endpoint
-    if endpoint.startswith('/integration') and 'integration' in self.base_url:
+    # Make sure there's no duplicate 'integration' in the path if it's already in base_url
+    if endpoint.startswith('integration') and 'integration' in self.base_url:
       endpoint_before = endpoint
-      endpoint = endpoint.replace('/integration', '', 1)
+      endpoint = endpoint.replace('integration', '', 1)
       print(
-          f"[DEBUG-API] /integration prefix kaldırıldı: {endpoint_before} -> {endpoint}"
+          f"[DEBUG-API] integration prefix kaldırıldı: {endpoint_before} -> {endpoint}"
       )
 
-    # Build the URL with proper formatting
-    url = f"{self.base_url}{endpoint}"
+    # Build the URL with proper formatting - ensure clean joining with a single /
+    url = f"{self.base_url.rstrip('/')}/{endpoint}"
     print(f"[DEBUG-API] Oluşturulan URL: {url}")
 
     # Additional safeguard against duplicate integration paths
@@ -311,7 +310,7 @@ class ProductsAPI:
     # Log for debugging purposes
     logger.info(f"Using full batch ID for request: {batch_id}")
 
-    endpoint = f'/integration/product/sellers/{self.client.supplier_id}/products/batch-requests/{batch_id}'
+    endpoint = f'integration/product/sellers/{self.client.supplier_id}/products/batch-requests/{batch_id}'
     print(f"[DEBUG-API] Oluşturulan endpoint: {endpoint}")
 
     return endpoint
@@ -402,7 +401,7 @@ class InventoryAPI:
 
   def _get_price_inventory_endpoint(self):
     """Get the price and inventory endpoint for verification"""
-    return f'/integration/inventory/sellers/{self.client.supplier_id}/products/price-and-inventory'
+    return f'integration/inventory/sellers/{self.client.supplier_id}/products/price-and-inventory'
 
   def update_price_and_inventory(self, items):
     """
