@@ -46,20 +46,21 @@ class TrendyolApi:
     # Endpoint işlenmeden önce debug logu
     print(f"[DEBUG-API] make_request çağrısı. Orijinal endpoint: {endpoint}")
 
-    # Strip any leading slashes from the endpoint to ensure we don't get double slashes
-    endpoint = endpoint.lstrip('/')
-    print(f"[DEBUG-API] Endpoint leading slashes removed: {endpoint}")
+    # Make sure endpoint starts with a slash
+    if not endpoint.startswith('/'):
+      endpoint = f'/{endpoint}'
+      print(f"[DEBUG-API] Endpoint başına / eklendi: {endpoint}")
 
-    # Make sure there's no duplicate 'integration' in the path if it's already in base_url
-    if endpoint.startswith('integration') and 'integration' in self.base_url:
+    # Remove any duplicate /integration prefix from the endpoint
+    if endpoint.startswith('/integration') and 'integration' in self.base_url:
       endpoint_before = endpoint
-      endpoint = endpoint.replace('integration', '', 1)
+      endpoint = endpoint.replace('/integration', '', 1)
       print(
-          f"[DEBUG-API] integration prefix kaldırıldı: {endpoint_before} -> {endpoint}"
+          f"[DEBUG-API] /integration prefix kaldırıldı: {endpoint_before} -> {endpoint}"
       )
 
-    # Build the URL with proper formatting - ensure clean joining with a single /
-    url = f"{self.base_url.rstrip('/')}/{endpoint}"
+    # Build the URL with proper formatting
+    url = f"{self.base_url}{endpoint}"
     print(f"[DEBUG-API] Oluşturulan URL: {url}")
 
     # Additional safeguard against duplicate integration paths
@@ -235,7 +236,7 @@ class BrandsAPI:
 
   def _get_brands_endpoint(self):
     """Get the brands endpoint for verification"""
-    return 'integration/product/brands'
+    return '/product/brands'
 
   def get_brands(self, page=0, size=1000):
     """Get all brands from Trendyol"""
@@ -245,7 +246,7 @@ class BrandsAPI:
 
   def _get_brand_by_name_endpoint(self):
     """Get the brand by name endpoint for verification"""
-    return 'integration/product/brands/by-name'
+    return '/product/brands/by-name'
 
   def get_brand_by_name(self, name):
     """Get brand by name"""
@@ -262,11 +263,11 @@ class CategoriesAPI:
 
   def _get_categories_endpoint(self):
     """Get the categories endpoint for verification"""
-    return 'integration/product/product-categories'
+    return '/product-categories'
 
   def _get_category_attributes_endpoint(self, category_id):
     """Get the category attributes endpoint for verification"""
-    return f'integration/product/product-categories/{category_id}/attributes'
+    return f'/product/product-categories/{category_id}/attributes'
 
   def get_categories(self):
     """Get all categories from Trendyol"""
@@ -287,7 +288,7 @@ class ProductsAPI:
 
   def _get_products_endpoint(self):
     """Get the base products endpoint for verification"""
-    return f'integration/product/sellers/{self.client.supplier_id}/products'
+    return f'/integration/product/sellers/{self.client.supplier_id}/products'
 
   def _get_batch_request_endpoint(self, batch_id):
     """Get the batch request endpoint for verification"""
@@ -310,7 +311,7 @@ class ProductsAPI:
     # Log for debugging purposes
     logger.info(f"Using full batch ID for request: {batch_id}")
 
-    endpoint = f'integration/product/sellers/{self.client.supplier_id}/products/batch-requests/{batch_id}'
+    endpoint = f'/integration/product/sellers/{self.client.supplier_id}/products/batch-requests/{batch_id}'
     print(f"[DEBUG-API] Oluşturulan endpoint: {endpoint}")
 
     return endpoint
@@ -401,7 +402,7 @@ class InventoryAPI:
 
   def _get_price_inventory_endpoint(self):
     """Get the price and inventory endpoint for verification"""
-    return f'integration/inventory/sellers/{self.client.supplier_id}/products/price-and-inventory'
+    return f'/integration/inventory/sellers/{self.client.supplier_id}/products/price-and-inventory'
 
   def update_price_and_inventory(self, items):
     """
@@ -465,8 +466,8 @@ def fetch_brands() -> List[Dict[str, Any]]:
     response = client.brands.get_brands()
 
     if not response or 'brands' not in response:
-      logger.warning("Failed to fetch brands from Trendyol API (expected for restricted endpoints)")
-      logger.info("Using cached brands from database instead")
+      logger.error("Failed to fetch brands from Trendyol API")
+      logger.warning("Using cached brands from database instead")
 
       # Get existing brands from database
       cached_brands = list(
@@ -481,9 +482,8 @@ def fetch_brands() -> List[Dict[str, Any]]:
         } for brand in cached_brands]
         return formatted_brands
 
-      logger.warning("No cached brands found in database - check update_api_handling.py to populate fallback data")
-      # Return minimal fallback for LC WAIKIKI if nothing else available
-      return [{"id": 7651, "name": "LC WAIKIKI"}]
+      logger.error("No cached brands found in database")
+      return []
 
     brands = response.get('brands', [])
 
@@ -536,8 +536,8 @@ def fetch_categories() -> List[Dict[str, Any]]:
     response = client.categories.get_categories()
 
     if not response or 'categories' not in response:
-      logger.warning("Failed to fetch categories from Trendyol API (expected for restricted endpoints)")
-      logger.info("Using cached categories from database instead")
+      logger.error("Failed to fetch categories from Trendyol API")
+      logger.warning("Using cached categories from database instead")
 
       # Get existing categories from database
       cached_categories = list(
@@ -554,15 +554,8 @@ def fetch_categories() -> List[Dict[str, Any]]:
         } for cat in cached_categories]
         return formatted_categories
 
-      logger.warning("No cached categories found in database - check update_api_handling.py to populate fallback data")
-      # Return minimal fallback data with core categories if nothing else available
-      return [
-          {"id": 522, "name": "Giyim", "parentId": None},
-          {"id": 2356, "name": "Erkek Giyim", "parentId": 522},
-          {"id": 41, "name": "Kadın Giyim", "parentId": 522},
-          {"id": 674, "name": "Çocuk Gereçleri", "parentId": None},
-          {"id": 403, "name": "Ayakkabı", "parentId": None}
-      ]
+      logger.error("No cached categories found in database")
+      return []
 
     categories = response.get('categories', [])
 
@@ -1227,48 +1220,13 @@ def find_best_category_match(product: TrendyolProduct) -> Optional[int]:
     Find the best matching category for a product.
     Returns the category ID if found, None otherwise.
     
-    Enhanced implementation that uses our new API helpers for better category matching.
+    Enhanced implementation that uses the TrendyolCategoryFinder class.
     """
   # If a specific category_id is already set, use that
   if product.category_id:
     logger.info(f"Using pre-set category ID: {product.category_id}")
     return product.category_id
 
-  # First try with our new API helpers
-  try:
-    from .api_helpers import find_category_for_product
-    from .new_api_client import get_api_client_from_config
-    
-    # Get current API configuration
-    active_config = TrendyolAPIConfig.objects.filter(is_active=True).first()
-    if active_config:
-      print(f"[DEBUG-CATEGORY] Yeni API yardımcılarını kullanarak kategori aranıyor...")
-      
-      # Create client from config
-      api_client = get_api_client_from_config(
-        active_config.api_key,
-        active_config.api_secret,
-        active_config.supplier_id,
-        active_config.base_url
-      )
-      
-      # Try to find category using both title and category_name
-      category_id = find_category_for_product(
-        api_client, 
-        product.title,
-        product.category_name
-      )
-      
-      if category_id:
-        print(f"[DEBUG-CATEGORY] Yeni API yardımcıları ile bulunan kategori ID: {category_id}")
-        logger.info(f"Found category ID {category_id} using new API helpers")
-        return category_id
-      else:
-        logger.warning("New API helpers couldn't find a category, falling back to original method")
-  except Exception as e:
-    logger.error(f"Error using new API helpers: {str(e)}, falling back to original method")
-
-  # Fall back to original implementation
   client = get_api_client()
   if not client:
     logger.error("Could not get API client to find category match")
@@ -1276,35 +1234,27 @@ def find_best_category_match(product: TrendyolProduct) -> Optional[int]:
 
   try:
     print(
-        f"[DEBUG-CATEGORY] Orijinal kategori arama: Ürün={product.id}, Başlık={product.title}"
+        f"[DEBUG-CATEGORY] Kategori arama: Ürün={product.id}, Başlık={product.title}"
     )
 
-    # Try to find by exact category_name match in database first
-    if product.category_name:
-      db_category = TrendyolCategory.objects.filter(
-        name__iexact=product.category_name, 
-        is_active=True
-      ).first()
-      
-      if db_category:
-        logger.info(f"Found exact category match in database: {db_category.name} (ID: {db_category.category_id})")
-        return db_category.category_id
-      
-      # Try partial match
-      db_category = TrendyolCategory.objects.filter(
-        name__icontains=product.category_name, 
-        is_active=True
-      ).first()
-      
-      if db_category:
-        logger.info(f"Found partial category match in database: {db_category.name} (ID: {db_category.category_id})")
-        return db_category.category_id
+    # Initialize the category finder with our API client
+    finder = TrendyolCategoryFinder(client)
 
-    # If we get here, no match found - use default category for LC Waikiki
-    logger.warning(
-        f"Could not find a category match for product '{product.title}', using default"
-    )
-    return 385  # Default to Women's Clothing - Jacket
+    # Get product title for category search
+    title = product.title if product.title else ""
+
+    # Find matching category using the enhanced finder
+    category_id = finder.find_best_category(title)
+
+    if category_id:
+      print(f"[DEBUG-CATEGORY] Bulunan kategori ID: {category_id}")
+      logger.info(f"Found category ID {category_id} for product '{title}'")
+      return category_id
+    else:
+      logger.warning(
+          f"Could not find a category match for product '{title}', using default"
+      )
+      return 385  # Default to Women's Clothing - Jacket
   except Exception as e:
     logger.error(f"Error finding category match: {str(e)}")
     # Return a default category on error
@@ -1315,8 +1265,6 @@ def find_best_brand_match(product: TrendyolProduct) -> Optional[int]:
   """
     Find the best matching brand for a product.
     Returns the brand ID if found, None otherwise.
-    
-    Enhanced implementation that uses our new API helpers for better brand matching.
     """
   logger.info(
       f"Finding brand for product: {product.title} (Brand name: {product.brand_name})"
@@ -1332,22 +1280,6 @@ def find_best_brand_match(product: TrendyolProduct) -> Optional[int]:
     except TrendyolBrand.DoesNotExist:
       logger.warning(f"Brand ID {product.brand_id} does not exist in database")
       pass
-
-  # Try to use our new API helpers
-  try:
-    from .api_helpers import find_brand_by_name
-    
-    if product.brand_name:
-      logger.info(f"Searching for brand using API helpers: {product.brand_name}")
-      brand_id = find_brand_by_name(product.brand_name)
-      
-      if brand_id:
-        logger.info(f"Found brand using API helpers: ID {brand_id}")
-        return brand_id
-      else:
-        logger.warning(f"API helpers could not find brand {product.brand_name}, falling back to original method")
-  except Exception as e:
-    logger.error(f"Error using API helpers for brand search: {str(e)}, falling back to original method")
 
   # Try to find by brand name
   if product.brand_name:
@@ -1428,7 +1360,7 @@ def find_best_brand_match(product: TrendyolProduct) -> Optional[int]:
   except Exception as e:
     logger.error(f"Error finding fallback brand: {str(e)}")
 
-  # No brand found, use default brand ID 7651 (LC Waikiki)
+  # No brand found, use default brand ID 7651
   logger.warning(
       f"No matching brand found for product: {product.title}, using default brand ID: 7651"
   )
@@ -1458,117 +1390,28 @@ def get_required_attributes_for_category(
     """
   logger.info(f"Getting required attributes for category ID={category_id}")
 
-  # First, try to use the new API helpers implementation
   try:
-    # Use our new API helpers
-    from .api_helpers import get_required_attributes
-    attributes = get_required_attributes(category_id, product_title, product_color, product_size)
-    
-    if attributes:
-      logger.info(f"Got {len(attributes)} attributes for category {category_id} from API helpers")
-      return attributes
-    else:
-      logger.warning(f"API helpers returned no attributes for category {category_id}, falling back to direct API")
-  except Exception as e:
-    logger.error(f"Error using API helpers: {str(e)}, falling back to direct API")
-
-  # If above fails, fall back to direct API implementation
-  try:
-    # Get API client
     client = get_api_client()
     if not client:
       logger.warning("API client could not be obtained")
       return []
-    
-    # Directly fetch category attributes via API
+
+    # İyileştirilmiş kategori bulucu kullanarak öznitelikleri al
+    from .category_finder_new import TrendyolCategoryFinder
+    finder = TrendyolCategoryFinder(client)
+
+    # Doğrudan API'den kategoriye özgü öznitelikleri al
     try:
-      # Get all category attributes 
-      url = f"product/product-categories/{category_id}/attributes"
-      response = client.make_request("GET", url)
-      
-      if not response or response.status_code != 200:
-        error_msg = f"Error getting attributes: {response.status_code if response else 'No response'} {response.text if response else ''}"
-        logger.error(error_msg)
-        return []
-      
-      data = response.json()
-      attributes = []
-      
-      # Process category attributes
-      logger.info(f"Processing {len(data.get('categoryAttributes', []))} attributes for category {category_id}")
-      
-      for attr in data.get('categoryAttributes', []):
-        # Skip attributes without ID
-        if not attr.get('attribute') or not attr['attribute'].get('id'):
-          logger.warning(f"Skipping attribute without ID")
-          continue
-        
-        # Get attribute details
-        attribute_id = attr['attribute']['id']
-        attribute_name = attr['attribute'].get('name', 'Unknown')
-        
-        # Check if attribute is required and log it
-        is_required = attr.get('required', False)
-        logger.info(f"Processing attribute: {attribute_name} (ID: {attribute_id}, Required: {is_required})")
-        
-        # Only add required attributes
-        if not is_required:
-          logger.info(f"Skipping non-required attribute: {attribute_name}")
-          continue
-        
-        # Check if this is a 'color' attribute and log it
-        if attribute_name.lower() in ['renk', 'color']:
-          logger.info(f"Found color attribute with ID {attribute_id}")
-          
-          # Special handling for color attribute if provided
-          if product_color:
-            found_color_match = False
-            # Try to find a matching color value
-            if attr.get('attributeValues'):
-              for value in attr['attributeValues']:
-                if value.get('name', '').lower() == product_color.lower():
-                  attributes.append({
-                    "attributeId": attribute_id,
-                    "attributeValueId": value['id']
-                  })
-                  logger.info(f"Added color attribute: {attribute_name}={value.get('name', '')}")
-                  found_color_match = True
-                  break
-            
-            # If we found a match, continue to next attribute
-            if found_color_match:
-              continue
-        
-        # Skip if no values are available and custom is not allowed
-        if not attr.get('attributeValues') and not attr.get('allowCustom'):
-          logger.info(f"Skipping attribute {attribute_name} with no values")
-          continue
-        
-        # Get a suitable value
-        attribute_value_id = None
-        attribute_value_name = None
-        
-        # If there are attribute values, use the first one
-        if attr.get('attributeValues') and len(attr['attributeValues']) > 0:
-          attribute_value_id = attr['attributeValues'][0]['id']
-          attribute_value_name = attr['attributeValues'][0].get('name', 'Unknown')
-          logger.info(f"Using attribute value: {attribute_value_name} (ID: {attribute_value_id})")
-        
-        # If we have a valid attribute ID and value ID, add to the list
-        if attribute_id and attribute_value_id:
-          attributes.append({
-              "attributeId": attribute_id,
-              "attributeValueId": attribute_value_id
-          })
-          logger.info(f"Added attribute: {attribute_name}={attribute_value_name}")
-      
-      # Log summary of attributes
-      logger.info(f"Returning {len(attributes)} attributes for category {category_id}")
-      return attributes
-      
+      attributes = finder.get_required_attributes(category_id)
+      logger.info(
+          f"Kategorinin zorunlu özellikleri API'den alındı: {len(attributes)} özellik"
+      )
+      logger.debug(f"Özellikler: {json.dumps(attributes, ensure_ascii=False)}")
     except Exception as e:
-      logger.error(f"Error getting category attributes: {str(e)}")
-      return []
+      logger.error(f"Kategori özellikleri alınırken hata: {str(e)}")
+      attributes = []
+
+    return attributes
   except Exception as e:
     logger.error(f"Error getting required attributes: {str(e)}")
     # Return an empty list on error - we won't use hardcoded values anymore
