@@ -236,7 +236,7 @@ class BrandsAPI:
 
   def _get_brands_endpoint(self):
     """Get the brands endpoint for verification"""
-    return '/product/brands'
+    return 'product/brands'
 
   def get_brands(self, page=0, size=1000):
     """Get all brands from Trendyol"""
@@ -246,7 +246,7 @@ class BrandsAPI:
 
   def _get_brand_by_name_endpoint(self):
     """Get the brand by name endpoint for verification"""
-    return '/product/brands/by-name'
+    return 'brands/by-name'
 
   def get_brand_by_name(self, name):
     """Get brand by name"""
@@ -263,11 +263,11 @@ class CategoriesAPI:
 
   def _get_categories_endpoint(self):
     """Get the categories endpoint for verification"""
-    return '/product-categories'
+    return 'product/product-categories'
 
   def _get_category_attributes_endpoint(self, category_id):
     """Get the category attributes endpoint for verification"""
-    return f'/product/product-categories/{category_id}/attributes'
+    return f'product/product-categories/{category_id}/attributes'
 
   def get_categories(self):
     """Get all categories from Trendyol"""
@@ -288,7 +288,7 @@ class ProductsAPI:
 
   def _get_products_endpoint(self):
     """Get the base products endpoint for verification"""
-    return f'/integration/product/sellers/{self.client.supplier_id}/products'
+    return f'integration/product/sellers/{self.client.supplier_id}/products'
 
   def _get_batch_request_endpoint(self, batch_id):
     """Get the batch request endpoint for verification"""
