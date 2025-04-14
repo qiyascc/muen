@@ -34,9 +34,10 @@ class TrendyolCategoryFinderImproved:
         self.api = api_client
         self._category_cache = None
         self._attribute_cache = {}
+        self.advanced_search_available = ADVANCED_SEARCH_AVAILABLE
         
         # Try to initialize sentence-transformers if available
-        if ADVANCED_SEARCH_AVAILABLE:
+        if self.advanced_search_available:
             try:
                 # Çok dilli model kullan (Türkçe için daha iyi)
                 self.model = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
@@ -46,7 +47,7 @@ class TrendyolCategoryFinderImproved:
                 logger.error(f"Failed to initialize advanced search: {str(e)}")
                 self.model = None
                 self.dictionary = None
-                ADVANCED_SEARCH_AVAILABLE = False
+                self.advanced_search_available = False
         else:
             logger.info("Using basic string matching for category search")
             self.model = None
@@ -105,7 +106,7 @@ class TrendyolCategoryFinderImproved:
                 return keyword_match
             
             # Try advanced semantic search if available
-            if ADVANCED_SEARCH_AVAILABLE and self.model is not None:
+            if self.model is not None:
                 try:
                     category_id = self._find_by_semantic_search(search_term)
                     if category_id:
