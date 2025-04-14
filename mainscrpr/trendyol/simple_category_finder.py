@@ -1,5 +1,6 @@
 import requests
 import json
+import base64
 from urllib.parse import quote
 from sentence_transformers import SentenceTransformer, util
 from collections import defaultdict
@@ -29,6 +30,7 @@ RETRY_DELAY = 1
 @dataclass
 class APIConfig:
     api_key: str
+    api_secret: str
     seller_id: str
     base_url: str = TRENDYOL_API_BASE_URL
 
@@ -57,7 +59,7 @@ class TrendyolAPI:
         self.config = config
         self.session = requests.Session()
         self.session.headers.update({
-            "Authorization": f"Basic {self.config.api_key}",
+            "Authorization": f"Basic {base64.b64encode(f'{self.config.api_key}:{self.config.api_secret}'.encode()).decode()}",
             "User-Agent": f"{self.config.seller_id} - SelfIntegration",
             "Content-Type": "application/json"
         })
