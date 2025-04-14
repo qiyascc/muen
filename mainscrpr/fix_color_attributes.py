@@ -17,9 +17,9 @@ import django
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'mainscrpr.settings')
 django.setup()
 
-# Import our models
-from trendyol.models import TrendyolProduct, TrendyolAPIConfig
-from trendyol.api_client_new import TrendyolAPI, TrendyolCategoryFinder, get_api_client
+# Import models and API client
+from trendyol.models import TrendyolProduct
+from trendyol.api_client_new import get_api_client, get_required_attributes_for_category
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -29,87 +29,87 @@ formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(messag
 handler.setFormatter(formatter)
 logger.addHandler(handler)
 
+# Common color mappings for default values
+# Format: Turkish color name -> Trendyol color attribute value ID
+COLOR_MAPPINGS = {
+    'siyah': 686230,  # Black
+    'beyaz': 686229,  # White
+    'lacivert': 686240,  # Navy Blue
+    'mavi': 686235,  # Blue
+    'kırmızı': 686236,  # Red
+    'yeşil': 686237,  # Green
+    'sarı': 686238,  # Yellow
+    'turuncu': 686239,  # Orange
+    'mor': 686241,  # Purple
+    'pembe': 686242,  # Pink
+    'gri': 686244,  # Gray
+    'kahverengi': 686243,  # Brown
+    'bej': 686249,  # Beige
+}
+
 def fix_color_attribute(product):
     """
     Ensure product has a valid color attribute in the correct format
     """
-    if not product:
-        return False
-    
-    logger.info(f"Processing product ID {product.id}: {product.title}")
-    
-    # Get the API client
-    api_client = get_api_client()
-    if not api_client:
-        logger.error("Failed to get API client")
-        return False
-    
-    # Check if product has a category ID
-    if not product.category_id:
-        logger.warning(f"Product {product.id} has no category_id, cannot process")
-        return False
-    
     try:
-        # Create category finder
-        category_finder = TrendyolCategoryFinder(api_client)
+        # Skip if already successfully processed
+        if product.batch_status == 'success':
+            return True
         
-        # Fetch category attributes
-        category_attrs = category_finder.get_category_attributes(product.category_id)
+        # Ensure attributes is a list
+        if not isinstance(product.attributes, list):
+            product.attributes = []
         
-        if not category_attrs or 'categoryAttributes' not in category_attrs:
-            logger.warning(f"No attributes found for category {product.category_id}")
-            return False
-        
-        # Find color attribute
-        color_attr_id = None
-        color_attr_values = None
-        
-        for attr in category_attrs.get('categoryAttributes', []):
-            attr_name = attr.get('attribute', {}).get('name', '').lower()
-            if 'renk' in attr_name or 'color' in attr_name:
-                color_attr_id = attr.get('attribute', {}).get('id')
-                color_attr_values = attr.get('attributeValues', [])
-                logger.info(f"Found color attribute: ID={color_attr_id}, Values count: {len(color_attr_values)}")
+        # Check if color attribute already exists
+        has_color = False
+        for attr in product.attributes:
+            if isinstance(attr, dict) and attr.get('attributeId') == 348:
+                has_color = True
+                # Make sure the attributeValueId is a number, not a string
+                if 'attributeValueId' in attr and isinstance(attr['attributeValueId'], str):
+                    try:
+                        attr['attributeValueId'] = int(attr['attributeValueId'])
+                        logger.info(f"Converted color attribute value to numeric for product {product.id}")
+                    except (ValueError, TypeError):
+                        # If conversion fails, use a default value
+                        attr['attributeValueId'] = 686230  # Default to black
+                        logger.info(f"Set default color (black) for product {product.id}")
                 break
         
-        if not color_attr_id or not color_attr_values:
-            logger.warning(f"Could not find color attribute for category {product.category_id}")
-            return False
-        
-        # Choose a default color value (first one)
-        default_color_value_id = color_attr_values[0].get('id')
-        default_color_name = color_attr_values[0].get('name')
-        
-        # Get current attributes
-        current_attrs = product.attributes or []
-        
-        # Check if color already exists with the correct format
-        color_exists = False
-        for attr in current_attrs:
-            if attr.get('attributeId') == color_attr_id:
-                color_exists = True
-                logger.info(f"Product already has color attribute in correct format")
-                break
+        # If no color attribute, add it
+        if not has_color:
+            # Try to identify color from title or description
+            color_id = None
             
-            # Check for string 'color' attribute that needs conversion
-            if attr.get('attributeId') == 'color':
-                logger.info(f"Found old string format color attribute: {attr}")
-                current_attrs.remove(attr)  # Remove the old string format
-        
-        # Add color attribute if it doesn't exist
-        if not color_exists:
-            current_attrs.append({
-                'attributeId': color_attr_id,
-                'attributeValueId': default_color_value_id
+            # Search title for color name
+            title_lower = product.title.lower() if product.title else ""
+            
+            for color_name, color_id_value in COLOR_MAPPINGS.items():
+                if color_name in title_lower:
+                    color_id = color_id_value
+                    logger.info(f"Found color '{color_name}' in title for product {product.id}")
+                    break
+            
+            # If still no color, use black as default
+            if not color_id:
+                color_id = 686230  # Default to black
+                logger.info(f"No color found in title, using default black for product {product.id}")
+            
+            # Add color attribute
+            product.attributes.append({
+                'attributeId': 348,
+                'attributeValueId': color_id
             })
-            logger.info(f"Added color attribute: ID={color_attr_id}, ValueID={default_color_value_id} ({default_color_name})")
+            
+            logger.info(f"Added color attribute for product {product.id}")
         
-        # Update product
-        product.attributes = current_attrs
+        # Save changes
         product.save()
-        logger.info(f"Successfully updated product {product.id} with color attribute")
+        
+        # Log the updated attributes
+        logger.info(f"Updated attributes for product {product.id}: {json.dumps(product.attributes)}")
+        
         return True
-    
     except Exception as e:
         logger.error(f"Error fixing color attribute for product {product.id}: {str(e)}")
         return False
@@ -117,23 +117,41 @@ def fix_color_attribute(product):
 def main():
     """Fix color attributes for Trendyol products"""
     try:
-        # Get all products that are not complete or marked for skip
-        products = TrendyolProduct.objects.exclude(batch_status__in=['completed', 'skip'])
+        # Get all Trendyol products
+        products = TrendyolProduct.objects.filter(batch_status__in=['pending', 'failed'])
         
         logger.info(f"Found {products.count()} products to process")
         
-        # Process each product
+        # Filter for failed products with color error
+        color_error_pattern = "Zorunlu kategori özellik bilgisi eksiktir. Eksik alan: Renk"
+        color_error_products = products.filter(status_message__icontains="Renk")
+        
+        logger.info(f"Found {color_error_products.count()} products with color errors")
+        
+        # Process color error products first
         success_count = 0
-        fail_count = 0
-        
-        for product in products:
+        for product in color_error_products:
+            logger.info(f"Processing product {product.id} with color error")
             if fix_color_attribute(product):
+                product.batch_status = 'pending'
+                product.status_message = "Color attribute fixed, ready for retry"
+                product.save()
                 success_count += 1
-            else:
-                fail_count += 1
         
-        logger.info(f"Processing complete. Success: {success_count}, Failed: {fail_count}")
-        logger.info(f"Total products: {success_count + fail_count}")
+        logger.info(f"Fixed {success_count} products with color errors")
+        
+        # Then process all pending products to ensure they have correct color attributes
+        pending_products = products.filter(batch_status='pending')
+        pending_count = 0
+        
+        logger.info(f"Processing {pending_products.count()} pending products")
+        
+        for product in pending_products:
+            if fix_color_attribute(product):
+                pending_count += 1
+        
+        logger.info(f"Processed {pending_count} pending products")
+        logger.info(f"Total products processed: {success_count + pending_count}")
     
     except Exception as e:
         logger.error(f"Error in main function: {str(e)}")
