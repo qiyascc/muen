@@ -44,6 +44,23 @@ class Product(models.Model):
     def __str__(self):
         return self.title or self.url or "Product"
     
+    def get_total_stock(self):
+        """Calculate the total stock across all sizes of this product"""
+        # If product is marked as not in stock, return 0
+        if not self.in_stock:
+            return 0
+            
+        # Sum up stock from all sizes
+        total = 0
+        for size in self.sizes.all():
+            total += size.size_general_stock or 0
+            
+        # If no sizes found but product is marked as in_stock, return default quantity
+        if total == 0 and self.in_stock:
+            return 10  # Default stock value when in_stock but no specific quantity known
+            
+        return total
+    
     class Meta:
         verbose_name = "Product"
         verbose_name_plural = "Products"

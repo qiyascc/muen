@@ -81,11 +81,24 @@ class TrendyolAPI:
                 
                 response = self.session.request(method, url, **kwargs)
                 response.raise_for_status()
-                return response.json()
+                
+                # Handle empty response
+                if not response.text:
+                    return {}
+                    
+                # Try to parse JSON
+                try:
+                    return response.json()
+                except json.JSONDecodeError as e:
+                    logger.error(f"Failed to parse JSON response: {str(e)}")
+                    return {"error": "Invalid JSON response", "text": response.text}
+                    
             except requests.exceptions.RequestException as e:
                 if attempt == MAX_RETRIES - 1:
                     logger.error(f"API request failed after {MAX_RETRIES} attempts: {str(e)}")
-                    raise
+                    # Return empty dict instead of raising exception
+                    return {"error": f"Request failed: {str(e)}"}
+                    
                 logger.warning(f"Attempt {attempt + 1} failed, retrying...")
                 time.sleep(RETRY_DELAY * (attempt + 1))
     
