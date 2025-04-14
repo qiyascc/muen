@@ -78,27 +78,7 @@ def main():
     
     if not config:
         print("No active Trendyol API configuration found")
-        config_count = TrendyolAPIConfig.objects.count()
-        if config_count > 0:
-            print(f"Found {config_count} inactive configurations")
-            for cfg in TrendyolAPIConfig.objects.all():
-                print(f"  - {cfg.name} (Active: {cfg.is_active}, URL: {cfg.base_url})")
-        else:
-            print("No API configurations found at all")
-        
-        # Create a default configuration if none exists
-        print("\nCreating a default active configuration...")
-        config = TrendyolAPIConfig.objects.create(
-            name="Default Configuration",
-            seller_id="535623",
-            api_key="qSohKkLKPWwDeSKjwz8R",
-            api_secret="yYF3Ycl9B6Vjs77q3MhE",
-            base_url="https://apigw.trendyol.com",
-            user_agent="535623 - SelfIntegration",
-            supplier_id="535623",
-            is_active=True
-        )
-        print(f"Created configuration: {config.name}")
+        return
     
     print(f"Testing API configuration: {config.name}")
     print(f"Base URL: {config.base_url}")

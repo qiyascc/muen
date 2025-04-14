@@ -139,20 +139,13 @@ class TrendyolApi:
       if data:
         logger.info(f"Request data: {json.dumps(data, default=str, indent=2)}")
 
-      # Make the request with reduced timeout to avoid long-running operations
-      try:
-        response = requests.request(method=method,
-                                    url=url,
-                                    headers=headers,
-                                    params=params,
-                                    json=data,
-                                    timeout=15)  # Reduced timeout from 30 to 15 seconds
-      except requests.exceptions.Timeout:
-        logger.error(f"Request timed out after 15 seconds: {method} {url}")
-        return {"error": True, "message": "Request timed out", "details": {"url": url, "method": method}}
-      except requests.exceptions.ConnectionError as ce:
-        logger.error(f"Connection error: {str(ce)}")
-        return {"error": True, "message": "Connection error", "details": {"url": url, "error": str(ce)}}
+      # Make the request
+      response = requests.request(method=method,
+                                  url=url,
+                                  headers=headers,
+                                  params=params,
+                                  json=data,
+                                  timeout=30)
 
       # Log response status and headers
       logger.info(f"Response status: {response.status_code}")
@@ -243,7 +236,7 @@ class BrandsAPI:
 
   def _get_brands_endpoint(self):
     """Get the brands endpoint for verification"""
-    return '/integration/product/brands'
+    return '/product/brands'
 
   def get_brands(self, page=0, size=1000):
     """Get all brands from Trendyol"""
@@ -253,7 +246,7 @@ class BrandsAPI:
 
   def _get_brand_by_name_endpoint(self):
     """Get the brand by name endpoint for verification"""
-    return '/integration/product/brands/by-name'
+    return '/product/brands/by-name'
 
   def get_brand_by_name(self, name):
     """Get brand by name"""
@@ -270,11 +263,11 @@ class CategoriesAPI:
 
   def _get_categories_endpoint(self):
     """Get the categories endpoint for verification"""
-    return '/integration/product-categories'
+    return '/product-categories'
 
   def _get_category_attributes_endpoint(self, category_id):
     """Get the category attributes endpoint for verification"""
-    return f'/integration/product/product-categories/{category_id}/attributes'
+    return f'/product/product-categories/{category_id}/attributes'
 
   def get_categories(self):
     """Get all categories from Trendyol"""
@@ -457,38 +450,40 @@ def get_api_client() -> Optional[TrendyolApi]:
     return None
 
 
-def fetch_brands(page=0, size=100) -> List[Dict[str, Any]]:
+def fetch_brands() -> List[Dict[str, Any]]:
   """
     Fetch all brands from Trendyol and update the local database.
     Returns a list of brand dictionaries.
     
     If the API connection fails, it will check the database for existing brands.
-    
-    Args:
-        page: Page number for pagination (default: 0)
-        size: Number of brands to fetch per page (default: 100, reduced from 1000 to avoid timeouts)
     """
   client = get_api_client()
   if not client:
-    logger.error("Could not get API client")
     return []
 
   try:
-    # Fetch brands from Trendyol with smaller page size to avoid timeouts
-    logger.info(f"Fetching brands from Trendyol API (page={page}, size={size})")
-    response = client.brands.get_brands(page=page, size=size)
-
-    # Check for error responses
-    if isinstance(response, dict) and response.get('error'):
-      logger.error(f"Error fetching brands: {response.get('message')}")
-      logger.error(f"Error details: {response.get('details')}")
-      logger.warning("Using cached brands from database instead")
-      return _get_cached_brands_from_db()
+    # Fetch brands from Trendyol
+    response = client.brands.get_brands()
 
     if not response or 'brands' not in response:
       logger.error("Failed to fetch brands from Trendyol API")
       logger.warning("Using cached brands from database instead")
-      return _get_cached_brands_from_db()
+
+      # Get existing brands from database
+      cached_brands = list(
+          TrendyolBrand.objects.filter(is_active=True).values(
+              'brand_id', 'name'))
+      if cached_brands:
+        logger.info(f"Found {len(cached_brands)} brands in database cache")
+        # Convert to expected format
+        formatted_brands = [{
+            'id': brand['brand_id'],
+            'name': brand['name']
+        } for brand in cached_brands]
+        return formatted_brands
+
+      logger.error("No cached brands found in database")
+      return []
 
     brands = response.get('brands', [])
 
@@ -510,24 +505,18 @@ def fetch_brands(page=0, size=100) -> List[Dict[str, Any]]:
 
     # Get existing brands from database in case of error
     logger.warning("Using cached brands from database instead")
-    return _get_cached_brands_from_db()
-
-
-def _get_cached_brands_from_db() -> List[Dict[str, Any]]:
-    """Helper function to get cached brands from database"""
     cached_brands = list(
         TrendyolBrand.objects.filter(is_active=True).values(
             'brand_id', 'name'))
     if cached_brands:
-        logger.info(f"Found {len(cached_brands)} brands in database cache")
-        # Convert to expected format
-        formatted_brands = [{
-            'id': brand['brand_id'],
-            'name': brand['name']
-        } for brand in cached_brands]
-        return formatted_brands
+      logger.info(f"Found {len(cached_brands)} brands in database cache")
+      # Convert to expected format
+      formatted_brands = [{
+          'id': brand['brand_id'],
+          'name': brand['name']
+      } for brand in cached_brands]
+      return formatted_brands
 
-    logger.error("No cached brands found in database")
     return []
 
 
@@ -540,25 +529,33 @@ def fetch_categories() -> List[Dict[str, Any]]:
     """
   client = get_api_client()
   if not client:
-    logger.error("Could not get API client for fetching categories")
     return []
 
   try:
     # Fetch categories from Trendyol
-    logger.info("Fetching categories from Trendyol API")
     response = client.categories.get_categories()
-
-    # Check for error responses
-    if isinstance(response, dict) and response.get('error'):
-      logger.error(f"Error fetching categories: {response.get('message')}")
-      logger.error(f"Error details: {response.get('details')}")
-      logger.warning("Using cached categories from database instead")
-      return _get_cached_categories_from_db()
 
     if not response or 'categories' not in response:
       logger.error("Failed to fetch categories from Trendyol API")
       logger.warning("Using cached categories from database instead")
-      return _get_cached_categories_from_db()
+
+      # Get existing categories from database
+      cached_categories = list(
+          TrendyolCategory.objects.filter(is_active=True).values(
+              'category_id', 'name', 'parent_id', 'path'))
+      if cached_categories:
+        logger.info(
+            f"Found {len(cached_categories)} categories in database cache")
+        # Convert to expected format
+        formatted_categories = [{
+            'id': cat['category_id'],
+            'name': cat['name'],
+            'parentId': cat['parent_id']
+        } for cat in cached_categories]
+        return formatted_categories
+
+      logger.error("No cached categories found in database")
+      return []
 
     categories = response.get('categories', [])
 
@@ -592,26 +589,20 @@ def fetch_categories() -> List[Dict[str, Any]]:
 
     # Get existing categories from database in case of error
     logger.warning("Using cached categories from database instead")
-    return _get_cached_categories_from_db()
-
-
-def _get_cached_categories_from_db() -> List[Dict[str, Any]]:
-    """Helper function to get cached categories from database"""
     cached_categories = list(
         TrendyolCategory.objects.filter(is_active=True).values(
             'category_id', 'name', 'parent_id', 'path'))
     if cached_categories:
-        logger.info(
-            f"Found {len(cached_categories)} categories in database cache")
-        # Convert to expected format
-        formatted_categories = [{
-            'id': cat['category_id'],
-            'name': cat['name'],
-            'parentId': cat['parent_id']
-        } for cat in cached_categories]
-        return formatted_categories
+      logger.info(
+          f"Found {len(cached_categories)} categories in database cache")
+      # Convert to expected format
+      formatted_categories = [{
+          'id': cat['category_id'],
+          'name': cat['name'],
+          'parentId': cat['parent_id']
+      } for cat in cached_categories]
+      return formatted_categories
 
-    logger.error("No cached categories found in database")
     return []
 
 
@@ -1253,7 +1244,7 @@ def find_best_category_match(product: TrendyolProduct) -> Optional[int]:
     title = product.title if product.title else ""
 
     # Find matching category using the enhanced finder
-    category_id = finder.find_category_id(product)
+    category_id = finder.find_best_category(title)
 
     if category_id:
       print(f"[DEBUG-CATEGORY] Bulunan kategori ID: {category_id}")
@@ -1577,8 +1568,7 @@ def prepare_product_data(product: TrendyolProduct) -> Dict[str, Any]:
     # Try one more time with direct API call to debug response
     try:
       debug_client = get_api_client()
-      # Correct API endpoint with 'integration' path segment
-      category_attrs_url = f"/integration/product/product-categories/{category_id}/attributes"
+      category_attrs_url = f"{debug_client.categories}/{category_id}/attributes"
       debug_response = debug_client.make_request("GET", category_attrs_url)
       logger.error(f"API Debug Response: {json.dumps(debug_response, indent=2, ensure_ascii=False)}")
     except Exception as e:
