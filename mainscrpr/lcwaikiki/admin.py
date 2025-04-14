@@ -121,22 +121,57 @@ class ProductAdmin(ModelAdmin):
     # Define processing function
     def process_product(product):
       try:
-        # Import at this level to avoid circular imports
-        from trendyol.trendyol_api_client import send_lcwaikiki_to_trendyol
-        
-        # Send to Trendyol using the new function
-        success, message, batch_id = send_lcwaikiki_to_trendyol(product)
-        
-        if success and batch_id:
+        # Convert to Trendyol product
+        trendyol_product = api_client.lcwaikiki_to_trendyol_product(product)
+
+        if not trendyol_product:
           self.message_user(
               request,
-              f"Product '{product.title}' sent to Trendyol with batch ID: {batch_id}",
+              f"Failed to convert '{product.title}' to Trendyol format",
+              level=messages.ERROR)
+          return None
+
+        # Check if category is set, if not, try to find one
+        if not trendyol_product.category_id:
+          from trendyol.api_client import find_best_category_match
+          from trendyol.models import TrendyolCategory
+          import logging
+
+          logger = logging.getLogger('trendyol.admin')
+
+          category_id = find_best_category_match(trendyol_product)
+          if category_id:
+            trendyol_product.category_id = category_id
+            try:
+              category = TrendyolCategory.objects.get(category_id=category_id)
+              trendyol_product.category_name = category.name
+              trendyol_product.save()
+              logger.info(
+                  f"Updated category for {trendyol_product.title} to {category.name} (ID: {category_id})"
+              )
+            except TrendyolCategory.DoesNotExist:
+              logger.warning(
+                  f"Found category ID {category_id} but it doesn't exist in database"
+              )
+          else:
+            self.message_user(request,
+                              f"Failed to find category for '{product.title}'",
+                              level=messages.ERROR)
+            return None
+
+        # Send to Trendyol
+        result = api_client.sync_product_to_trendyol(trendyol_product)
+
+        if result and trendyol_product.batch_id:
+          self.message_user(
+              request,
+              f"Product '{product.title}' sent to Trendyol with batch ID: {trendyol_product.batch_id}",
               level=messages.SUCCESS)
-          return batch_id
+          return trendyol_product.batch_id
         else:
           error_message = f"Failed to send '{product.title}' to Trendyol"
-          if message:
-            error_message += f": {message}"
+          if trendyol_product.status_message:
+            error_message += f": {trendyol_product.status_message}"
           self.message_user(request, error_message, level=messages.ERROR)
           return None
       except Exception as e:
