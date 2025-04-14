@@ -181,21 +181,85 @@ class TrendyolCategoryFinder:
           f"Failed to fetch attributes for category {category_id}: {str(e)}")
       raise Exception(f"Failed to load attributes for category {category_id}")
 
-  def find_best_category(self, search_term: str) -> int:
-    """Find the most relevant category for a given search term"""
+  def find_best_category(self, search_term: str, deep_search: bool = True) -> int:
+    """Find the most relevant category for a given search term using multiple strategies"""
     try:
       categories = self.category_cache
       if not categories:
         raise ValueError("Empty category list received from API")
 
-      # For the simplified implementation, just return the first matching category
-      for cat in self._get_all_leaf_categories(categories):
-        if search_term.lower() in cat['name'].lower():
-          logger.info(
-              f"Found matching category: {cat['name']} (ID: {cat['id']})")
+      # Strategy 1: Try for exact match first (case insensitive)
+      leaf_categories = self._get_all_leaf_categories(categories)
+      search_term_lower = search_term.lower()
+      
+      # Try exact match
+      for cat in leaf_categories:
+        if search_term_lower == cat['name'].lower():
+          logger.info(f"Found exact match category: {cat['name']} (ID: {cat['id']})")
           return cat['id']
-
-      # If no match found, raise an exception
+      
+      # Strategy 2: Try substring match - if the search term is fully contained in category name
+      for cat in leaf_categories:
+        if search_term_lower in cat['name'].lower():
+          logger.info(f"Found substring match category: {cat['name']} (ID: {cat['id']})")
+          return cat['id']
+      
+      # Strategy 3: Try partial match - each word in search term is contained in category
+      if deep_search:
+        search_words = search_term_lower.split()
+        best_match = None
+        best_match_score = 0
+        
+        for cat in leaf_categories:
+          cat_name_lower = cat['name'].lower()
+          match_score = 0
+          
+          # Count how many words from search term appear in this category
+          for word in search_words:
+            if word in cat_name_lower:
+              match_score += 1
+          
+          # Calculate what percentage of search words matched
+          match_percentage = match_score / len(search_words) if search_words else 0
+          
+          # If this is the best match so far, save it
+          if match_score > 0 and match_percentage > best_match_score:
+            best_match = cat
+            best_match_score = match_percentage
+        
+        # If we found a partial match with at least 50% of words matching
+        if best_match and best_match_score >= 0.5:
+          logger.info(f"Found partial match category: {best_match['name']} (ID: {best_match['id']}) with score {best_match_score:.2f}")
+          return best_match['id']
+      
+      # Strategy 4: Try to find category by removing words from search term one by one
+      if deep_search and ' ' in search_term:
+        # Try with fewer words
+        words = search_term.split()
+        for i in range(len(words) - 1, 0, -1):
+          for combo in [words[:i], words[-i:]]:  # Try both beginning and ending parts
+            shorter_term = ' '.join(combo)
+            logger.info(f"Trying with shorter term: '{shorter_term}'")
+            try:
+              return self.find_best_category(shorter_term, False)  # No recursive deep search
+            except ValueError:
+              continue
+      
+      # Strategy 5: Try individual words
+      if deep_search and ' ' in search_term:
+        for word in search_words:
+          if len(word) > 3:  # Only try with meaningful words
+            logger.info(f"Trying with single word: '{word}'")
+            try:
+              return self.find_best_category(word, False)  # No recursive deep search
+            except ValueError:
+              continue
+      
+      # Log information about available categories to help debugging
+      logger.warning(f"No category found for '{search_term}'. Available categories at top level:")
+      for i, cat in enumerate(categories[:10]):  # Log first 10 top-level categories
+        logger.warning(f"  {i+1}. {cat['name']} (ID: {cat['id']})")
+      
       raise ValueError(f"No matching category found for: {search_term}")
 
     except Exception as e:
