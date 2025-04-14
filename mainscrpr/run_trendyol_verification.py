@@ -71,7 +71,7 @@ def verify_api_client() -> Tuple[bool, Any]:
         return False, None
     
     logger.info("API client initialized successfully")
-    logger.info(f"Base URL: {client.api_url}")
+    logger.info(f"Base URL: {client.base_url}")
     logger.info(f"Supplier ID: {client.supplier_id}")
     logger.info(f"User-Agent: {client.user_agent}")
     

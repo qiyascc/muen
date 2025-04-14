@@ -20,7 +20,7 @@ def test_trendyol_api_connection():
         logger.error("Failed to initialize API client. Check API configuration.")
         return False
     
-    logger.info(f"API client initialized with base URL: {client.api_url}")
+    logger.info(f"API client initialized with base URL: {client.base_url}")
     logger.info(f"Using supplier ID: {client.supplier_id}")
     logger.info(f"Using User-Agent: {client.user_agent}")
     

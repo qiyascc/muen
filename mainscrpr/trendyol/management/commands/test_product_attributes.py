@@ -66,7 +66,7 @@ class Command(BaseCommand):
             self.stdout.write(self.style.ERROR("Failed to get API client, check configuration"))
             return
             
-        self.stdout.write(self.style.SUCCESS(f"Successfully connected to API: {api_client.api_url}"))
+        self.stdout.write(self.style.SUCCESS(f"Successfully connected to API: {api_client.base_url}"))
         
         # Test each product
         for product in products:

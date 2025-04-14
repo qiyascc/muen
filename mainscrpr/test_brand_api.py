@@ -38,7 +38,7 @@ def test_brands_api():
         logger.error("Failed to initialize API client")
         return False
     
-    logger.info(f"Using API client with base URL: {client.api_url}")
+    logger.info(f"Using API client with base URL: {client.base_url}")
     
     # Test brand endpoint directly
     try:

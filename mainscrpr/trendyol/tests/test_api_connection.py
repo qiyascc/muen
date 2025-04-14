@@ -41,7 +41,7 @@ class TrendyolAPIConnectionTest(TestCase):
     def test_api_client_initialization(self):
         """Test API client initialization"""
         self.assertIsNotNone(self.api_client)
-        self.assertEqual(self.api_client.api_url, self.api_config.base_url)
+        self.assertEqual(self.api_client.base_url, self.api_config.base_url)
         self.assertEqual(self.api_client.supplier_id, 
                          self.api_config.supplier_id or self.api_config.seller_id)
         
