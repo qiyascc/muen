@@ -15,7 +15,7 @@ os.environ.setdefault("DJANGO_SETTINGS_MODULE", "mainscrpr.settings")
 django.setup()
 
 from django.db import transaction
-from trendyol.models import TrendyolCategory, TrendyolAttribute, TrendyolAttributeValue
+from trendyol.models import TrendyolCategory, TrendyolBrand
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, 
@@ -31,17 +31,12 @@ def clean_all_default_data():
             TrendyolCategory.objects.all().delete()
             logger.info(f"{category_count} adet kategori veritabanından silindi")
             
-            # Öznitelikleri temizle
-            attribute_count = TrendyolAttribute.objects.count()
-            TrendyolAttribute.objects.all().delete()
-            logger.info(f"{attribute_count} adet öznitelik veritabanından silindi")
+            # Markaları temizle
+            brand_count = TrendyolBrand.objects.count()
+            TrendyolBrand.objects.all().delete()
+            logger.info(f"{brand_count} adet marka veritabanından silindi")
             
-            # Öznitelik değerlerini temizle
-            attribute_value_count = TrendyolAttributeValue.objects.count()
-            TrendyolAttributeValue.objects.all().delete()
-            logger.info(f"{attribute_value_count} adet öznitelik değeri veritabanından silindi")
-            
-            logger.info("Tüm veriler başarıyla temizlendi. Sistemde kategori ve öznitelik verisi kalmadı.")
+            logger.info("Tüm veriler başarıyla temizlendi. Sistemde kategori ve marka verisi kalmadı.")
             logger.info("Bu öğeler artık API'den gerçek zamanlı olarak çekilecektir.")
             
     except Exception as e:
@@ -49,6 +44,6 @@ def clean_all_default_data():
         raise
         
 if __name__ == "__main__":
-    logger.info("Trendyol kategori ve öznitelik verilerini temizleme işlemi başlıyor...")
+    logger.info("Trendyol kategori ve marka verilerini temizleme işlemi başlıyor...")
     clean_all_default_data()
     logger.info("İşlem tamamlandı.")
