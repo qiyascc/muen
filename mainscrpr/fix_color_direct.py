@@ -6,135 +6,89 @@ Bu betik, ürünlerin attributes alanını direkt düzenleyerek renk bilgisini e
 python manage.py shell < fix_color_direct.py
 """
 
-import json
 import logging
+import time
+import json
+import re
+import django
 import os
 import sys
+from django.db import connection
+from django.db.models import Q
+from trendyol.models import TrendyolProduct, TrendyolCategory, TrendyolAPIConfig
+from trendyol.improved_api_client import get_api_client, TrendyolCategoryFinder
 
 # Set up Django environment
-import django
-os.environ.setdefault("DJANGO_SETTINGS_MODULE", "mainscrpr.settings")
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'mainscrpr.settings')
 django.setup()
 
-from django.db.models import Q
-from trendyol.models import TrendyolProduct
-
-# Set up logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    stream=sys.stdout
+)
+logger = logging.getLogger('fix_color_direct')
 
 def fix_colors_directly():
     """Veritabanında doğrudan tüm ürünlere renk bilgisi ekler"""
-    # Renk özniteliği ID'si (Trendyol API'de standart bir değer)
-    COLOR_ATTRIBUTE_ID = 348
     
-    # Trendyol'da bulunan yaygın renk ID'leri
-    color_id_map = {
-        'beyaz': 123986,
-        'siyah': 123987,
-        'mavi': 123988,
-        'kırmızı': 123990,
-        'pembe': 123991,
-        'yeşil': 123992,
-        'sarı': 123993,
-        'mor': 123994,
-        'gri': 123995,
-        'kahverengi': 123996,
-        'lacivert': 123999,
-        'turuncu': 124002,
-        'bej': 124003,
-        'ekru': 123997,
-        'krem': 124000
-    }
+    # API client'ı başlat
+    client = get_api_client()
+    if not client:
+        logger.error("API client not available")
+        return False
     
-    # Ürünleri al
-    products = TrendyolProduct.objects.all()
-    logger.info(f"Toplam {products.count()} ürün bulundu")
+    # Category finder'ı başlat
+    category_finder = TrendyolCategoryFinder(client)
     
-    processed = 0
-    updated = 0
-    already_has_color = 0
-    errors = 0
+    # Henüz gönderilmemiş veya hata almış ürünleri bul
+    products = TrendyolProduct.objects.filter(
+        Q(batch_status='pending') | 
+        Q(batch_status='failed') |
+        Q(attributes=[]) |
+        Q(attributes__isnull=True)
+    )
+    
+    logger.info(f"Found {products.count()} products to fix")
+    
+    fixed_count = 0
+    error_count = 0
     
     for product in products:
         try:
-            processed += 1
+            logger.info(f"Processing product {product.id}: {product.title}")
             
-            # Ürünün özniteliklerini al
-            attributes = product.attributes
+            # Ürünün kategori ID'sini kontrol et
+            if not product.category_id:
+                logger.warning(f"Product {product.id} has no category_id, skipping")
+                continue
             
-            # Öznitelikleri JSON'a çevir (eğer string ise)
-            if isinstance(attributes, str):
-                try:
-                    attributes = json.loads(attributes)
-                except json.JSONDecodeError:
-                    attributes = []
-                    
-            # None ise boş liste yap
-            if attributes is None:
-                attributes = []
-                
-            # Liste değilse dönüştür
-            if not isinstance(attributes, list):
-                if isinstance(attributes, dict):
-                    # Sözlüğü listeye dönüştür
-                    attr_list = []
-                    for k, v in attributes.items():
-                        attr_list.append({
-                            'attributeId': int(k) if k.isdigit() else k,
-                            'attributeValueId': v
-                        })
-                    attributes = attr_list
-                else:
-                    attributes = []
+            # Kategori özniteliklerini al
+            attributes = category_finder.get_required_attributes(product.category_id)
             
-            # Renk özniteliği var mı kontrol et
-            has_color = False
-            for attr in attributes:
-                if attr.get('attributeId') == COLOR_ATTRIBUTE_ID:
-                    has_color = True
-                    already_has_color += 1
-                    break
-                    
-            # Eğer renk özniteliği yoksa ekle
-            if not has_color:
-                # Üründen rengi belirle
-                found_color = None
-                product_title = product.title.lower() if product.title else ""
-                
-                for color_name, color_id in color_id_map.items():
-                    if color_name in product_title:
-                        found_color = color_id
-                        break
-                        
-                # Renk bulunamadıysa varsayılan bir renk kullan
-                if not found_color:
-                    found_color = color_id_map['beyaz']  # Beyaz renk varsayılan
-                    
-                # Renk özniteliğini ekle
-                attributes.append({
-                    'attributeId': COLOR_ATTRIBUTE_ID,
-                    'attributeValueId': found_color
-                })
-                
-                # Ürünü güncelle
-                product.attributes = attributes
-                product.save()
-                updated += 1
-                
-                logger.info(f"Ürün ID:{product.id} - Başlık: {product.title} için renk eklendi")
-                
+            if not attributes:
+                logger.warning(f"No attributes found for category {product.category_id}")
+                continue
+            
+            # Ürün renk özniteliklerini API'den alınan güncel değerlerle güncelle
+            product.attributes = attributes
+            product.save()
+            
+            logger.info(f"Updated product {product.id} with {len(attributes)} attributes")
+            fixed_count += 1
+            
         except Exception as e:
-            errors += 1
-            logger.error(f"Ürün ID:{product.id} işlenirken hata: {str(e)}")
-            
-        # Her 10 ürünü işledikten sonra ilerleme bilgisi
-        if processed % 10 == 0:
-            logger.info(f"İşlenen: {processed}, Güncellenen: {updated}, Zaten renk sahibi: {already_has_color}, Hatalar: {errors}")
+            logger.error(f"Error updating product {product.id}: {str(e)}")
+            error_count += 1
     
-    # Final istatistikler
-    logger.info(f"İşlem tamamlandı. Toplam {processed} ürün işlendi")
-    logger.info(f"Güncellenen: {updated}, Zaten renk sahibi: {already_has_color}, Hatalar: {errors}")
+    logger.info(f"Fixed {fixed_count} products, encountered {error_count} errors")
+    return True
 
 if __name__ == "__main__":
+    # When running with python manage.py shell < script.py
+    # the __name__ == "__main__" condition is not checked
+    # So we call the function directly
+    print("Starting color fix process...")
     fix_colors_directly()
+    print("Color fix completed.")
