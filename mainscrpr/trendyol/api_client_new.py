@@ -2,8 +2,7 @@ import logging
 import json
 import requests
 import base64
-import time
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Dict, List, Optional, Any
 
 from django.utils import timezone
 
@@ -13,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 class TrendyolApi:
-    """Basit Trendyol API istemcisi"""
+    """Custom Trendyol API client implementation"""
 
     def __init__(self,
                 api_key,
@@ -25,7 +24,7 @@ class TrendyolApi:
         self.api_secret = api_secret
         self.supplier_id = supplier_id
 
-        # URL formatını düzenle
+        # Ensure consistent URL format
         if base_url.endswith('/'):
             base_url = base_url[:-1]
         self.base_url = base_url
@@ -37,15 +36,15 @@ class TrendyolApi:
         self.inventory = InventoryAPI(self)
 
     def make_request(self, method, endpoint, data=None, params=None):
-        """Trendyol API'sine istek gönder"""
-        # Endpoint'in / ile başlamasını sağla
+        """Make a request to the Trendyol API"""
+        # Make sure endpoint starts with a slash
         if not endpoint.startswith('/'):
             endpoint = f'/{endpoint}'
 
-        # URL oluştur
+        # Build the URL with proper formatting
         url = f"{self.base_url}{endpoint}"
 
-        # Kimlik doğrulama bilgilerini hazırla
+        # Format the auth string and encode as Base64 for Basic Authentication
         auth_string = f"{self.api_key}:{self.api_secret}"
         auth_encoded = base64.b64encode(auth_string.encode()).decode()
 
@@ -55,10 +54,10 @@ class TrendyolApi:
             'User-Agent': self.user_agent,
         }
 
-        logger.info(f"İstek gönderiliyor: {method} {url}")
+        logger.info(f"Making request: {method} {url}")
 
         try:
-            # İsteği gönder
+            # Make the request
             response = requests.request(method=method,
                                         url=url,
                                         headers=headers,
@@ -66,107 +65,101 @@ class TrendyolApi:
                                         json=data,
                                         timeout=30)
 
-            # Yanıt durumunu logla
-            logger.info(f"Yanıt durumu: {response.status_code}")
-            logger.info(f"Yanıt başlıkları: {dict(response.headers)}")
-            
-            # Yanıt içeriğini logla (hatalar için)
-            if response.status_code >= 400:
-                logger.error(f"Hata yanıtı: {response.text}")
+            # Log response status
+            logger.info(f"Response status: {response.status_code}")
 
-            # İstek başarılı mı kontrol et
+            # Check if the request was successful
             response.raise_for_status()
 
-            # JSON yanıtı çözümle
+            # Parse the response JSON
             try:
                 result = response.json()
-                logger.info(f"Yanıt verisi: {json.dumps(result)}")
                 return result
             except ValueError:
-                # JSON değilse metin olarak döndür
-                logger.info(f"Yanıt metni: {response.text}")
+                # If the response is not JSON, return the response text
                 return {"response": response.text}
 
         except requests.exceptions.RequestException as e:
-            logger.error(f"Trendyol API isteği sırasında hata: {str(e)}")
+            logger.error(f"Error making request to Trendyol API: {str(e)}")
             error_details = {}
             if hasattr(e, 'response') and e.response:
                 error_details['status_code'] = e.response.status_code
                 error_details['response_text'] = e.response.text
 
-            # Hata yanıtını döndür
+            # Return an error response object instead of None
             return {"error": True, "message": str(e), "details": error_details}
 
 
 class BrandsAPI:
-    """Trendyol Marka API'si"""
+    """Trendyol Brands API"""
 
     def __init__(self, client):
         self.client = client
 
     def get_brands(self, page=0, size=1000):
-        """Tüm markaları getir"""
+        """Get all brands from Trendyol"""
         endpoint = '/product/brands'
         params = {'page': page, 'size': size}
         return self.client.make_request('GET', endpoint, params=params)
 
     def get_brand_by_name(self, name):
-        """İsme göre marka getir"""
+        """Get brand by name"""
         endpoint = '/product/brands/by-name'
         params = {'name': name}
         return self.client.make_request('GET', endpoint, params=params)
 
 
 class CategoriesAPI:
-    """Trendyol Kategori API'si"""
+    """Trendyol Categories API"""
 
     def __init__(self, client):
         self.client = client
 
     def get_categories(self):
-        """Tüm kategorileri getir"""
+        """Get all categories from Trendyol"""
         endpoint = '/product-categories'
         return self.client.make_request('GET', endpoint)
 
     def get_category_attributes(self, category_id):
-        """Belirli bir kategori için özellikleri getir"""
+        """Get attributes for a specific category"""
         endpoint = f'/product/product-categories/{category_id}/attributes'
         return self.client.make_request('GET', endpoint)
 
 
 class ProductsAPI:
-    """Trendyol Ürün API'si"""
+    """Trendyol Products API"""
 
     def __init__(self, client):
         self.client = client
 
     def create_products(self, products):
-        """Trendyol'da ürün oluştur"""
+        """Create products on Trendyol"""
         endpoint = f'/integration/product/sellers/{self.client.supplier_id}/products'
         return self.client.make_request('POST', endpoint, data={"items": products})
 
     def update_products(self, products):
-        """Mevcut ürünleri güncelle"""
+        """Update existing products on Trendyol"""
         endpoint = f'/integration/product/sellers/{self.client.supplier_id}/products'
         return self.client.make_request('PUT', endpoint, data={"items": products})
 
     def delete_products(self, barcodes):
-        """Ürünleri sil"""
+        """Delete products from Trendyol"""
         endpoint = f'/integration/product/sellers/{self.client.supplier_id}/products'
         items = [{"barcode": barcode} for barcode in barcodes]
         return self.client.make_request('DELETE', endpoint, data={"items": items})
 
     def get_batch_request_status(self, batch_id):
-        """Toplu istek durumunu kontrol et"""
+        """Get the status of a batch request"""
+        # Make sure we have a valid batch ID before making request
         if not batch_id:
-            logger.warning("Boş batch ID ile durum kontrolü denendi")
+            logger.warning("Attempted to check batch status with empty batch ID")
             return None
 
         endpoint = f'/integration/product/sellers/{self.client.supplier_id}/products/batch-requests/{batch_id}'
         return self.client.make_request('GET', endpoint)
 
     def get_products(self, barcode=None, approved=None, page=0, size=50):
-        """Ürünleri getir"""
+        """Get products from Trendyol"""
         endpoint = f'/integration/product/sellers/{self.client.supplier_id}/products'
         params = {'page': page, 'size': size}
 
@@ -179,26 +172,26 @@ class ProductsAPI:
         return self.client.make_request('GET', endpoint, params=params)
 
     def get_product_by_barcode(self, barcode):
-        """Barkoda göre ürün getir"""
+        """Get product by barcode"""
         return self.get_products(barcode=barcode, page=0, size=1)
 
 
 class InventoryAPI:
-    """Trendyol Envanter API'si (fiyat ve stok güncellemeleri için)"""
+    """Trendyol Inventory API for price and stock updates"""
 
     def __init__(self, client):
         self.client = client
 
     def update_price_and_inventory(self, items):
         """
-        Ürünlerin fiyat ve envanterini güncelle
+        Update price and inventory for products
         
         Args:
-            items: Barkod, miktar, satış fiyatı ve liste fiyatı içeren sözlüklerin listesi
-                  Örnek: [{"barcode": "123456", "quantity": 10, "salePrice": 100.0, "listPrice": 120.0}]
+            items: List of dictionaries with barcode, quantity, salePrice, and listPrice
+                  Example: [{"barcode": "123456", "quantity": 10, "salePrice": 100.0, "listPrice": 120.0}]
         
         Returns:
-            Başarılı olursa batchRequestId içeren sözlük
+            Dictionary with batchRequestId if successful
         """
         endpoint = f'/integration/inventory/sellers/{self.client.supplier_id}/products/price-and-inventory'
         return self.client.make_request('POST', endpoint, data={"items": items})
@@ -206,21 +199,21 @@ class InventoryAPI:
 
 def get_api_client() -> Optional[TrendyolApi]:
     """
-    Yapılandırılmış bir Trendyol API istemcisi alır.
-    Etkin API yapılandırması bulunamazsa None döndürür.
+    Get a configured Trendyol API client.
+    Returns None if no active API configuration is found.
     """
     try:
         config = TrendyolAPIConfig.objects.filter(is_active=True).first()
         if not config:
-            logger.error("Etkin Trendyol API yapılandırması bulunamadı")
+            logger.error("No active Trendyol API configuration found")
             return None
 
-        # Kullanıcı ajanını al veya varsayılan oluştur
+        # Get the user_agent from the config, or create a default one
         user_agent = config.user_agent
         if not user_agent:
             user_agent = f"{config.seller_id} - SelfIntegration"
 
-        # Trendyol API istemcisini başlat
+        # Initialize the Trendyol API client
         client = TrendyolApi(
             api_key=config.api_key,
             api_secret=config.api_secret,
@@ -231,19 +224,74 @@ def get_api_client() -> Optional[TrendyolApi]:
 
         return client
     except Exception as e:
-        logger.error(f"Trendyol API istemcisi oluşturma hatası: {str(e)}")
+        logger.error(f"Error creating Trendyol API client: {str(e)}")
         return None
+
+
+def create_trendyol_product(source_product):
+    """
+    Create a TrendyolProduct from a source product
+    """
+    from trendyol.simple_category_finder import find_best_category_match
+
+    # Get the API client
+    api_client = get_api_client()
+    if not api_client:
+        return None, "No active Trendyol API configuration found"
+
+    # Try to find a matching brand
+    brand_name = source_product.brand
+    brand_response = api_client.brands.get_brand_by_name(brand_name)
+    
+    brand_id = None
+    if not isinstance(brand_response, dict) or 'error' not in brand_response:
+        if isinstance(brand_response, list) and len(brand_response) > 0:
+            brand_id = brand_response[0]['id']
+            logger.info(f"Using existing brand ID: {brand_id}")
+    
+    if not brand_id:
+        # If no brand is found, use a default/fallback brand ID
+        # This should be replaced with proper error handling
+        logger.warning(f"Brand not found: {brand_name}")
+        brand_id = 1  # Default brand ID (update based on your needs)
+        
+    # Find the best category match
+    category_result = find_best_category_match(source_product.category_name)
+    if not category_result:
+        return None, f"Could not find a matching category for {source_product.category_name}"
+    
+    category_id = category_result.category_id
+    
+    # Create the product payload
+    trendyol_product = TrendyolProduct(
+        title=source_product.name,
+        description=source_product.description,
+        brand_id=brand_id,
+        category_id=category_id,
+        source_product=source_product,
+        barcode=f"LCW{source_product.id}",
+        list_price=float(source_product.price),
+        sale_price=float(source_product.price),
+        vat_rate=10,  # Default VAT rate
+        stock_code=f"LCW{source_product.id}",
+        cargo_company_id=17,  # Default cargo company ID
+        dimensional_weight=1,  # Default dimensional weight
+        attributes=[],  # Empty attributes
+        images=[{"url": image.image_url} for image in source_product.images.all()]
+    )
+    
+    return trendyol_product, None
 
 
 def send_product_to_trendyol(product):
     """
-    Ürünü Trendyol'a gönder
+    Send a product to Trendyol
     """
     api_client = get_api_client()
     if not api_client:
-        return None, "Etkin Trendyol API yapılandırması bulunamadı"
+        return None, "No active Trendyol API configuration found"
     
-    # Ürün verisini Trendyol formatına dönüştür
+    # Format the product data for Trendyol
     product_data = {
         "barcode": product.barcode,
         "title": product.title,
@@ -261,18 +309,18 @@ def send_product_to_trendyol(product):
         "images": product.images
     }
     
-    # Hata ayıklama bilgilerini yazdır
+    # Print debug info
     print(f"[DEBUG-CREATE] Ürün gönderiliyor: {product.title}")
     print(f"[DEBUG-CREATE] Gönderilen veri: {json.dumps(product_data, indent=2)}")
     
-    # Ürünü Trendyol'a gönder
+    # Send the product to Trendyol
     response = api_client.products.create_products([product_data])
     
-    # Hata ayıklama bilgilerini yazdır
+    # Print debug info
     print(f"[DEBUG-CREATE] Trendyol'dan gelen yanıt: {json.dumps(response, indent=2)}")
     
     if 'error' in response:
-        return None, f"Ürün Trendyol'a gönderilirken hata: {response['message']}"
+        return None, f"Error sending product to Trendyol: {response['message']}"
     
     if 'batchRequestId' in response:
         batch_id = response['batchRequestId']
@@ -280,50 +328,6 @@ def send_product_to_trendyol(product):
         product.batch_status = 'pending'
         product.save()
         
-        logger.info(f"Product '{product.title}' (ID: {product.id}) submitted with batch ID: {batch_id}")
         return batch_id, None
     
-    return None, "Ürün Trendyol'a gönderilirken bilinmeyen hata"
-
-
-def check_product_batch_status(batch_id):
-    """
-    Toplu istek durumunu kontrol et
-    """
-    api_client = get_api_client()
-    if not api_client:
-        return None
-    
-    return api_client.products.get_batch_request_status(batch_id)
-
-
-def batch_process_products(products, max_count=None):
-    """
-    Birden çok ürünü toplu olarak işle
-    """
-    if not products:
-        return 0, 0, []
-    
-    success_count = 0
-    failed_count = 0
-    batch_ids = []
-    
-    # Maksimum ürün sayısını sınırla
-    products_to_process = products
-    if max_count and max_count > 0:
-        products_to_process = products[:max_count]
-    
-    # Her ürünü işle
-    for product in products_to_process:
-        batch_id, error = send_product_to_trendyol(product)
-        if error:
-            failed_count += 1
-            logger.error(f"Ürün {product.id} senkronizasyon hatası: {error}")
-        else:
-            success_count += 1
-            batch_ids.append(batch_id)
-            # İstekler arasında 0.5 saniye bekle (hız sınırı önlemi)
-            time.sleep(0.5)
-    
-    logger.info(f"Processed {len(products_to_process)}/{len(products)} products: {success_count} succeeded, {failed_count} failed")
-    return success_count, failed_count, batch_ids
+    return None, "Unknown error sending product to Trendyol"

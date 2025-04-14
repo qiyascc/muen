@@ -198,9 +198,7 @@ class ProductAdmin(ModelAdmin):
     # Perform batch processing
     success_count, error_count, batch_ids = api_client.batch_process_products(
         valid_products,
-        process_product,
-        batch_size=batch_size,
-        delay=0.5  # Half-second delay between products
+        max_count=batch_size
     )
 
     # Show summary message
