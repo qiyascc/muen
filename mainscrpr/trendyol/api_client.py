@@ -492,7 +492,7 @@ def lcwaikiki_to_trendyol_product(lcw_product) -> Optional[TrendyolProduct]:
           batch_status='pending',
           status_message="Created from LCWaikiki product",
           currency_type="TRY",  # Turkish Lira
-          vat_rate=18  # Default VAT rate in Turkey
+          vat_rate=10  # Default VAT rate in Turkey
       )
       logger.info(
           f"Created new Trendyol product from LCW product {lcw_product.id} with barcode {barcode}"
@@ -573,7 +573,7 @@ def prepare_product_for_trendyol(trendyol_product: TrendyolProduct) -> Dict:
       "listPrice": float(trendyol_product.price),
       "salePrice":
       float(trendyol_product.price),  # Use the same price if no discount
-      "vatRate": trendyol_product.vat_rate or 18,
+      "vatRate": trendyol_product.vat_rate or 10,
       "images": [{
           "url": trendyol_product.image_url
       }],

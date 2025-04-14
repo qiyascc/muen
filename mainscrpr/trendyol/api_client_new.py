@@ -80,31 +80,36 @@ class TrendyolAPI:
       try:
         print(f"[DEBUG-API] SON İSTEK: {method} {url}")
         print(f"[DEBUG-API] İSTEK HEADERS: {self.session.headers}")
-        
+
         # Debug request payload for POST requests
         if method == 'POST' and 'json' in kwargs:
-            print(f"[DEBUG-API] İSTEK PAYLOAD: {json.dumps(kwargs.get('json', {}), indent=2, ensure_ascii=False)}")
-        
+          print(
+              f"[DEBUG-API] İSTEK PAYLOAD: {json.dumps(kwargs.get('json', {}), indent=2, ensure_ascii=False)}"
+          )
+
         response = self.session.request(method, url, **kwargs)
-        
+
         # Debug response details
         print(f"[DEBUG-API] YANIT KODU: {response.status_code}")
         print(f"[DEBUG-API] YANIT HEADERS: {dict(response.headers)}")
-        
+
         # Print response content (truncated if too long)
-        resp_text = response.text[:1000] + '...' if len(response.text) > 1000 else response.text
+        resp_text = response.text[:1000] + '...' if len(
+            response.text) > 1000 else response.text
         print(f"[DEBUG-API] YANIT İÇERİĞİ: {resp_text}")
-        
+
         # More detailed error logging
         if response.status_code >= 400:
-            print(f"[DEBUG-API] HATA DETAYI: Kod {response.status_code}")
-            try:
-                if 'application/json' in response.headers.get('Content-Type', ''):
-                    error_data = response.json()
-                    print(f"[DEBUG-API] JSON HATA DETAYI: {json.dumps(error_data, indent=2, ensure_ascii=False)}")
-            except Exception as e:
-                print(f"[DEBUG-API] JSON çözümlenemedi: {str(e)}")
-        
+          print(f"[DEBUG-API] HATA DETAYI: Kod {response.status_code}")
+          try:
+            if 'application/json' in response.headers.get('Content-Type', ''):
+              error_data = response.json()
+              print(
+                  f"[DEBUG-API] JSON HATA DETAYI: {json.dumps(error_data, indent=2, ensure_ascii=False)}"
+              )
+          except Exception as e:
+            print(f"[DEBUG-API] JSON çözümlenemedi: {str(e)}")
+
         response.raise_for_status()
 
         # Handle empty response
@@ -133,7 +138,9 @@ class TrendyolAPI:
 
   def post(self, endpoint: str, data: Dict) -> Dict:
     # Debug logging for request body
-    print(f"[DEBUG-API] POST isteği gövdesi (JSON): {json.dumps(data, indent=2, ensure_ascii=False)}")
+    print(
+        f"[DEBUG-API] POST isteği gövdesi (JSON): {json.dumps(data, indent=2, ensure_ascii=False)}"
+    )
     return self._make_request('POST', endpoint, json=data)
 
 
@@ -298,32 +305,36 @@ class TrendyolProductManager:
     try:
       category_attrs = self.category_finder.get_category_attributes(
           category_id)
-      
+
       # Debug log the full category attributes
-      print(f"[DEBUG-API] Kategori {category_id} için özellikler: {json.dumps(category_attrs, indent=2, ensure_ascii=False)[:1000]}...")
-      
+      print(
+          f"[DEBUG-API] Kategori {category_id} için özellikler: {json.dumps(category_attrs, indent=2, ensure_ascii=False)[:1000]}..."
+      )
+
       # Look specifically for color attribute as it's often required
       color_attr = None
       required_attrs = []
-      
+
       # First pass - identify required attributes
       for attr in category_attrs.get('categoryAttributes', []):
         attr_name = attr['attribute']['name']
         attr_id = attr['attribute']['id']
         is_required = attr.get('required', False)
-        
+
         if is_required:
           required_attrs.append(f"{attr_name} (ID: {attr_id})")
-          
+
         # Check if this is a color attribute (important for Trendyol)
         if attr_name.lower() in ['renk', 'color', 'colour']:
           color_attr = attr
-          print(f"[DEBUG-API] Renk özelliği bulundu: {attr_name} (ID: {attr_id})")
+          print(
+              f"[DEBUG-API] Renk özelliği bulundu: {attr_name} (ID: {attr_id})"
+          )
 
       # Log required attributes
       if required_attrs:
         print(f"[DEBUG-API] Zorunlu özellikler: {', '.join(required_attrs)}")
-      
+
       # Process all attributes
       for attr in category_attrs.get('categoryAttributes', []):
         # Skip if no attribute values and custom values not allowed
@@ -340,33 +351,44 @@ class TrendyolProductManager:
             attribute["attributeValueId"] = attr['attributeValues'][0]['id']
             attribute["attributeValue"] = attr['attributeValues'][0]['name']
           else:
-            attribute["customAttributeValue"] = f"Sample {attr['attribute']['name']}"
+            attribute[
+                "customAttributeValue"] = f"Sample {attr['attribute']['name']}"
         elif attr.get('allowCustom'):
-          attribute["customAttributeValue"] = f"Sample {attr['attribute']['name']}"
+          attribute[
+              "customAttributeValue"] = f"Sample {attr['attribute']['name']}"
         else:
           continue
 
         attributes.append(attribute)
-      
+
       # Add special handling for color if it's required but not found
-      if color_attr and not any(a.get('attributeName', '').lower() in ['renk', 'color', 'colour'] for a in attributes):
-        print("[DEBUG-API] Renk özelliği zorunlu fakat eklenmemiş. Manuel olarak ekleniyor.")
+      if color_attr and not any(
+          a.get('attributeName', '').lower() in ['renk', 'color', 'colour']
+          for a in attributes):
+        print(
+            "[DEBUG-API] Renk özelliği zorunlu fakat eklenmemiş. Manuel olarak ekleniyor."
+        )
         color_attribute = {
             "attributeId": color_attr['attribute']['id'],
             "attributeName": color_attr['attribute']['name']
         }
-        
-        if color_attr.get('attributeValues') and len(color_attr['attributeValues']) > 0:
-          color_attribute["attributeValueId"] = color_attr['attributeValues'][0]['id']
-          color_attribute["attributeValue"] = color_attr['attributeValues'][0]['name']
+
+        if color_attr.get('attributeValues') and len(
+            color_attr['attributeValues']) > 0:
+          color_attribute["attributeValueId"] = color_attr['attributeValues'][
+              0]['id']
+          color_attribute["attributeValue"] = color_attr['attributeValues'][0][
+              'name']
         else:
           color_attribute["customAttributeValue"] = "Karışık Renkli"
-          
+
         attributes.append(color_attribute)
-      
+
       # Debug log the final attributes
-      print(f"[DEBUG-API] Oluşturulan özellikler: {json.dumps(attributes, indent=2, ensure_ascii=False)}")
-      
+      print(
+          f"[DEBUG-API] Oluşturulan özellikler: {json.dumps(attributes, indent=2, ensure_ascii=False)}"
+      )
+
       return attributes
     except Exception as e:
       logger.error(
@@ -574,7 +596,7 @@ def lcwaikiki_to_trendyol_product(lcw_product) -> Optional[TrendyolProduct]:
           batch_status='pending',
           status_message="Created from LCWaikiki product",
           currency_type="TRY",  # Turkish Lira
-          vat_rate=18  # Default VAT rate in Turkey
+          vat_rate=10  # Default VAT rate in Turkey
       )
       logger.info(
           f"Created new Trendyol product from LCW product {lcw_product.id} with barcode {barcode}"
@@ -635,6 +657,16 @@ def prepare_product_for_trendyol(trendyol_product: TrendyolProduct) -> Dict:
   if not trendyol_product.brand_id:
     raise ValueError(f"Product {trendyol_product.id} has no brand ID")
 
+  # Clean up description - remove any "Satıcı:" text and related HTML
+  description = trendyol_product.description
+  if description:
+    import re
+    # Remove p tag containing "Satıcı:" text
+    description = re.sub(r'<p[^>]*>.*?Satıcı:.*?</p>', '', description, flags=re.DOTALL)
+    # Also remove just the b tag with "Satıcı:" if it exists
+    description = re.sub(r'<b[^>]*>.*?Satıcı:.*?</b>', '', description, flags=re.DOTALL)
+    print(f"[DEBUG-API] Açıklama temizlendi: {description[:200]}...")
+
   # Get required attributes for the category
   product_manager = get_product_manager()
   attributes = product_manager._get_attributes_for_category(
@@ -650,12 +682,12 @@ def prepare_product_for_trendyol(trendyol_product: TrendyolProduct) -> Dict:
       "quantity": trendyol_product.quantity,
       "stockCode": trendyol_product.stock_code,
       "dimensionalWeight": 1,  # Default value
-      "description": trendyol_product.description,
+      "description": description,  # Use cleaned description
       "currencyType": trendyol_product.currency_type or "TRY",
       "listPrice": float(trendyol_product.price),
       "salePrice":
       float(trendyol_product.price),  # Use the same price if no discount
-      "vatRate": trendyol_product.vat_rate or 18,
+      "vatRate": trendyol_product.vat_rate or 10,
       "images": [{
           "url": trendyol_product.image_url
       }],
