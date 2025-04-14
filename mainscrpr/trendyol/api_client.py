@@ -1360,9 +1360,9 @@ def find_best_brand_match(product: TrendyolProduct) -> Optional[int]:
   except Exception as e:
     logger.error(f"Error finding fallback brand: {str(e)}")
 
-  # No brand found
-  logger.error(f"No matching brand found for product: {product.title}")
-  return None
+  # No brand found, use default brand ID 7651
+  logger.warning(f"No matching brand found for product: {product.title}, using default brand ID: 7651")
+  return 7651
 
 
 def get_required_attributes_for_category(
@@ -1437,8 +1437,10 @@ def prepare_product_data(product: TrendyolProduct) -> Dict[str, Any]:
     raise ValueError("No matching category found for product")
 
   if not brand_id:
-    logger.error(f"No matching brand found for product {product.id}")
-    raise ValueError("No matching brand found for product")
+    # This should never happen now as find_best_brand_match always returns 7651 as a fallback
+    # But keeping this check for safety
+    logger.warning(f"No brand ID returned for product {product.id}, using default 7651")
+    brand_id = 7651
 
   # Get image URLs
   image_urls = []
