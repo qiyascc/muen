@@ -666,6 +666,16 @@ def prepare_product_for_trendyol(trendyol_product: TrendyolProduct) -> Dict:
     # Also remove just the b tag with "Satıcı:" if it exists
     description = re.sub(r'<b[^>]*>.*?Satıcı:.*?</b>', '', description, flags=re.DOTALL)
     print(f"[DEBUG-API] Açıklama temizlendi: {description[:200]}...")
+    
+  # Clean up product title - normalize spaces
+  title = trendyol_product.title
+  if title:
+    import re
+    # Replace multiple spaces with a single space
+    title = re.sub(r'\s+', ' ', title.strip())
+    print(f"[DEBUG-API] Ürün adı temizlendi: '{title}'")
+  else:
+    title = trendyol_product.title
 
   # Get required attributes for the category
   product_manager = get_product_manager()
@@ -675,7 +685,7 @@ def prepare_product_for_trendyol(trendyol_product: TrendyolProduct) -> Dict:
   # Construct the payload
   payload = {
       "barcode": trendyol_product.barcode,
-      "title": trendyol_product.title,
+      "title": title,  # Use cleaned title
       "productMainId": trendyol_product.product_main_id,
       "brandId": trendyol_product.brand_id,
       "categoryId": trendyol_product.category_id,
