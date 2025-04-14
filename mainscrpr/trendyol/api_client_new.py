@@ -181,7 +181,7 @@ class TrendyolCategoryFinder:
           f"Failed to fetch attributes for category {category_id}: {str(e)}")
       raise Exception(f"Failed to load attributes for category {category_id}")
 
-  def find_best_category(self, search_term: str, deep_search: bool = True) -> int:
+  def find_best_category(self, search_term: str, deep_search: bool = True, fallback: bool = True) -> int:
     """Find the most relevant category for a given search term using multiple strategies"""
     try:
       categories = self.category_cache
@@ -190,23 +190,42 @@ class TrendyolCategoryFinder:
 
       # Strategy 1: Try for exact match first (case insensitive)
       leaf_categories = self._get_all_leaf_categories(categories)
-      search_term_lower = search_term.lower()
+      search_term_lower = search_term.lower().strip()
+      
+      # Store all possible matches with their scores for fallback
+      all_possible_matches = []
       
       # Try exact match
       for cat in leaf_categories:
-        if search_term_lower == cat['name'].lower():
+        cat_name_lower = cat['name'].lower()
+        if search_term_lower == cat_name_lower:
           logger.info(f"Found exact match category: {cat['name']} (ID: {cat['id']})")
           return cat['id']
+        # Collect similarity scores for all categories
+        similarity = self._calculate_similarity(search_term_lower, cat_name_lower)
+        all_possible_matches.append({
+            'category': cat,
+            'score': similarity,
+            'match_type': 'similarity'
+        })
       
       # Strategy 2: Try substring match - if the search term is fully contained in category name
       for cat in leaf_categories:
-        if search_term_lower in cat['name'].lower():
+        cat_name_lower = cat['name'].lower()
+        if search_term_lower in cat_name_lower:
           logger.info(f"Found substring match category: {cat['name']} (ID: {cat['id']})")
           return cat['id']
       
-      # Strategy 3: Try partial match - each word in search term is contained in category
+      # Strategy 3: Try if category name is contained in search term (reverse inclusion)
+      for cat in leaf_categories:
+        cat_name_lower = cat['name'].lower()
+        if cat_name_lower in search_term_lower and len(cat_name_lower) > 3:  # Prevent matching very short names
+          logger.info(f"Found reverse inclusion match: {cat['name']} (ID: {cat['id']})")
+          return cat['id']
+      
+      # Strategy 4: Try partial match - each word in search term is contained in category
       if deep_search:
-        search_words = search_term_lower.split()
+        search_words = [w for w in search_term_lower.split() if len(w) > 2]  # Filter out very short words
         best_match = None
         best_match_score = 0
         
@@ -222,38 +241,126 @@ class TrendyolCategoryFinder:
           # Calculate what percentage of search words matched
           match_percentage = match_score / len(search_words) if search_words else 0
           
+          # Save this match info
+          all_possible_matches.append({
+              'category': cat,
+              'score': match_percentage,
+              'match_type': 'word_match',
+              'matched_words': match_score
+          })
+          
           # If this is the best match so far, save it
           if match_score > 0 and match_percentage > best_match_score:
             best_match = cat
             best_match_score = match_percentage
         
-        # If we found a partial match with at least 50% of words matching
-        if best_match and best_match_score >= 0.5:
+        # If we found a partial match with at least 40% of words matching (lowered from 50%)
+        if best_match and best_match_score >= 0.4:
           logger.info(f"Found partial match category: {best_match['name']} (ID: {best_match['id']}) with score {best_match_score:.2f}")
           return best_match['id']
       
-      # Strategy 4: Try to find category by removing words from search term one by one
-      if deep_search and ' ' in search_term:
-        # Try with fewer words
-        words = search_term.split()
-        for i in range(len(words) - 1, 0, -1):
-          for combo in [words[:i], words[-i:]]:  # Try both beginning and ending parts
-            shorter_term = ' '.join(combo)
-            logger.info(f"Trying with shorter term: '{shorter_term}'")
-            try:
-              return self.find_best_category(shorter_term, False)  # No recursive deep search
-            except ValueError:
-              continue
+      # Strategy 5: Try individual words but in all categories (not just leaf)
+      all_categories = []
+      self._collect_all_categories(categories, all_categories)
       
-      # Strategy 5: Try individual words
+      # Define search_words here if not already defined
+      if not 'search_words' in locals():
+        search_words = [w for w in search_term_lower.split() if len(w) > 2]
+        
       if deep_search and ' ' in search_term:
         for word in search_words:
           if len(word) > 3:  # Only try with meaningful words
+            # Search this word in all categories (including non-leaf)
+            for cat in all_categories:
+              cat_name_lower = cat['name'].lower()
+              if word == cat_name_lower or (len(word) > 4 and word in cat_name_lower):
+                logger.info(f"Found word match in category tree: '{word}' in {cat['name']} (ID: {cat['id']})")
+                # If it's a leaf category, return it directly
+                if not cat.get('subCategories'):
+                  return cat['id']
+                
+                # If not leaf, get first leaf subcategory
+                leaf = self._get_first_leaf_subcategory(cat)
+                if leaf:
+                  logger.info(f"Using leaf subcategory: {leaf['name']} (ID: {leaf['id']})")
+                  return leaf['id']
+      
+      # Strategy 6: Try removing stopwords and search again
+      stopwords = {'ve', 'ile', 'için', 'bir', 'bu', 'da', 'de', 'den', 'dan', 'i̇çin', 'the', 'and', 'for', 'with', 'a', 'an'}
+      filtered_words = [w for w in search_term_lower.split() if w not in stopwords and len(w) > 2]
+      
+      if len(filtered_words) > 0 and len(filtered_words) < len(search_term_lower.split()):
+        filtered_term = ' '.join(filtered_words)
+        if filtered_term != search_term_lower:
+          logger.info(f"Trying with stopwords removed: '{filtered_term}'")
+          try:
+            return self.find_best_category(filtered_term, deep_search=True, fallback=False)
+          except ValueError:
+            pass
+      
+      # Strategy 7: Try with fewer words
+      if deep_search and ' ' in search_term:
+        words = search_term_lower.split()
+        
+        # Try different combinations of words
+        for i in range(len(words) - 1, 0, -1):
+          # Try prefix (start of term)
+          prefix = ' '.join(words[:i])
+          logger.info(f"Trying with prefix: '{prefix}'")
+          try:
+            return self.find_best_category(prefix, deep_search=False, fallback=False)
+          except ValueError:
+            pass
+          
+          # Try suffix (end of term)
+          suffix = ' '.join(words[-i:])
+          logger.info(f"Trying with suffix: '{suffix}'")
+          try:
+            return self.find_best_category(suffix, deep_search=False, fallback=False)
+          except ValueError:
+            pass
+          
+          # For terms with 3+ words, try middle parts too
+          if len(words) >= 3 and i >= 2:
+            for j in range(len(words) - i + 1):
+              middle = ' '.join(words[j:j+i])
+              logger.info(f"Trying with middle part: '{middle}'")
+              try:
+                return self.find_best_category(middle, deep_search=False, fallback=False)
+              except ValueError:
+                continue
+      
+      # Strategy 8: Try individual words
+      if deep_search and ' ' in search_term:
+        # Make sure search_words is defined
+        if not 'search_words' in locals():
+          search_words = [w for w in search_term_lower.split() if len(w) > 2]
+          
+        # First prioritize longer words
+        for word in sorted(search_words, key=len, reverse=True):
+          if len(word) > 3:  # Only try with meaningful words
             logger.info(f"Trying with single word: '{word}'")
             try:
-              return self.find_best_category(word, False)  # No recursive deep search
+              return self.find_best_category(word, deep_search=False, fallback=False)
             except ValueError:
               continue
+      
+      # FALLBACK: If requested, return best match from all collected possibilities
+      if fallback and all_possible_matches:
+        # Sort by score
+        sorted_matches = sorted(all_possible_matches, key=lambda m: m['score'], reverse=True)
+        best_match = sorted_matches[0]
+        
+        logger.warning(f"Using fallback match: {best_match['category']['name']} (ID: {best_match['category']['id']}) "
+                      f"with score {best_match['score']:.2f}, match type: {best_match['match_type']}")
+        
+        # Log top 3 matches for debugging
+        logger.warning("Top 3 potential matches were:")
+        for i, match in enumerate(sorted_matches[:3]):
+          logger.warning(f"  {i+1}. {match['category']['name']} (ID: {match['category']['id']}) "
+                        f"with score {match['score']:.2f}")
+        
+        return best_match['category']['id']
       
       # Log information about available categories to help debugging
       logger.warning(f"No category found for '{search_term}'. Available categories at top level:")
@@ -265,6 +372,48 @@ class TrendyolCategoryFinder:
     except Exception as e:
       logger.error(f"Category search failed for '{search_term}': {str(e)}")
       raise
+  
+  def _calculate_similarity(self, term1: str, term2: str) -> float:
+    """
+    Calculate simple similarity score between two strings
+    Using character overlap and length similarity
+    """
+    # Jaccard similarity for character sets
+    set1, set2 = set(term1), set(term2)
+    intersection = len(set1.intersection(set2))
+    union = len(set1.union(set2))
+    char_similarity = intersection / union if union > 0 else 0
+    
+    # Length similarity
+    max_len = max(len(term1), len(term2))
+    len_diff = abs(len(term1) - len(term2))
+    len_similarity = 1 - (len_diff / max_len) if max_len > 0 else 0
+    
+    # Combined similarity - weighted more towards character overlap
+    return 0.7 * char_similarity + 0.3 * len_similarity
+  
+  def _collect_all_categories(self, categories: List[Dict], result: List[Dict]) -> None:
+    """Collect all categories (both leaf and non-leaf)"""
+    for cat in categories:
+      result.append(cat)
+      if cat.get('subCategories'):
+        self._collect_all_categories(cat['subCategories'], result)
+  
+  def _get_first_leaf_subcategory(self, category: Dict) -> Optional[Dict]:
+    """Get the first leaf subcategory from a category"""
+    if not category.get('subCategories'):
+      return category
+    
+    for subcat in category['subCategories']:
+      if not subcat.get('subCategories'):
+        return subcat
+      
+      # Recursively search deeper
+      leaf = self._get_first_leaf_subcategory(subcat)
+      if leaf:
+        return leaf
+    
+    return None
 
   def _get_all_leaf_categories(self, categories: List[Dict]) -> List[Dict]:
     """Get all leaf categories (categories without children)"""
@@ -363,8 +512,12 @@ class TrendyolProductManager:
         }]
     }
 
-  def _get_attributes_for_category(self, category_id: int) -> List[Dict]:
-    """Generate attributes for a category based on API data"""
+  def _get_attributes_for_category(self, category_id: int, product_description: str = None) -> List[Dict]:
+    """
+    Generate attributes for a category based on API data and product description.
+    
+    If product_description is provided, tries to extract attribute values from the description.
+    """
     attributes = []
     try:
       category_attrs = self.category_finder.get_category_attributes(
@@ -378,6 +531,19 @@ class TrendyolProductManager:
       # Look specifically for color attribute as it's often required
       color_attr = None
       required_attrs = []
+      
+      # Extract description keywords - create a normalized version for matching
+      # This will be used to try to match attribute values from the description
+      desc_keywords = []
+      if product_description:
+        # Clean and normalize the description
+        clean_desc = product_description.lower()
+        # Remove common HTML tags
+        clean_desc = re.sub(r'<[^>]+>', ' ', clean_desc)
+        # Extract all potential keywords: capitalize each word for better matching with attribute values
+        desc_keywords = [w.strip() for w in re.findall(r'\b\w+\b', clean_desc) if len(w.strip()) > 2]
+        
+        print(f"[DEBUG-API] Açıklamadan çıkarılan anahtar kelimeler: {', '.join(desc_keywords[:20])}...")
 
       # First pass - identify required attributes
       for attr in category_attrs.get('categoryAttributes', []):
@@ -409,17 +575,48 @@ class TrendyolProductManager:
             "attributeId": attr['attribute']['id'],
             "attributeName": attr['attribute']['name']
         }
-
-        if attr.get('attributeValues') and len(attr['attributeValues']) > 0:
+        
+        # Try to find a matching attribute value from the description
+        matched_value = None
+        
+        if attr.get('attributeValues') and product_description:
+          attr_values = attr['attributeValues']
+          
+          # Sort attribute values by name length (descending) to prefer more specific matches
+          attr_values_sorted = sorted(attr_values, key=lambda v: len(v['name']), reverse=True)
+          
+          # First try exact match in the description
+          for val in attr_values_sorted:
+            val_name = val['name'].lower()
+            if val_name in product_description.lower():
+              matched_value = val
+              print(f"[DEBUG-API] Açıklamada tam eşleşme bulundu: {attr['attribute']['name']} = {val['name']}")
+              break
+          
+          # If no exact match, try word matches from our keywords
+          if not matched_value and desc_keywords:
+            for val in attr_values_sorted:
+              val_name = val['name'].lower()
+              val_words = re.findall(r'\b\w+\b', val_name)
+              
+              # Check if all words in the attribute value are in our keywords
+              if all(word.lower() in desc_keywords for word in val_words if len(word) > 2):
+                matched_value = val
+                print(f"[DEBUG-API] Açıklamada kelime eşleşmesi bulundu: {attr['attribute']['name']} = {val['name']}")
+                break
+        
+        # Use the matched value if found, otherwise use the first available value
+        if matched_value:
+          attribute["attributeValueId"] = matched_value['id']
+          attribute["attributeValue"] = matched_value['name']
+        elif attr.get('attributeValues') and len(attr['attributeValues']) > 0:
           if not attr['allowCustom']:
             attribute["attributeValueId"] = attr['attributeValues'][0]['id']
             attribute["attributeValue"] = attr['attributeValues'][0]['name']
           else:
-            attribute[
-                "customAttributeValue"] = f"Sample {attr['attribute']['name']}"
+            attribute["customAttributeValue"] = f"Sample {attr['attribute']['name']}"
         elif attr.get('allowCustom'):
-          attribute[
-              "customAttributeValue"] = f"Sample {attr['attribute']['name']}"
+          attribute["customAttributeValue"] = f"Sample {attr['attribute']['name']}"
         else:
           continue
 
@@ -437,13 +634,23 @@ class TrendyolProductManager:
             "attributeName": color_attr['attribute']['name']
         }
 
-        if color_attr.get('attributeValues') and len(
+        # Try to find color in the product description
+        if product_description and color_attr.get('attributeValues'):
+          color_values = color_attr['attributeValues']
+          for color_val in color_values:
+            color_name = color_val['name'].lower()
+            if color_name in product_description.lower():
+              color_attribute["attributeValueId"] = color_val['id']
+              color_attribute["attributeValue"] = color_val['name']
+              print(f"[DEBUG-API] Açıklamada renk bulundu: {color_val['name']}")
+              break
+        
+        # If no color found in description, use first available
+        if not color_attribute.get("attributeValueId") and color_attr.get('attributeValues') and len(
             color_attr['attributeValues']) > 0:
-          color_attribute["attributeValueId"] = color_attr['attributeValues'][
-              0]['id']
-          color_attribute["attributeValue"] = color_attr['attributeValues'][0][
-              'name']
-        else:
+          color_attribute["attributeValueId"] = color_attr['attributeValues'][0]['id']
+          color_attribute["attributeValue"] = color_attr['attributeValues'][0]['name']
+        elif not color_attribute.get("attributeValueId"):
           color_attribute["customAttributeValue"] = "Karışık Renkli"
 
         attributes.append(color_attribute)
@@ -741,10 +948,10 @@ def prepare_product_for_trendyol(trendyol_product: TrendyolProduct) -> Dict:
   else:
     title = trendyol_product.title
 
-  # Get required attributes for the category
+  # Get required attributes for the category, using description to match attributes
   product_manager = get_product_manager()
   attributes = product_manager._get_attributes_for_category(
-      trendyol_product.category_id)
+      trendyol_product.category_id, description)
 
   # Construct the payload
   payload = {
