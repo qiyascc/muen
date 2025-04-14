@@ -267,7 +267,7 @@ class CategoriesAPI:
 
   def _get_category_attributes_endpoint(self, category_id):
     """Get the category attributes endpoint for verification"""
-    return f'/product/product-categories/{category_id}/attributes'
+    return f'/integration/product/product-categories/{category_id}/attributes'
 
   def get_categories(self):
     """Get all categories from Trendyol"""
@@ -1568,7 +1568,8 @@ def prepare_product_data(product: TrendyolProduct) -> Dict[str, Any]:
     # Try one more time with direct API call to debug response
     try:
       debug_client = get_api_client()
-      category_attrs_url = f"{debug_client.categories}/{category_id}/attributes"
+      # Correct API endpoint with 'integration' path segment
+      category_attrs_url = f"/integration/product/product-categories/{category_id}/attributes"
       debug_response = debug_client.make_request("GET", category_attrs_url)
       logger.error(f"API Debug Response: {json.dumps(debug_response, indent=2, ensure_ascii=False)}")
     except Exception as e:
