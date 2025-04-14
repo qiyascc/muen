@@ -101,43 +101,21 @@ class TrendyolCategoryFinder:
             if not categories:
                 raise ValueError("Empty category list from API")
             
-            # Direkt alt kategori seçimi
-            # 522 üst kategori: Bu hata mesajı için tüm alt kategorileri toplamak yerine
-            # direkt olarak alt kategori seçelim
-            
-            # Kadın ve erkek giyim kategorileri için alt kategorileri kontrol et
-            # Ürün adında "kadın" geçiyorsa "Kadın Üst Giyim" kategorisini seç
-            if "kadın" in search_term.lower() or "kadin" in search_term.lower():
-                # ID 524 - Kadın Üst Giyim
-                return 524  
-            # Ürün adında "erkek" geçiyorsa "Erkek Üst Giyim" kategorisini seç
-            elif "erkek" in search_term.lower():
-                # ID 523 - Erkek Üst Giyim
-                return 523
-            
             # Use advanced semantic search if available
             if ADVANCED_SEARCH_AVAILABLE and self.model is not None:
-                category_id = self._find_best_category_semantic(search_term, categories)
-                # Eğer 522 gelirse (üst kategori), daha spesifik bir alt kategori seç
-                if category_id == 522:
-                    return 524  # Kadın Üst Giyim varsayılan olarak
-                return category_id
+                return self._find_best_category_semantic(search_term, categories)
             else:
                 # Fall back to basic string matching
                 matches = self._find_all_matches(search_term, categories)
                 if not matches:
                     raise ValueError(f"No matches found for: {search_term}")
-                match = self._select_best_match(search_term, matches)
-                # Eğer 522 gelirse (üst kategori), daha spesifik bir alt kategori seç
-                if match['id'] == 522:
-                    return 524  # Kadın Üst Giyim varsayılan olarak
-                return match['id']
+                return self._select_best_match(search_term, matches)['id']
             
         except Exception as e:
             logger.error(f"Category search failed: {str(e)}")
-            # Hata durumunda, Kadın Üst Giyim alt kategorisini varsayılan olarak döndür
-            logger.warning("Returning specific subcategory 524 as fallback")
-            return 524  # Kadın Üst Giyim alt kategorisi
+            # If we can't find a suitable category, return a safe default
+            logger.warning("Returning default category ID as fallback")
+            return 385  # Default to Women's Clothing - Jacket as a safe fallback
     
     def _find_best_category_semantic(self, search_term, categories):
         """Sentence-transformers kullanarak semantik benzerlikle en iyi kategoriyi bul"""
