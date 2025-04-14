@@ -53,11 +53,21 @@ class TrendyolAPI:
             "User-Agent": f"{self.config.seller_id} - SelfIntegration",
             "Content-Type": "application/json"
         })
+        
+        logger.info(f"API client initialized with seller ID: {self.config.seller_id}")
+        logger.info(f"Using API key: {self.config.api_key[:4]}...{self.config.api_key[-4:]}")
     
     def _make_request(self, method: str, endpoint: str, **kwargs) -> Dict:
         """Yeniden deneme mantığı ile genel istek metodu"""
         # API isteklerini Trendyol'un dokümanlarında belirtildiği formatta oluştur
-        url = f"{self.config.base_url.rstrip('/')}/integration/{endpoint.lstrip('/')}"
+        
+        # Entegrasyon URL'leri oluştur
+        # "/sapigw" is required for certain operations
+        if endpoint.startswith(('brands', 'product-categories')):
+            url = f"{self.config.base_url.rstrip('/')}/sapigw/suppliers/{self.config.seller_id}/{endpoint.lstrip('/')}"
+        else:
+            # Tedarikçi özgü URL'ler için
+            url = f"{self.config.base_url.rstrip('/')}/suppliers/{self.config.seller_id}/{endpoint.lstrip('/')}"
         
         # supplier_id gerektiren endpointler için özel düzenleme
         if "{supplier_id}" in url:
