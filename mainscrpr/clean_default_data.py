@@ -15,7 +15,7 @@ os.environ.setdefault("DJANGO_SETTINGS_MODULE", "mainscrpr.settings")
 django.setup()
 
 from django.db import transaction
-from trendyol.models import TrendyolCategory
+from trendyol.models import TrendyolCategory, TrendyolAttribute, TrendyolAttributeValue
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, 
@@ -31,8 +31,15 @@ def clean_all_default_data():
             TrendyolCategory.objects.all().delete()
             logger.info(f"{category_count} adet kategori veritabanından silindi")
             
-            # Artık TrendyolAttribute ve TrendyolAttributeValue modelleri kullanılmıyor
-            # Onları kaldırdık ve gerçek zamanlı API kullanımına geçtik
+            # Öznitelikleri temizle
+            attribute_count = TrendyolAttribute.objects.count()
+            TrendyolAttribute.objects.all().delete()
+            logger.info(f"{attribute_count} adet öznitelik veritabanından silindi")
+            
+            # Öznitelik değerlerini temizle
+            attribute_value_count = TrendyolAttributeValue.objects.count()
+            TrendyolAttributeValue.objects.all().delete()
+            logger.info(f"{attribute_value_count} adet öznitelik değeri veritabanından silindi")
             
             logger.info("Tüm veriler başarıyla temizlendi. Sistemde kategori ve öznitelik verisi kalmadı.")
             logger.info("Bu öğeler artık API'den gerçek zamanlı olarak çekilecektir.")
