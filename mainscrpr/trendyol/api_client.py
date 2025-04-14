@@ -1558,6 +1558,22 @@ def prepare_product_data(product: TrendyolProduct) -> Dict[str, Any]:
       )
 
   print(f"[DEBUG-PRODUCT] Toplam özellik sayısı: {len(attributes)}")
+  
+  # If attributes is still empty after all our attempts, this is a critical issue
+  # and we should not proceed with submitting the product
+  if not attributes or len(attributes) == 0:
+    logger.error(f"Product {product.id} has no attributes after processing. Cannot submit to Trendyol.")
+    logger.error(f"Category ID: {category_id}, Product Title: {product.title}")
+    logger.error(f"API Response Debug - Required Attributes: {json.dumps(required_attrs, ensure_ascii=False)}")
+    # Try one more time with direct API call to debug response
+    try:
+      debug_client = get_api_client()
+      category_attrs_url = f"{debug_client.categories}/{category_id}/attributes"
+      debug_response = debug_client.make_request("GET", category_attrs_url)
+      logger.error(f"API Debug Response: {json.dumps(debug_response, indent=2, ensure_ascii=False)}")
+    except Exception as e:
+      logger.error(f"Failed to get debug API response: {str(e)}")
+    return None  # Don't proceed with empty attributes
   print(
       f"[DEBUG-PRODUCT] Özellikler: {json.dumps(attributes, ensure_ascii=False)}"
   )
