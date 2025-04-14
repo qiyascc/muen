@@ -24,7 +24,7 @@ class TrendyolApi:
                api_key,
                api_secret,
                supplier_id,
-               base_url='https://apigw.trendyol.com',
+               base_url='https://api.trendyol.com/sapigw',
                user_agent=None):
     self.api_key = api_key
     self.api_secret = api_secret
@@ -1360,11 +1360,9 @@ def find_best_brand_match(product: TrendyolProduct) -> Optional[int]:
   except Exception as e:
     logger.error(f"Error finding fallback brand: {str(e)}")
 
-  # No brand found, use default brand ID 7651
-  logger.warning(
-      f"No matching brand found for product: {product.title}, using default brand ID: 7651"
-  )
-  return 7651
+  # No brand found
+  logger.error(f"No matching brand found for product: {product.title}")
+  return None
 
 
 def get_required_attributes_for_category(
@@ -1439,11 +1437,8 @@ def prepare_product_data(product: TrendyolProduct) -> Dict[str, Any]:
     raise ValueError("No matching category found for product")
 
   if not brand_id:
-    # This should never happen now as find_best_brand_match always returns 7651 as a fallback
-    # But keeping this check for safety
-    logger.warning(
-        f"No brand ID returned for product {product.id}, using default 7651")
-    brand_id = 7651
+    logger.error(f"No matching brand found for product {product.id}")
+    raise ValueError("No matching brand found for product")
 
   # Get image URLs
   image_urls = []
@@ -1558,22 +1553,6 @@ def prepare_product_data(product: TrendyolProduct) -> Dict[str, Any]:
       )
 
   print(f"[DEBUG-PRODUCT] Toplam özellik sayısı: {len(attributes)}")
-  
-  # If attributes is still empty after all our attempts, this is a critical issue
-  # and we should not proceed with submitting the product
-  if not attributes or len(attributes) == 0:
-    logger.error(f"Product {product.id} has no attributes after processing. Cannot submit to Trendyol.")
-    logger.error(f"Category ID: {category_id}, Product Title: {product.title}")
-    logger.error(f"API Response Debug - Required Attributes: {json.dumps(required_attrs, ensure_ascii=False)}")
-    # Try one more time with direct API call to debug response
-    try:
-      debug_client = get_api_client()
-      category_attrs_url = f"{debug_client.categories}/{category_id}/attributes"
-      debug_response = debug_client.make_request("GET", category_attrs_url)
-      logger.error(f"API Debug Response: {json.dumps(debug_response, indent=2, ensure_ascii=False)}")
-    except Exception as e:
-      logger.error(f"Failed to get debug API response: {str(e)}")
-    return None  # Don't proceed with empty attributes
   print(
       f"[DEBUG-PRODUCT] Özellikler: {json.dumps(attributes, ensure_ascii=False)}"
   )
@@ -2363,11 +2342,14 @@ def lcwaikiki_to_trendyol_product(lcw_product) -> Optional[TrendyolProduct]:
           f"Error finding brand for product {lcw_product.id}: {str(e)}")
 
     # Prepare basic attributes based on product data
-    attributes = []
+    attributes = {}
 
-    # We'll fetch the actual attributes from API once we have the category ID
-    # Setting this empty array ensures we check and populate it later in prepare_product_data
-    # Using the enhanced get_required_attributes_for_category function
+    # Add color attribute if available
+    if hasattr(lcw_product, 'color') and lcw_product.color:
+      attributes["color"] = lcw_product.color
+
+    # Add size attributes if available (placeholder for now)
+    # We'll add a proper implementation for size mapping later
 
     # Find category information
     category_id = None
@@ -2427,9 +2409,11 @@ def lcwaikiki_to_trendyol_product(lcw_product) -> Optional[TrendyolProduct]:
         logger.error(f"Error fetching categories: {str(e)}")
 
     if not trendyol_product:
-      # We'll fetch attributes from API for the category later in prepare_product_data
-      # This ensures that even though we're initializing with an empty attributes array,
-      # it will be populated correctly before being sent to Trendyol
+      # Store color in attributes if it exists
+      if hasattr(lcw_product, 'color') and lcw_product.color:
+        if not attributes:
+          attributes = {}
+        attributes['color'] = lcw_product.color
 
       # Create a new Trendyol product with enhanced data
       trendyol_product = TrendyolProduct.objects.create(
@@ -2469,13 +2453,13 @@ def lcwaikiki_to_trendyol_product(lcw_product) -> Optional[TrendyolProduct]:
       trendyol_product.category_id = category_id or trendyol_product.category_id
       trendyol_product.pim_category_id = category_id or trendyol_product.pim_category_id
 
-      # We'll fetch attributes from API for the category later in prepare_product_data
-      # This ensures that even though we're initializing with an empty attributes array,
-      # it will be populated correctly before being sent to Trendyol
-      
-      # If product already has valid attributes, keep them, otherwise initialize empty
-      if not trendyol_product.attributes or len(trendyol_product.attributes) == 0:
-          trendyol_product.attributes = []
+      # Update attributes and add color if it exists
+      if hasattr(lcw_product, 'color') and lcw_product.color:
+        if not attributes:
+          attributes = {}
+        attributes['color'] = lcw_product.color
+
+      trendyol_product.attributes = attributes
 
       # Only update barcode if it's not already been used with Trendyol
       if not trendyol_product.trendyol_id and not trendyol_product.batch_status == 'completed':
