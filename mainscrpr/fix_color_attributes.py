@@ -7,146 +7,137 @@ error, ensuring that all products have a valid color attribute in the correct fo
 Run this script with: python manage.py shell < fix_color_attributes.py
 """
 
-import json
-import logging
 import os
 import sys
+import logging
+import json
 
-# Set up Django environment
+# Django setup
 import django
-os.environ.setdefault("DJANGO_SETTINGS_MODULE", "mainscrpr.settings")
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'mainscrpr.settings')
 django.setup()
 
-from trendyol.models import TrendyolProduct
-from trendyol.fetch_api_data import get_color_attribute_id, get_color_value_id
+# Import our models
+from trendyol.models import TrendyolProduct, TrendyolAPIConfig
+from trendyol.api_client_new import TrendyolAPI, TrendyolCategoryFinder, get_api_client
 
-# Set up logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+# Configure logging
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+handler = logging.StreamHandler(sys.stdout)
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+handler.setFormatter(formatter)
+logger.addHandler(handler)
 
 def fix_color_attribute(product):
     """
     Ensure product has a valid color attribute in the correct format
     """
+    if not product:
+        return False
+    
+    logger.info(f"Processing product ID {product.id}: {product.title}")
+    
+    # Get the API client
+    api_client = get_api_client()
+    if not api_client:
+        logger.error("Failed to get API client")
+        return False
+    
+    # Check if product has a category ID
+    if not product.category_id:
+        logger.warning(f"Product {product.id} has no category_id, cannot process")
+        return False
+    
     try:
-        # Get the product's attributes
-        attributes = product.attributes
+        # Create category finder
+        category_finder = TrendyolCategoryFinder(api_client)
         
-        # Check if attributes is a string, and if so, convert to object
-        if isinstance(attributes, str):
-            try:
-                attributes = json.loads(attributes)
-            except json.JSONDecodeError:
-                attributes = []
+        # Fetch category attributes
+        category_attrs = category_finder.get_category_attributes(product.category_id)
         
-        # If attributes is None, initialize as empty list
-        if attributes is None:
-            attributes = []
+        if not category_attrs or 'categoryAttributes' not in category_attrs:
+            logger.warning(f"No attributes found for category {product.category_id}")
+            return False
         
-        # Ensure attributes is a list
-        if not isinstance(attributes, list):
-            if isinstance(attributes, dict):
-                # Convert dict to list format expected by API
-                attributes_list = []
-                for key, value in attributes.items():
-                    if key.isdigit():
-                        attributes_list.append({
-                            'attributeId': int(key),
-                            'attributeValueId': value
-                        })
-                    else:
-                        attributes_list.append({
-                            'attributeId': key,
-                            'attributeValueId': value
-                        })
-                attributes = attributes_list
-            else:
-                attributes = []
+        # Find color attribute
+        color_attr_id = None
+        color_attr_values = None
         
-        # Check if there's already a color attribute
-        has_color = False
-        color_attribute_id = get_color_attribute_id(product.category_id)
-        
-        for attr in attributes:
-            if attr.get('attributeId') == color_attribute_id:
-                has_color = True
+        for attr in category_attrs.get('categoryAttributes', []):
+            attr_name = attr.get('attribute', {}).get('name', '').lower()
+            if 'renk' in attr_name or 'color' in attr_name:
+                color_attr_id = attr.get('attribute', {}).get('id')
+                color_attr_values = attr.get('attributeValues', [])
+                logger.info(f"Found color attribute: ID={color_attr_id}, Values count: {len(color_attr_values)}")
                 break
         
-        # If no color attribute, try to determine a sensible default
-        if not has_color:
-            # Try to extract color from title or description
-            color_keywords = {
-                'Beyaz': 'Beyaz',
-                'Siyah': 'Siyah',
-                'Mavi': 'Mavi',
-                'Kırmızı': 'Kirmizi',
-                'Pembe': 'Pembe',
-                'Yeşil': 'Yeşil',
-                'Sarı': 'Sarı',
-                'Mor': 'Mor',
-                'Gri': 'Gri',
-                'Kahverengi': 'Kahverengi',
-                'Lacivert': 'Lacivert',
-                'Turuncu': 'Turuncu',
-                'Bej': 'Bej',
-                'Ekru': 'Ekru',
-                'Krem': 'Krem',
-                'Petrol': 'Petrol'
-            }
+        if not color_attr_id or not color_attr_values:
+            logger.warning(f"Could not find color attribute for category {product.category_id}")
+            return False
+        
+        # Choose a default color value (first one)
+        default_color_value_id = color_attr_values[0].get('id')
+        default_color_name = color_attr_values[0].get('name')
+        
+        # Get current attributes
+        current_attrs = product.attributes or []
+        
+        # Check if color already exists with the correct format
+        color_exists = False
+        for attr in current_attrs:
+            if attr.get('attributeId') == color_attr_id:
+                color_exists = True
+                logger.info(f"Product already has color attribute in correct format")
+                break
             
-            found_color = None
-            for color, api_color in color_keywords.items():
-                if color.lower() in product.title.lower() or (product.description and color.lower() in product.description.lower()):
-                    found_color = api_color
-                    break
-            
-            # Default to "Bej" if no color found, as this is a safe neutral
-            if not found_color:
-                found_color = "Bej"
-            
-            # Get the color value ID
-            color_value_id = get_color_value_id(product.category_id, found_color)
-            
-            # Add the color attribute
-            attributes.append({
-                'attributeId': color_attribute_id,
-                'attributeValueId': color_value_id
+            # Check for string 'color' attribute that needs conversion
+            if attr.get('attributeId') == 'color':
+                logger.info(f"Found old string format color attribute: {attr}")
+                current_attrs.remove(attr)  # Remove the old string format
+        
+        # Add color attribute if it doesn't exist
+        if not color_exists:
+            current_attrs.append({
+                'attributeId': color_attr_id,
+                'attributeValueId': default_color_value_id
             })
-            
-            logger.info(f"Added color '{found_color}' to product {product.id} ({product.title})")
+            logger.info(f"Added color attribute: ID={color_attr_id}, ValueID={default_color_value_id} ({default_color_name})")
         
-        # Update the product's attributes
-        product.attributes = attributes
+        # Update product
+        product.attributes = current_attrs
         product.save()
-        
+        logger.info(f"Successfully updated product {product.id} with color attribute")
         return True
+    
     except Exception as e:
         logger.error(f"Error fixing color attribute for product {product.id}: {str(e)}")
         return False
 
 def main():
     """Fix color attributes for Trendyol products"""
-    # Get all products
-    products = TrendyolProduct.objects.all()
-    total = products.count()
-    success = 0
-    failed = 0
-    
-    logger.info(f"Found {total} products to process")
-    
-    # Process each product
-    for product in products:
-        result = fix_color_attribute(product)
-        if result:
-            success += 1
-        else:
-            failed += 1
+    try:
+        # Get all products that are not complete or marked for skip
+        products = TrendyolProduct.objects.exclude(batch_status__in=['completed', 'skip'])
         
-        # Log progress every 10 products
-        if (success + failed) % 10 == 0:
-            logger.info(f"Processed {success + failed}/{total} products ({success} succeeded, {failed} failed)")
+        logger.info(f"Found {products.count()} products to process")
+        
+        # Process each product
+        success_count = 0
+        fail_count = 0
+        
+        for product in products:
+            if fix_color_attribute(product):
+                success_count += 1
+            else:
+                fail_count += 1
+        
+        logger.info(f"Processing complete. Success: {success_count}, Failed: {fail_count}")
+        logger.info(f"Total products: {success_count + fail_count}")
     
-    logger.info(f"Completed processing {total} products ({success} succeeded, {failed} failed)")
+    except Exception as e:
+        logger.error(f"Error in main function: {str(e)}")
 
 if __name__ == "__main__":
+    # Execute when run directly
     main()

@@ -267,7 +267,7 @@ class CategoriesAPI:
 
   def _get_category_attributes_endpoint(self, category_id):
     """Get the category attributes endpoint for verification"""
-    return f'/product/product-categories/{category_id}/attributes'
+    return f'/integration/product/product-categories/{category_id}/attributes'
 
   def get_categories(self):
     """Get all categories from Trendyol"""
@@ -1558,19 +1558,25 @@ def prepare_product_data(product: TrendyolProduct) -> Dict[str, Any]:
       )
 
   print(f"[DEBUG-PRODUCT] Toplam özellik sayısı: {len(attributes)}")
-  
+
   # If attributes is still empty after all our attempts, this is a critical issue
   # and we should not proceed with submitting the product
   if not attributes or len(attributes) == 0:
-    logger.error(f"Product {product.id} has no attributes after processing. Cannot submit to Trendyol.")
+    logger.error(
+        f"Product {product.id} has no attributes after processing. Cannot submit to Trendyol."
+    )
     logger.error(f"Category ID: {category_id}, Product Title: {product.title}")
-    logger.error(f"API Response Debug - Required Attributes: {json.dumps(required_attrs, ensure_ascii=False)}")
+    logger.error(
+        f"API Response Debug - Required Attributes: {json.dumps(required_attrs, ensure_ascii=False)}"
+    )
     # Try one more time with direct API call to debug response
     try:
       debug_client = get_api_client()
       category_attrs_url = f"{debug_client.categories}/{category_id}/attributes"
       debug_response = debug_client.make_request("GET", category_attrs_url)
-      logger.error(f"API Debug Response: {json.dumps(debug_response, indent=2, ensure_ascii=False)}")
+      logger.error(
+          f"API Debug Response: {json.dumps(debug_response, indent=2, ensure_ascii=False)}"
+      )
     except Exception as e:
       logger.error(f"Failed to get debug API response: {str(e)}")
     return None  # Don't proceed with empty attributes
@@ -2472,10 +2478,11 @@ def lcwaikiki_to_trendyol_product(lcw_product) -> Optional[TrendyolProduct]:
       # We'll fetch attributes from API for the category later in prepare_product_data
       # This ensures that even though we're initializing with an empty attributes array,
       # it will be populated correctly before being sent to Trendyol
-      
+
       # If product already has valid attributes, keep them, otherwise initialize empty
-      if not trendyol_product.attributes or len(trendyol_product.attributes) == 0:
-          trendyol_product.attributes = []
+      if not trendyol_product.attributes or len(
+          trendyol_product.attributes) == 0:
+        trendyol_product.attributes = []
 
       # Only update barcode if it's not already been used with Trendyol
       if not trendyol_product.trendyol_id and not trendyol_product.batch_status == 'completed':
