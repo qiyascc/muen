@@ -841,10 +841,14 @@ def get_product_manager() -> TrendyolProductManager:
   return TrendyolProductManager(api_client)
 
 
-def lcwaikiki_to_trendyol_product(lcw_product) -> Optional[TrendyolProduct]:
+def lcwaikiki_to_trendyol_product(lcw_product, variant_data=None) -> Optional[TrendyolProduct]:
   """
     Convert an LCWaikiki product to a Trendyol product.
     Returns the created or updated Trendyol product instance.
+    
+    Args:
+        lcw_product: The LCWaikiki product to convert
+        variant_data: Optional dictionary with variant-specific data (size, stock quantity)
     
     This version ensures we fetch all required data from API and throws
     errors if data isn't available.
@@ -853,29 +857,48 @@ def lcwaikiki_to_trendyol_product(lcw_product) -> Optional[TrendyolProduct]:
     return None
 
   try:
-    # Check if a Trendyol product already exists for this LCWaikiki product
-    trendyol_product = TrendyolProduct.objects.filter(
-        lcwaikiki_product=lcw_product).first()
-
-    # Extract and format product code properly
-    product_code = None
-    if lcw_product.product_code:
-      # Clean up product code - only allow alphanumeric characters
-      product_code = re.sub(r'[^a-zA-Z0-9]', '', lcw_product.product_code)
-      # Ensure it's not empty after cleaning
-      if not product_code:
-        product_code = None
-
-    # Generate a unique barcode that meets Trendyol requirements
-    # Trendyol requires unique barcode with alphanumeric chars
-    barcode = None
-    if product_code:
-      barcode = f"LCW{product_code}"
+    # Check if a product size variant is being created
+    is_variant = variant_data is not None
+    variant_size = variant_data.get('size') if is_variant else None
+    variant_stock = variant_data.get('stock') if is_variant else None
+    
+    # For variants, look for an existing variant with the same size
+    if is_variant:
+      trendyol_product = TrendyolProduct.objects.filter(
+          lcwaikiki_product=lcw_product,
+          variant_key=variant_size).first()
     else:
-      # If no product code, create a unique identifier based on ID and timestamp
-      timestamp = int(time.time())
-      barcode = f"LCW{lcw_product.id}{timestamp}"
+      # For main product, just look for any existing product
+      trendyol_product = TrendyolProduct.objects.filter(
+          lcwaikiki_product=lcw_product).first()
 
+    # Keep product code as is, including any hyphens or spaces
+    product_code = lcw_product.product_code
+    if not product_code:
+      # If no product code, create a fallback
+      product_code = f"LCW{lcw_product.id}"
+      
+    # Create a stock counter object if it doesn't exist in the module
+    if not hasattr(lcwaikiki_to_trendyol_product, 'product_counter'):
+      lcwaikiki_to_trendyol_product.product_counter = 0
+      
+    # Generate a unique barcode with MUSTAFA pattern
+    # Every 7 products will start with M, U, S, T, A, F, A respectively
+    mustafa_letters = ['M', 'U', 'S', 'T', 'A', 'F', 'A']
+    letter_index = lcwaikiki_to_trendyol_product.product_counter % 7
+    first_letter = mustafa_letters[letter_index]
+    
+    # Increment the counter for next product
+    lcwaikiki_to_trendyol_product.product_counter += 1
+    
+    # Generate random alphanumeric string (12 chars) for the rest of the barcode
+    import random
+    import string
+    random_chars = ''.join(random.choices(string.ascii_uppercase + string.digits, k=12))
+    
+    # Create the barcode with the pattern
+    barcode = f"{first_letter}{random_chars}"
+    
     # Ensure barcode is alphanumeric and meets Trendyol requirements
     barcode = re.sub(r'[^a-zA-Z0-9]', '', barcode)
     # Cap length to avoid potential issues with very long barcodes

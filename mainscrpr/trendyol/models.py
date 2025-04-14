@@ -146,6 +146,12 @@ class TrendyolProduct(models.Model):
                                         null=True,
                                         blank=True,
                                         related_name='trendyol_products')
+  
+  # Variant information
+  variant_key = models.CharField(max_length=50,
+                               blank=True,
+                               null=True,
+                               help_text="Variant key (e.g. size name)")
 
   # Trendyol information
   trendyol_id = models.CharField(max_length=50,
