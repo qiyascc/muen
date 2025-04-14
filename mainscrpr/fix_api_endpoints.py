@@ -26,7 +26,7 @@ from trendyol.api_client import get_api_client, TrendyolApi
 def print_endpoint_test(api_client, endpoint_name, endpoint_path):
     """Test and print an endpoint's full URL"""
     # Calculate the full URL 
-    url = f"{api_client.api_url}{endpoint_path}"
+    url = f"{api_client.base_url}{endpoint_path}"
     
     print(f"Testing endpoint: {endpoint_name}")
     print(f"  Path: {endpoint_path}")
@@ -40,7 +40,7 @@ def test_create_product_endpoint(api_client):
         return
     
     endpoint = api_client.products._get_products_endpoint()
-    url = f"{api_client.api_url}{endpoint}"
+    url = f"{api_client.base_url}{endpoint}"
     
     print("\nCreating product test:")
     print(f"  Endpoint path: {endpoint}")
@@ -90,7 +90,7 @@ def main():
         api_key=config.api_key,
         api_secret=config.api_secret,
         supplier_id=config.supplier_id or config.seller_id,
-        api_url=config.base_url,
+        base_url=config.base_url,
         user_agent=config.user_agent or f"{config.supplier_id or config.seller_id} - SelfIntegration"
     )
     

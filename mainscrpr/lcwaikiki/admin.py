@@ -419,7 +419,7 @@ class ProductAdmin(ModelAdmin):
           api_config = APIConfig(api_key=api_key,
                                  api_secret=config.api_secret,
                                  seller_id=seller_id,
-                                 base_url=config.api_url)
+                                 base_url=config.base_url)
           api = TrendyolAPI(api_config)
 
           # Use simple category finder to find best category
