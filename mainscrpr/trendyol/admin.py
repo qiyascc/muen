@@ -8,6 +8,15 @@ from unfold.admin import ModelAdmin, TabularInline
 from .models import TrendyolAPIConfig, TrendyolBrand, TrendyolCategory, TrendyolProduct
 from .openai_processor import create_trendyol_product_with_ai, prepare_product_with_ai
 
+# Import improved modules (with fallback to originals if import fails)
+try:
+    from .category_finder_improved import TrendyolCategoryFinderImproved
+    from .openai_processor_improved import ProductAttributeProcessor
+    IMPROVED_MODULES_AVAILABLE = True
+except ImportError:
+    IMPROVED_MODULES_AVAILABLE = False
+    from .category_finder import TrendyolCategoryFinder
+
 
 @admin.register(TrendyolAPIConfig)
 class TrendyolAPIConfigAdmin(ModelAdmin):
@@ -121,7 +130,7 @@ class TrendyolProductAdmin(ModelAdmin):
         return "Not available"
     display_batch_id.short_description = "Batch ID"
     
-    actions = ['sync_with_trendyol', 'sync_with_trendyol_ai', 'check_sync_status', 'retry_failed_products', 'refresh_product_data']
+    actions = ['sync_with_trendyol', 'sync_with_trendyol_ai', 'sync_with_improved_ai', 'check_sync_status', 'retry_failed_products', 'refresh_product_data']
     
     def sync_with_trendyol(self, request, queryset):
         """
@@ -160,6 +169,91 @@ class TrendyolProductAdmin(ModelAdmin):
         else:
             self.message_user(request, "No products were sent to Trendyol. Please check error messages.", level='warning')
     sync_with_trendyol_ai.short_description = "Sync with Trendyol (AI-powered)"
+    
+    def sync_with_improved_ai(self, request, queryset):
+        """
+        Synchronize products with Trendyol using improved category finder and OpenAI processor.
+        This method doesn't require mandatory fields and works without storing categories locally.
+        """
+        from . import api_client
+        count = 0
+        
+        if not IMPROVED_MODULES_AVAILABLE:
+            self.message_user(request, 
+                "Improved AI modules are not available. Using standard AI processing instead.", 
+                level='warning')
+            return self.sync_with_trendyol_ai(request, queryset)
+            
+        # Initialize the improved category finder and processor
+        try:
+            api = api_client.get_api_client()
+            category_finder = TrendyolCategoryFinderImproved(api)
+            processor = ProductAttributeProcessor(category_finder)
+            
+            for product in queryset:
+                try:
+                    # Get LCWaikiki product if linked
+                    lcw_product = product.lcwaikiki_product
+                    
+                    if lcw_product:
+                        # Process with AI - no mandatory fields required
+                        enhanced_data = processor.optimize_product_data(lcw_product)
+                        
+                        # Update product with enhanced data
+                        if 'title' in enhanced_data:
+                            product.title = enhanced_data['title']
+                        
+                        if 'description' in enhanced_data:
+                            product.description = enhanced_data['description']
+                        
+                        if 'categoryId' in enhanced_data:
+                            product.category_id = enhanced_data['categoryId']
+                        
+                        if 'attributes' in enhanced_data:
+                            product.attributes = enhanced_data['attributes']
+                        
+                        product.batch_status = 'pending'
+                        product.status_message = 'Prepared with improved AI processing'
+                        product.save()
+                        
+                        # Send to Trendyol
+                        batch_id = api_client.create_trendyol_product(product)
+                        if batch_id:
+                            count += 1
+                    else:
+                        self.message_user(
+                            request, 
+                            f"Product '{product.title}' is not linked to an LCWaikiki product", 
+                            level='warning'
+                        )
+                        
+                except Exception as e:
+                    self.message_user(
+                        request, 
+                        f"Error processing product '{product.title}' with improved AI: {str(e)}", 
+                        level='error'
+                    )
+            
+            if count:
+                self.message_user(
+                    request, 
+                    f"Successfully processed {count} products with improved AI. " +
+                    "This method doesn't require mandatory fields and works without local category storage."
+                )
+            else:
+                self.message_user(
+                    request, 
+                    "No products were sent to Trendyol. Please check error messages.", 
+                    level='warning'
+                )
+                
+        except Exception as e:
+            self.message_user(
+                request, 
+                f"Error initializing improved AI processing: {str(e)}", 
+                level='error'
+            )
+    sync_with_improved_ai.short_description = "Sync with Trendyol (Improved AI - No mandatory fields)"
     
     def check_sync_status(self, request, queryset):
         """

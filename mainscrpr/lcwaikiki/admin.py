@@ -11,6 +11,14 @@ from .product_models import Product, ProductSize, City, Store, SizeStoreStock
 from trendyol import api_client
 from trendyol.openai_processor import create_trendyol_product_with_ai
 
+# Import improved modules if available
+try:
+    from trendyol.category_finder_improved import TrendyolCategoryFinderImproved
+    from trendyol.openai_processor_improved import ProductAttributeProcessor
+    IMPROVED_MODULES_AVAILABLE = True
+except ImportError:
+    IMPROVED_MODULES_AVAILABLE = False
+
 # Product Models Admin Configuration
 
 class ProductSizeInline(TabularInline):
@@ -34,7 +42,7 @@ class ProductAdmin(ModelAdmin):
     readonly_fields = ('timestamp',)
     list_per_page = 20
     inlines = [ProductSizeInline]
-    actions = ['send_to_trendyol', 'send_to_trendyol_with_ai']
+    actions = ['send_to_trendyol', 'send_to_trendyol_with_ai', 'send_to_trendyol_with_improved_ai']
     
     # Unfold specific configurations
     fieldsets = (
@@ -338,6 +346,159 @@ class ProductAdmin(ModelAdmin):
             )
     
     send_to_trendyol_with_ai.short_description = "Send to Trendyol (AI-powered)"
+    
+    def send_to_trendyol_with_improved_ai(self, request, queryset):
+        """
+        Action to send selected products to Trendyol using improved AI for optimization.
+        This implementation uses the improved OpenAI processor that works without
+        mandatory fields and without storing categories locally.
+        """
+        if not queryset.exists():
+            self.message_user(request, "No products selected to send to Trendyol", level=messages.ERROR)
+            return
+        
+        # Check if improved modules are available
+        if not IMPROVED_MODULES_AVAILABLE:
+            self.message_user(
+                request, 
+                "Improved AI modules are not available. Using standard AI processing instead.", 
+                level=messages.WARNING
+            )
+            return self.send_to_trendyol_with_ai(request, queryset)
+        
+        # Filter out products that are not in stock
+        valid_products = []
+        skipped_products = []
+        
+        for product in queryset:
+            if not product.in_stock:
+                skipped_products.append(product)
+            else:
+                valid_products.append(product)
+        
+        # Show warnings for skipped products
+        for product in skipped_products:
+            self.message_user(
+                request, 
+                f"Product '{product.title}' is not in stock and was skipped", 
+                level=messages.WARNING
+            )
+        
+        if not valid_products:
+            self.message_user(request, "No in-stock products to send to Trendyol", level=messages.WARNING)
+            return
+        
+        # Define improved AI processing function
+        def process_product_with_improved_ai(product):
+            try:
+                # Convert to Trendyol product
+                trendyol_product = api_client.lcwaikiki_to_trendyol_product(product)
+                
+                if not trendyol_product:
+                    self.message_user(
+                        request, 
+                        f"Failed to convert '{product.title}' to Trendyol format", 
+                        level=messages.ERROR
+                    )
+                    return None
+                
+                # Initialize improved modules
+                try:
+                    api = api_client.get_api_client()
+                    category_finder = TrendyolCategoryFinderImproved(api)
+                    processor = ProductAttributeProcessor(category_finder)
+                    
+                    # Process with AI - no mandatory fields required
+                    enhanced_data = processor.optimize_product_data(product)
+                    
+                    # Update Trendyol product with enhanced data
+                    if 'title' in enhanced_data:
+                        trendyol_product.title = enhanced_data['title']
+                    
+                    if 'description' in enhanced_data:
+                        trendyol_product.description = enhanced_data['description']
+                    
+                    if 'categoryId' in enhanced_data:
+                        trendyol_product.category_id = enhanced_data['categoryId']
+                    
+                    if 'attributes' in enhanced_data:
+                        trendyol_product.attributes = enhanced_data['attributes']
+                    
+                    trendyol_product.batch_status = 'pending'
+                    trendyol_product.status_message = 'Prepared with improved AI processing'
+                    trendyol_product.save()
+                    
+                    # Send to Trendyol
+                    result = api_client.sync_product_to_trendyol(trendyol_product)
+                    
+                    if result and trendyol_product.batch_id:
+                        self.message_user(
+                            request, 
+                            f"Product '{product.title}' sent to Trendyol with improved AI optimization. Batch ID: {trendyol_product.batch_id}", 
+                            level=messages.SUCCESS
+                        )
+                        return trendyol_product.batch_id
+                    else:
+                        error_message = f"Failed to send '{product.title}' to Trendyol with improved AI"
+                        if trendyol_product.status_message:
+                            error_message += f": {trendyol_product.status_message}"
+                        self.message_user(
+                            request, 
+                            error_message, 
+                            level=messages.ERROR
+                        )
+                        return None
+                        
+                except Exception as e:
+                    self.message_user(
+                        request, 
+                        f"Error processing '{product.title}' with improved AI: {str(e)}", 
+                        level=messages.ERROR
+                    )
+                    return None
+                    
+            except Exception as e:
+                self.message_user(
+                    request, 
+                    f"Error sending '{product.title}' to Trendyol with improved AI: {str(e)}", 
+                    level=messages.ERROR
+                )
+                return None
+        
+        # Process products in batches
+        batch_size = min(5, len(valid_products))  # Use smaller batch size for AI processing
+        self.message_user(
+            request,
+            f"Processing {len(valid_products)} products with improved AI in batches of {batch_size}... This may take a while.",
+            level=messages.INFO
+        )
+        
+        # Perform batch processing
+        success_count, error_count, batch_ids = api_client.batch_process_products(
+            valid_products, 
+            process_product_with_improved_ai, 
+            batch_size=batch_size, 
+            delay=1.0  # 1-second delay between OpenAI requests to avoid rate limits
+        )
+        
+        # Show summary message
+        if success_count > 0:
+            self.message_user(
+                request, 
+                f"Successfully sent {success_count} products to Trendyol with improved AI optimization. " +
+                f"Batch IDs: {', '.join(batch_ids[:5])}{'...' if len(batch_ids) > 5 else ''} " +
+                "This method doesn't require mandatory fields and works without local category storage.",
+                level=messages.SUCCESS
+            )
+        
+        if error_count > 0:
+            self.message_user(
+                request, 
+                f"{error_count} products failed to send with improved AI. Check the messages above for details.",
+                level=messages.WARNING if success_count > 0 else messages.ERROR
+            )
+    
+    send_to_trendyol_with_improved_ai.short_description = "Send to Trendyol (Improved AI - No mandatory fields)"
 
 
 @admin.register(City)

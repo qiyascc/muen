@@ -27,11 +27,11 @@ task = "packager.installForAll"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "cd mainscrpr && python manage.py migrate && python manage.py shell < create_admin.py && python manage.py runserver 0.0.0.0:5000"
+args = "cd mainscrpr && python manage.py runserver 0.0.0.0:5000"
 waitForPort = 5000
 
 [deployment]
-run = ["sh", "-c", "cd mainscrpr && python manage.py migrate && python manage.py shell < create_admin.py && python manage.py runserver 0.0.0.0:5000"]
+run = ["sh", "-c", "cd mainscrpr && python manage.py runserver 0.0.0.0:5000"]
 
 [[ports]]
 localPort = 5000
