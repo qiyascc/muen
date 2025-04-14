@@ -811,8 +811,8 @@ def send_lcwaikiki_to_trendyol(lcw_product, max_retries=3, retry_delay=1):
                             }
                         )
                         
-                        # Link batch request to product
-                        trendyol_product.batch_request = batch_request
+                        # Link batch request to product using batch_request_id field
+                        trendyol_product.batch_request_id = batch_request.id
                         trendyol_product.save()
                         
                         logger.info(f"Successfully sent product {trendyol_product.title} to Trendyol with batch ID {batch_id}")
