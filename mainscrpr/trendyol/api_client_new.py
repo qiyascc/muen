@@ -721,8 +721,8 @@ class TrendyolProductManager:
       category_id = self.category_finder.find_best_category(
           product_data.category_name, product_title=product_data.title)
       brand_id = self.get_brand_id(product_data.brand_name)
-      # Pass product description to extract attributes
-      attributes = self._get_attributes_for_category(category_id, product_data.description)
+      # Pass product title and description to extract attributes using GPT-4o
+      attributes = self._get_attributes_for_category(category_id, product_title=product_data.title, product_description=product_data.description)
 
       payload = self._build_product_payload(product_data, category_id,
                                             brand_id, attributes)
@@ -773,13 +773,63 @@ class TrendyolProductManager:
 
   def _get_attributes_for_category(self, category_id: int, product_title: str = None, product_description: str = None) -> List[Dict]:
     """
-    Generate attributes for a category based on API data and product description.
+    Generate attributes for a category based on API data, product title, and description.
     
-    If product_description is provided, tries to extract attribute values from the description.
-    This function performs advanced pattern matching to find the most accurate attributes.
+    Uses OpenAI GPT-4o first to extract attributes, then falls back to traditional methods if needed.
+    This hybrid approach ensures high accuracy with fallback reliability.
     """
     attributes = []
     try:
+      # First try - Use OpenAI for intelligent attribute extraction
+      try:
+        from trendyol.openai_helper import OpenAIHelper
+        openai_helper = OpenAIHelper()
+        
+        # Get category attributes for OpenAI analysis
+        category_attrs = self.category_finder.get_category_attributes(category_id)
+        
+        # Clean text for display
+        if product_description:
+            clean_desc = product_description
+            if len(clean_desc) > 100:
+                clean_desc = clean_desc[:100] + "..."
+            print(f"[DEBUG-API] Açıklama: {clean_desc}")
+            
+        if product_title:
+            clean_title = product_title
+            if len(clean_title) > 50:
+                clean_title = clean_title[:50] + "..."
+            print(f"[DEBUG-API] Başlık: {clean_title}")
+        
+        # Generate attributes using OpenAI
+        openai_attributes = openai_helper.match_product_attributes(
+            product_title=product_title or "",
+            product_description=product_description or "",
+            category_attributes=category_attrs.get('categoryAttributes', [])
+        )
+        
+        if openai_attributes:
+            print(f"[DEBUG-API] OpenAI ile {len(openai_attributes)} adet öznitelik tespit edildi.")
+            # Log the attributes for debugging
+            for attr in openai_attributes:
+                if 'attributeValue' in attr:
+                    print(f"[DEBUG-API] - {attr['attributeName']}: {attr['attributeValue']}")
+                elif 'customAttributeValue' in attr:
+                    print(f"[DEBUG-API] - {attr['attributeName']}: {attr['customAttributeValue']} (custom)")
+            
+            # Debug log the full attributes
+            print(
+                f"[DEBUG-API] OpenAI Oluşturulan özellikler: {json.dumps(openai_attributes, indent=2, ensure_ascii=False)}"
+            )
+            
+            return openai_attributes
+        else:
+            print("[DEBUG-API] OpenAI öznitelik eşleştirmesi yapılamadı. Geleneksel yönteme geçiliyor.")
+      except Exception as e:
+          print(f"[DEBUG-API] OpenAI öznitelik eşleştirme hatası: {str(e)}. Geleneksel yönteme geçiliyor.")
+      
+      # Fallback - Use traditional extraction methods
+      print("[DEBUG-API] Geleneksel öznitelik eşleştirme yöntemine geçiliyor...")
       category_attrs = self.category_finder.get_category_attributes(
           category_id)
 
