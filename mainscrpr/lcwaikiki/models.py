@@ -21,8 +21,8 @@ class Config(models.Model):
             "above_multiplier": 1.2
         },
         "city_config": {
-            "default_city_id": "865",
-            "active_cities": ["865", "34", "6", "35", "1"],
+            "default_city_id": "870",
+            "active_cities": ["870", "34", "6", "35", "1"],
             "use_stores": true
         },
         "stock_config": {
@@ -45,6 +45,7 @@ class Config(models.Model):
         ('35', 'Izmir'),
         ('1', 'Adana'),
         ('865', 'Default City'),
+        ('870', 'Sakarya'),
     ]
     
     name = models.CharField(max_length=100, unique=True, help_text="Configuration name")
@@ -59,17 +60,17 @@ class Config(models.Model):
     def default_city_id(self):
         """Get the default city ID from the configuration"""
         try:
-            return self.brands.get('city_config', {}).get('default_city_id', '865')
+            return self.brands.get('city_config', {}).get('default_city_id', '870')
         except (AttributeError, KeyError):
-            return '865'  # Default fallback
+            return '870'  # Default fallback Sakarya
     
     @property
     def active_cities(self):
         """Get the list of active cities from the configuration"""
         try:
-            return self.brands.get('city_config', {}).get('active_cities', ['865'])
+            return self.brands.get('city_config', {}).get('active_cities', ['870'])
         except (AttributeError, KeyError):
-            return ['865']  # Default fallback
+            return ['870']  # Default fallback Sakarya
     
     @property
     def use_stores(self):
