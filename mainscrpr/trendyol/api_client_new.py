@@ -582,6 +582,13 @@ class TrendyolCategoryFinder:
         self._collect_leaf_categories(cat['subCategories'], result)
 
 
+# Global special attribute handling
+# Tanımlı kumaş ve kalıp benzeri öznitelikleri tutan global değişken
+SPECIAL_ATTRIBUTES = {
+    'kumaş': ['kumaş', 'fabric', 'material', 'malzeme', 'içerik', 'content'],
+    'kalıp': ['kalıp', 'kesim', 'fit', 'pattern', 'form', 'tip']
+}
+
 class TrendyolProductManager:
   """Handles product creation and management"""
 
@@ -865,6 +872,21 @@ class TrendyolProductManager:
         # Try to find a matching attribute value from the structured data or description
         matched_value = None
         attr_name_lower = attr['attribute']['name'].lower()
+        
+        # Özel işleme - Kumaş ve Kalıp için "Belirtilmemiş" değeri seçme
+        # Check if this is a fabric (kumaş) or pattern/fit (kalıp) attribute
+        is_fabric_attribute = any(keyword in attr_name_lower for keyword in SPECIAL_ATTRIBUTES['kumaş'])
+        is_pattern_attribute = any(keyword in attr_name_lower for keyword in SPECIAL_ATTRIBUTES['kalıp'])
+        
+        # If this is a special attribute, look for "Belirtilmemiş" or similar option
+        if is_fabric_attribute or is_pattern_attribute:
+            if attr.get('attributeValues'):
+                for val in attr['attributeValues']:
+                    # Look for "Belirtilmemiş" or similar option
+                    if val['name'].lower() in ['belirtilmemiş', 'belirtilmemis', 'bilinmiyor', 'other', 'diğer']:
+                        matched_value = val
+                        print(f"[DEBUG-API] Özel işleme: {attr['attribute']['name']} için 'Belirtilmemiş' değeri seçildi (ID: {val['id']})")
+                        break
         
         # First check the structured data extracted from the description
         if desc_info:

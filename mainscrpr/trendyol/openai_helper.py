@@ -303,13 +303,20 @@ class OpenAIAttributeMatcher(OpenAIHelper):
            - If description mentions "Erkek Çocuk", select "Erkek"
            - Only select "Unisex" if explicitly stated
         3. For Material/Fabric: 
+           - IMPORTANT: For any attribute that contains "kumaş", "malzeme", "fabric" or "material", 
+             ALWAYS select "Belirtilmemiş" if it exists as an option
+           - If "Belirtilmemiş" doesn't exist, only then look for specific fabric values
            - Look for "Malzeme:" or "Kumaş:" in the description
            - If description mentions "Pamuk" or "Cotton", look for cotton-related options
            - If description mentions "Penye", look for "Penye Kumaş" or similar options
-        4. For Color (Renk):
+        4. For Pattern/Fit (Kalıp/Kesim/Tip):
+           - IMPORTANT: For any attribute that contains "kalıp", "kesim", "fit", "pattern", "form" or "tip", 
+             ALWAYS select "Belirtilmemiş" if it exists as an option
+           - Only look for specific fit values if "Belirtilmemiş" doesn't exist
+        5. For Color (Renk):
            - Look for color information in both title and description
            - Only select a color if you're highly confident, otherwise don't include it
-        5. Match values that are directly mentioned in the description or title EXACTLY when possible
+        6. Match values that are directly mentioned in the description or title EXACTLY when possible
         
         If you cannot confidently determine an attribute value, do not include it in your response.
         
@@ -338,24 +345,61 @@ class OpenAIAttributeMatcher(OpenAIHelper):
         """
         Fallback method when OpenAI matching fails
         Try to select the first value for required attributes, but only for the first 8 attributes
+        For fabric and pattern attributes, try to select "Belirtilmemiş" if available
         """
         attributes = []
         attr_count = 0
+        
+        # Özel işleme için anahtar kelimeler
+        # Keywords for special processing
+        fabric_keywords = ['kumaş', 'fabric', 'material', 'malzeme', 'içerik', 'content']
+        pattern_keywords = ['kalıp', 'kesim', 'fit', 'pattern', 'form', 'tip']
         
         for attr in category_attributes:
             # Only include the first 8 attributes
             if attr_count >= 8:
                 break
                 
-            # Check if this is a required attribute
-            if attr.get('required') and attr.get('attributeValues'):
+            # Get attribute name
+            attr_name = attr.get('attribute', {}).get('name', '').lower()
+            
+            # Check if this is a fabric or pattern attribute
+            is_fabric_attribute = any(keyword in attr_name for keyword in fabric_keywords)
+            is_pattern_attribute = any(keyword in attr_name for keyword in pattern_keywords)
+            
+            if (is_fabric_attribute or is_pattern_attribute) and attr.get('attributeValues'):
+                # Look for "Belirtilmemiş" option
+                belirtilmemis_value = None
+                for val in attr['attributeValues']:
+                    val_name = val.get('name', '').lower()
+                    if val_name in ['belirtilmemiş', 'belirtilmemis', 'bilinmiyor', 'other', 'diğer']:
+                        belirtilmemis_value = val
+                        break
+                
+                # If found "Belirtilmemiş", use it
+                if belirtilmemis_value:
+                    attributes.append({
+                        "attributeId": attr.get('attribute', {}).get('id'),
+                        "attributeValueId": belirtilmemis_value.get('id')
+                    })
+                    logger.info(f"Used fallback to select 'Belirtilmemiş' for {attr_name} attribute")
+                # If not found but required, use first value
+                elif attr.get('required') and attr.get('attributeValues'):
+                    first_value = attr['attributeValues'][0]
+                    attributes.append({
+                        "attributeId": attr.get('attribute', {}).get('id'),
+                        "attributeValueId": first_value.get('id')
+                    })
+                    logger.info(f"Used fallback to select '{first_value.get('name')}' for required attribute '{attr_name}'")
+            # Handle regular required attributes
+            elif attr.get('required') and attr.get('attributeValues'):
                 # Just pick the first value for required attributes
                 first_value = attr['attributeValues'][0]
                 attributes.append({
                     "attributeId": attr.get('attribute', {}).get('id'),
                     "attributeValueId": first_value.get('id')
                 })
-                logger.info(f"Used fallback to select '{first_value.get('name')}' for required attribute '{attr.get('attribute', {}).get('name')}'")
+                logger.info(f"Used fallback to select '{first_value.get('name')}' for required attribute '{attr_name}'")
                 
             attr_count += 1
         
