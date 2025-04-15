@@ -1081,6 +1081,25 @@ class TrendyolProductManager:
         if openai_matcher.is_available() and product_title and product_description:
           print("[DEBUG-API] OpenAI attribute matcher aktif, GPT-4o ile öznitelik eşleştirme yapılıyor...")
           
+          # İlk önce kategori özniteliklerini belirle
+          print(f"[DEBUG-API] Kategori öznitelikleri (toplam: {len(category_attrs.get('categoryAttributes', []))})")
+          required_attr_names = []
+          for attr in category_attrs.get('categoryAttributes', []):
+              if attr.get('required', False):
+                  attr_name = attr.get('attribute', {}).get('name', '')
+                  required_attr_names.append(attr_name)
+          
+          print(f"[DEBUG-API] Zorunlu öznitelikler: {', '.join(required_attr_names)}")
+          
+          # Ürün açıklamasındaki yapılandırılmış verileri çıkar
+          structured_info = {}
+          if product_description:
+              structured_info = self._extract_structured_info_from_description(product_description)
+              if structured_info:
+                  print(f"[DEBUG-API] Açıklamadan çıkarılan yapılandırılmış bilgiler:")
+                  for key, value in structured_info.items():
+                      print(f"[DEBUG-API]   - {key}: {value}")
+          
           # Use OpenAI to find the best attribute matches based on title and description
           openai_attributes = openai_matcher.match_attributes(
               product_title=product_title,
@@ -1105,7 +1124,9 @@ class TrendyolProductManager:
                   
                 # Add the OpenAI attribute
                 attributes.append(openai_attr)
-                print(f"[DEBUG-API] OpenAI attribute eşleştirme: {openai_attr.get('attributeName', '')} = {openai_attr.get('attributeValue', '')}")
+                attr_name = openai_attr.get('attributeName', '')
+                attr_value = openai_attr.get('attributeValue', '') or openai_attr.get('customAttributeValue', '')
+                print(f"[DEBUG-API] OpenAI attribute eşleştirme: {attr_name} = {attr_value}")
             
             print(f"[DEBUG-API] OpenAI ile {len(openai_attributes)} öznitelik eşleştirildi.")
       except Exception as e:
