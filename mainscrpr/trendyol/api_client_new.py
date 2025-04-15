@@ -588,10 +588,29 @@ class TrendyolCategoryFinder:
 
 
 # Global special attribute handling
-# Tanımlı kumaş ve kalıp benzeri öznitelikleri tutan global değişken
+# Tanımlı özel öznitelikleri tutan global değişken
 SPECIAL_ATTRIBUTES = {
     'kumaş': ['kumaş', 'fabric', 'material', 'malzeme', 'içerik', 'content'],
-    'kalıp': ['kalıp', 'kesim', 'fit', 'pattern', 'form', 'tip']
+    'kalıp': ['kalıp', 'kesim', 'fit', 'pattern', 'form', 'tip'],
+    'renk': ['renk', 'color', 'colour', 'renkli', 'rengi'],
+    'cinsiyet': ['cinsiyet', 'gender', 'sex', 'cinsiyeti'],
+    'yaş': ['yaş', 'age', 'yas', 'grubu', 'yaş grubu', 'aralığı', 'yaş aralığı'],
+    'beden': ['beden', 'size', 'boy', 'boyut', 'ölçü', 'ebat']
+}
+
+# Ortak öznitelik değerleri - yapay zeka analizi için eşleştirme tablosu
+COMMON_ATTRIBUTE_VALUES = {
+    'cinsiyet': {
+        'erkek': ['erkek', 'erkek çocuk', 'erkek bebek', 'male', 'boy', 'men', 'erkekler'],
+        'kadın': ['kadın', 'kadın çocuk', 'kız', 'kız çocuk', 'kız bebek', 'female', 'girl', 'women'],
+        'unisex': ['unisex', 'nötr', 'neutral', 'hem erkek hem kız', 'karma', 'hepsi']
+    },
+    'yaş': {
+        'bebek': ['bebek', 'baby', 'infant', '0-24 ay', '0-2 yaş', 'yeni doğan', 'newborn'],
+        'çocuk': ['çocuk', 'child', 'kid', '2-14 yaş', 'okul çağı', 'ilkokul', 'ortaokul'],
+        'yetişkin': ['yetişkin', 'adult', 'grown-up', 'büyük', '18+ yaş'],
+        'genç': ['genç', 'teen', 'teenager', 'youth', 'adolescent', 'lise']
+    }
 }
 
 class TrendyolProductManager:
@@ -1670,6 +1689,304 @@ def prepare_product_for_trendyol(trendyol_product: TrendyolProduct) -> Dict:
   print(payload)
 
   return payload
+
+
+def analyze_and_determine_attribute(attr_name: str, product_data: Dict, category_attr_vals: List) -> Optional[Dict]:
+  """
+  Akıllı öznitelik analizi ile ürün bilgilerinden en uygun değeri belirleme
+  
+  Bu fonksiyon, ürün başlığı ve açıklamasını analiz ederek öznitelik için
+  en uygun değeri akıllıca belirler. Örneğin renk, cinsiyet, yaş grubu gibi
+  öznitelikleri otomatik olarak tespit eder.
+  
+  Args:
+      attr_name: Öznitelik adı
+      product_data: Ürün verilerini içeren sözlük
+      category_attr_vals: Kategori için mevcut öznitelik değerleri
+      
+  Returns:
+      Seçilen öznitelik değeri bilgisi veya None
+  """
+  attr_name_lower = attr_name.lower()
+  product_title = product_data.get('title', '')
+  product_description = product_data.get('description', '')
+  
+  # Birleşik metin - daha kapsamlı analiz için
+  combined_text = f"{product_title} {product_description}".lower()
+  
+  print(f"[DEBUG-AI] {attr_name} özniteliği için değer belirleniyor")
+  
+  # Öznitelik kategorisini belirle
+  attr_category = None
+  for category, keywords in SPECIAL_ATTRIBUTES.items():
+    if any(keyword in attr_name_lower for keyword in keywords):
+      attr_category = category
+      print(f"[DEBUG-AI] {attr_name} özniteliği '{category}' kategorisine ait")
+      break
+  
+  # Eğer bu bir özel kategori özniteliği ise
+  if attr_category:
+    # RENK DEĞERİ BELİRLEME
+    if attr_category == 'renk':
+      # Yaygın Türkçe renkler
+      turkish_colors = {
+        'kırmızı': ['kırmızı', 'kirmizi', 'red', 'bordo'],
+        'mavi': ['mavi', 'blue', 'lacivert', 'indigo', 'navy'],
+        'yeşil': ['yeşil', 'yesil', 'green', 'haki', 'mint', 'fıstık yeşili'],
+        'sarı': ['sarı', 'sari', 'yellow', 'hardal'],
+        'siyah': ['siyah', 'black', 'koyu'],
+        'beyaz': ['beyaz', 'white', 'krem', 'ekru', 'bej'],
+        'gri': ['gri', 'gray', 'grey', 'antrasit'],
+        'pembe': ['pembe', 'pink', 'fuşya', 'fusya'],
+        'mor': ['mor', 'purple', 'violet', 'lila'],
+        'turuncu': ['turuncu', 'orange', 'tarçın'],
+        'kahverengi': ['kahverengi', 'kahve', 'brown', 'camel'],
+      }
+      
+      # Renk değeri analizi
+      detected_color = None
+      best_match_score = 0
+      
+      # Metinde renk terimleri ara
+      for base_color, color_terms in turkish_colors.items():
+        for color_term in color_terms:
+          if color_term in combined_text:
+            # Daha spesifik eşleşme için çevreleyen metni kontrol et
+            context_score = 3
+            color_index = combined_text.find(color_term)
+            if color_index > 0:
+              before_text = combined_text[max(0, color_index-20):color_index]
+              if 'renk' in before_text or 'renkli' in before_text:
+                context_score += 2
+            
+            # Daha uzun renk terimleri daha spesifik olabilir
+            length_score = min(len(color_term) / 4, 1.5)
+            
+            # Toplam skor
+            current_score = context_score + length_score
+            
+            if current_score > best_match_score:
+              best_match_score = current_score
+              detected_color = base_color
+              
+      # Tespit edilen rengi yazdır
+      if detected_color:
+        print(f"[DEBUG-AI] Metinden belirlenen renk: {detected_color} (skor: {best_match_score:.2f})")
+        
+        # Kategori öznitelik değerlerinde bu rengi ara
+        for val in category_attr_vals:
+          val_name = val.get('name', '').lower()
+          
+          # Renk eşleşme kontrolü - tam veya içinde olma durumu
+          if detected_color == val_name or detected_color in val_name or val_name in detected_color:
+            print(f"[DEBUG-AI] Tam renk eşleşmesi: {val.get('name')}")
+            return {
+              "attributeId": val.get('id'),
+              "attributeValueId": val.get('id'),
+              "attributeName": attr_name,
+              "attributeValue": val.get('name')
+            }
+        
+        # Eşleşme bulunamadıysa metin içinde doğrudan arama yap
+        for val in category_attr_vals:
+          val_name = val.get('name', '').lower()
+          if val_name in combined_text:
+            print(f"[DEBUG-AI] Metin içinde renk eşleşmesi: {val.get('name')}")
+            return {
+              "attributeId": val.get('id'),
+              "attributeValueId": val.get('id'),
+              "attributeName": attr_name,
+              "attributeValue": val.get('name')
+            }
+    
+    # CİNSİYET DEĞERİ BELİRLEME
+    elif attr_category == 'cinsiyet':
+      # Cinsiyet analizi
+      gender_matches = {
+        'erkek': 0,
+        'kadın': 0,
+        'kız': 0,
+        'unisex': 0
+      }
+      
+      # Önce iyi belirlenmiş ifadeleri ara
+      clear_indicators = {
+        'erkek': ['erkek çocuk', 'erkek bebek', 'boy', 'men', 'erkekler için'],
+        'kadın': ['kadın', 'bayan', 'women', 'kadınlar için'],
+        'kız': ['kız çocuk', 'kız bebek', 'girl', 'kızlar için'],
+        'unisex': ['unisex', 'hem erkek hem kız', 'universal']
+      }
+      
+      for gender, indicators in clear_indicators.items():
+        for indicator in indicators:
+          if indicator in combined_text:
+            gender_matches[gender] += 3
+      
+      # Basit kelime eşleşmesi
+      if 'erkek' in combined_text:
+        gender_matches['erkek'] += 2
+      if 'kadın' in combined_text:
+        gender_matches['kadın'] += 2
+      if 'kız' in combined_text:
+        gender_matches['kız'] += 2
+      if 'unisex' in combined_text:
+        gender_matches['unisex'] += 2
+        
+      # En iyi eşleşmeyi bul
+      best_gender = max(gender_matches.items(), key=lambda x: x[1])
+      if best_gender[1] > 0:
+        determined_gender = best_gender[0]
+        print(f"[DEBUG-AI] Metinden belirlenen cinsiyet: {determined_gender} (skor: {best_gender[1]})")
+        
+        # Bu cinsiyet için uygun öznitelik değeri ara
+        for val in category_attr_vals:
+          val_name = val.get('name', '').lower()
+          
+          # Cinsiyet eşleşme kontrolü
+          if determined_gender in val_name:
+            print(f"[DEBUG-AI] Cinsiyet eşleşmesi: {val.get('name')}")
+            return {
+              "attributeId": val.get('id'),
+              "attributeValueId": val.get('id'),
+              "attributeName": attr_name,
+              "attributeValue": val.get('name')
+            }
+            
+    # YAŞ GRUBU DEĞERİ BELİRLEME
+    elif attr_category == 'yaş' or 'yaş grubu' in attr_name_lower:
+      # Yaş grubu eşleştirme göstergeleri
+      age_patterns = [
+        (r'(\d+)[- ]?(\d+)?\s*(ay|months)', 'bebek'),  # 0-24 ay
+        (r'(\d+)[- ]?(\d+)?\s*(yaş|yas|years|age)', 'çocuk'),  # 2-14 yaş
+        (r'yeni\s*doğan|newborn', 'bebek'),  # Yenidoğan
+        (r'bebek|baby|infant', 'bebek'),      # Bebek
+        (r'çocuk|child|kid', 'çocuk'),        # Çocuk
+        (r'genç|teen|ergen|adolescent', 'genç'), # Genç
+        (r'yetişkin|adult', 'yetişkin')       # Yetişkin
+      ]
+      
+      determined_age_group = None
+      
+      # Tam yaş ifadeleri ara - patern eşleştirme
+      for pattern, age_group in age_patterns:
+        if re.search(pattern, combined_text):
+          determined_age_group = age_group
+          print(f"[DEBUG-AI] Metinden belirlenen yaş grubu: {determined_age_group} (patern: {pattern})")
+          break
+          
+      # Şimdi spesifik yaş aralıklarını ara
+      if not determined_age_group:
+        # Yaş aralıklarını ara: "3-4 yaş" gibi
+        age_ranges = re.findall(r'(\d+)[-](\d+)\s*(yaş|yas|years|age)', combined_text)
+        if age_ranges:
+          min_age, max_age = int(age_ranges[0][0]), int(age_ranges[0][1])
+          print(f"[DEBUG-AI] Tespit edilen yaş aralığı: {min_age}-{max_age} yaş")
+          
+          # Yaş aralığına göre grup belirle
+          if max_age <= 3:
+            determined_age_group = 'bebek'
+          elif max_age <= 14:
+            determined_age_group = 'çocuk'
+          elif max_age <= 18:
+            determined_age_group = 'genç'
+          else:
+            determined_age_group = 'yetişkin'
+      
+      # Belirli bir yaş grubu bulunduysa
+      if determined_age_group:
+        # Bu yaş grubu için uygun öznitelik değeri ara
+        for val in category_attr_vals:
+          val_name = val.get('name', '').lower()
+          
+          # Yaş grubu eşleşme kontrolü
+          if determined_age_group in val_name or val_name in determined_age_group:
+            print(f"[DEBUG-AI] Yaş grubu eşleşmesi: {val.get('name')}")
+            return {
+              "attributeId": val.get('id'),
+              "attributeValueId": val.get('id'),
+              "attributeName": attr_name,
+              "attributeValue": val.get('name')
+            }
+            
+    # BEDEN / BOY DEĞERİ BELİRLEME            
+    elif attr_category == 'beden' or 'boy' in attr_name_lower:
+      # Beden ve boy için yaygın değerler
+      size_patterns = [
+        # Çocuk yaş bedenleri
+        (r'(\d+)[-]?(\d+)?\s*(yaş|yas|years|age)', 'yaş'),
+        # Sayısal beden
+        (r'\b(\d+)\s*(beden|numara|size)', 'numara'),
+        # Standart bedenler
+        (r'\b([xsml]|[XS|S|M|L]|small|medium|large|extra\s*large)\b', 'standart')
+      ]
+      
+      determined_size = None
+      size_type = None
+      
+      # Önce parçalanmış beden isimleri ara - örn: "M Beden"
+      for pattern, type_name in size_patterns:
+        size_matches = re.search(pattern, combined_text)
+        if size_matches:
+          if type_name == 'yaş':
+            age_min = size_matches.group(1)
+            age_max = size_matches.group(2) if size_matches.group(2) else age_min
+            determined_size = f"{age_min}-{age_max} Yaş"
+          elif type_name == 'numara':
+            determined_size = f"{size_matches.group(1)} Beden"
+          else:
+            determined_size = size_matches.group(1).upper()
+            
+          size_type = type_name
+          print(f"[DEBUG-AI] Metinden belirlenen beden: {determined_size} (tür: {size_type})")
+          break
+          
+      # Bulunan beden için uygun öznitelik değeri ara  
+      if determined_size:
+        for val in category_attr_vals:
+          val_name = val.get('name', '').lower()
+          determined_size_lower = determined_size.lower()
+          
+          # Beden eşleşme kontrolü - tam veya içerme
+          if determined_size_lower == val_name or determined_size_lower in val_name:
+            print(f"[DEBUG-AI] Beden eşleşmesi: {val.get('name')}")
+            return {
+              "attributeId": val.get('id'),
+              "attributeValueId": val.get('id'),
+              "attributeName": attr_name,
+              "attributeValue": val.get('name')
+            }
+      
+  # Hiçbir eşleşme bulunamadıysa ve değerler mevcutsa, ilk değeri kullan
+  if category_attr_vals and len(category_attr_vals) > 0:
+    first_val = category_attr_vals[0]
+    print(f"[DEBUG-AI] {attr_name} için özel eşleşme bulunamadı, ilk değer kullanılıyor: {first_val.get('name')}")
+    
+    # "Belirtilmemiş" değeri ara
+    unspecified_val = None
+    for val in category_attr_vals:
+      val_name = val.get('name', '').lower()
+      if val_name in ['belirtilmemiş', 'belirtilmemis', 'bilinmiyor', 'other', 'diğer']:
+        unspecified_val = val
+        print(f"[DEBUG-AI] {attr_name} için 'Belirtilmemiş' değeri bulundu (ID: {val.get('id')})")
+        break
+        
+    if unspecified_val:
+      return {
+        "attributeId": unspecified_val.get('id'),
+        "attributeValueId": unspecified_val.get('id'),
+        "attributeName": attr_name,
+        "attributeValue": unspecified_val.get('name')
+      }
+    else:
+      return {
+        "attributeId": first_val.get('id'),
+        "attributeValueId": first_val.get('id'),
+        "attributeName": attr_name,
+        "attributeValue": first_val.get('name')
+      }
+  
+  # Hiçbir değer yoksa None döndür
+  return None
 
 
 def get_required_attributes_and_retry(batch_id: str, product_data: Dict, max_retries: int = 3) -> str:
