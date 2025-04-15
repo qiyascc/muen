@@ -845,8 +845,14 @@ class TrendyolProductManager:
       if required_attrs:
         print(f"[DEBUG-API] Zorunlu özellikler: {', '.join(required_attrs)}")
 
-      # Process all attributes
+      # Process only first 8 attributes
+      attr_count = 0
       for attr in category_attrs.get('categoryAttributes', []):
+        # Only process the first 8 attributes as requested
+        if attr_count >= 8:
+          print(f"[DEBUG-API] Sadece ilk 8 öznitelik işleniyor, kalan {len(category_attrs.get('categoryAttributes', [])) - 8} öznitelik atlandı.")
+          break
+        attr_count += 1
         # Skip if no attribute values and custom values not allowed
         if not attr.get('attributeValues') and not attr.get('allowCustom'):
           continue
@@ -1101,10 +1107,16 @@ class TrendyolProductManager:
                       print(f"[DEBUG-API]   - {key}: {value}")
           
           # Use OpenAI to find the best attribute matches based on title and description
+          # Use only the first 8 attributes
+          category_attributes = category_attrs.get('categoryAttributes', [])
+          if len(category_attributes) > 8:
+              print(f"[DEBUG-API] Sadece ilk 8 öznitelik OpenAI'ye gönderiliyor, kalan {len(category_attributes) - 8} öznitelik atlandı.")
+              category_attributes = category_attributes[:8]
+              
           openai_attributes = openai_matcher.match_attributes(
               product_title=product_title,
               product_description=product_description,
-              category_attributes=category_attrs.get('categoryAttributes', [])
+              category_attributes=category_attributes
           )
           
           if openai_attributes:

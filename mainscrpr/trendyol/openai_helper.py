@@ -256,9 +256,14 @@ class OpenAIAttributeMatcher(OpenAIHelper):
         if len(clean_description) > 2000:
             clean_description = clean_description[:2000] + "..."
         
-        # Format category attributes to show available options
+        # Format only the first 8 category attributes to show available options
         formatted_attributes = []
+        attr_count = 0
         for attr in category_attributes:
+            # Only include the first 8 attributes
+            if attr_count >= 8:
+                break
+                
             if attr.get('attributeValues'):
                 attr_values = []
                 for val in attr.get('attributeValues', []):
@@ -273,6 +278,7 @@ class OpenAIAttributeMatcher(OpenAIHelper):
                     "required": attr.get('required', False),
                     "values": attr_values
                 })
+                attr_count += 1
         
         attributes_json = json.dumps(formatted_attributes, ensure_ascii=False)
         
@@ -331,10 +337,16 @@ class OpenAIAttributeMatcher(OpenAIHelper):
     def _fallback_attribute_matching(self, category_attributes: List[Dict]) -> List[Dict]:
         """
         Fallback method when OpenAI matching fails
-        Try to select the first value for required attributes
+        Try to select the first value for required attributes, but only for the first 8 attributes
         """
         attributes = []
+        attr_count = 0
+        
         for attr in category_attributes:
+            # Only include the first 8 attributes
+            if attr_count >= 8:
+                break
+                
             # Check if this is a required attribute
             if attr.get('required') and attr.get('attributeValues'):
                 # Just pick the first value for required attributes
@@ -344,5 +356,7 @@ class OpenAIAttributeMatcher(OpenAIHelper):
                     "attributeValueId": first_value.get('id')
                 })
                 logger.info(f"Used fallback to select '{first_value.get('name')}' for required attribute '{attr.get('attribute', {}).get('name')}'")
+                
+            attr_count += 1
         
         return attributes
