@@ -771,7 +771,7 @@ class TrendyolProductManager:
         }]
     }
 
-  def _get_attributes_for_category(self, category_id: int, product_description: str = None) -> List[Dict]:
+  def _get_attributes_for_category(self, category_id: int, product_title: str = None, product_description: str = None) -> List[Dict]:
     """
     Generate attributes for a category based on API data and product description.
     
