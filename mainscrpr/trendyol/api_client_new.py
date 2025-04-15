@@ -473,8 +473,8 @@ class TrendyolCategoryFinder:
       unique_potential_matches = list(unique_categories.values())
       sorted_matches = sorted(unique_potential_matches, key=lambda m: m['score'], reverse=True)
       
-      # Limit to top 30 potential matches as requested
-      top_matches = sorted_matches[:30]
+      # Limit to top 60 potential matches as requested
+      top_matches = sorted_matches[:60]
       
       # Log our top potential matches
       logger.info(f"Found {len(top_matches)} potential category matches for '{search_term}'")
@@ -487,7 +487,7 @@ class TrendyolCategoryFinder:
         from trendyol.openai_helper import OpenAICategoryMatcher
         openai_matcher = OpenAICategoryMatcher()
         
-        # Use OpenAI to find the best match among our top 30 potential matches
+        # Use OpenAI to find the best match among our top 60 potential matches
         openai_result = openai_matcher.find_best_category_match(
             search_term=search_term,
             product_title=product_title or "",
@@ -771,12 +771,12 @@ class TrendyolProductManager:
         }]
     }
 
-  def _get_attributes_for_category(self, category_id: int, product_description: str = None) -> List[Dict]:
+  def _get_attributes_for_category(self, category_id: int, product_description: str = None, product_title: str = None) -> List[Dict]:
     """
-    Generate attributes for a category based on API data and product description.
+    Generate attributes for a category based on API data, product title and description.
     
-    If product_description is provided, tries to extract attribute values from the description.
-    This function performs advanced pattern matching to find the most accurate attributes.
+    This function uses advanced pattern matching as well as OpenAI GPT-4o AI
+    to select the most accurate attribute values from the available options.
     """
     attributes = []
     try:

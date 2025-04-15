@@ -10,18 +10,42 @@ from openai import OpenAI
 
 logger = logging.getLogger(__name__)
 
-class OpenAICategoryMatcher:
+class OpenAIHelper:
     """
-    Matches product categories using OpenAI's GPT-4o model.
+    Base class for OpenAI operations providing common functionality
     """
     def __init__(self):
         self.api_key = os.environ.get("OPENAI_API_KEY")
         if not self.api_key:
-            logger.warning("OPENAI_API_KEY environment variable not set. OpenAI category matching will be disabled.")
+            logger.warning("OPENAI_API_KEY environment variable not set. OpenAI features will be disabled.")
         self.client = OpenAI(api_key=self.api_key) if self.api_key else None
         self.model = "gpt-4o"
         self._last_request_time = 0
         self.rate_limit_delay = 1  # Seconds between API calls to avoid rate limiting
+        
+    def _respect_rate_limit(self):
+        """
+        Ensure we don't exceed OpenAI's rate limits by adding delay between requests
+        """
+        current_time = time.time()
+        time_since_last_request = current_time - self._last_request_time
+        
+        if time_since_last_request < self.rate_limit_delay:
+            time.sleep(self.rate_limit_delay - time_since_last_request)
+            
+        self._last_request_time = time.time()
+    
+    def is_available(self) -> bool:
+        """Check if OpenAI client is available"""
+        return self.client is not None
+
+class OpenAICategoryMatcher(OpenAIHelper):
+    """
+    Matches product categories using OpenAI's GPT-4o model.
+    """
+    def __init__(self):
+        super().__init__()
+        logger.info("Initialized OpenAI category matcher")
 
     def find_best_category_match(self, search_term: str, product_title: str, categories: List[Dict]) -> Dict:
         """
@@ -44,7 +68,7 @@ class OpenAICategoryMatcher:
         
         # Prepare category data for the API
         category_data = []
-        for cat in categories[:30]:  # Limit to 30 categories as requested
+        for cat in categories[:60]:  # Limit to 60 categories as requested
             category_data.append({
                 "id": cat.get("id"),
                 "name": cat.get("name", ""),
@@ -145,15 +169,171 @@ class OpenAICategoryMatcher:
             "name": categories[0].get("name", ""),
             "score": 0.5  # Default medium confidence
         }
-    
-    def _respect_rate_limit(self):
-        """
-        Ensure we don't exceed OpenAI's rate limits by adding delay between requests
-        """
-        current_time = time.time()
-        time_since_last_request = current_time - self._last_request_time
+
+
+class OpenAIAttributeMatcher(OpenAIHelper):
+    """
+    Matches product attributes using OpenAI's GPT-4o model.
+    """
+    def __init__(self):
+        super().__init__()
+        logger.info("Initialized OpenAI attribute matcher")
         
-        if time_since_last_request < self.rate_limit_delay:
-            time.sleep(self.rate_limit_delay - time_since_last_request)
+    def match_attributes(self, product_title: str, product_description: str, category_attributes: List[Dict]) -> List[Dict]:
+        """
+        Find the best matching attributes for a product based on its title and description
+        
+        Args:
+            product_title: The product title
+            product_description: The product description
+            category_attributes: List of category attribute dictionaries with available values
             
-        self._last_request_time = time.time()
+        Returns:
+            List of attribute dictionaries ready to be used in the Trendyol API
+        """
+        if not self.client:
+            logger.warning("OpenAI client not initialized. Using fallback method.")
+            return self._fallback_attribute_matching(category_attributes)
+            
+        # Ensure we don't exceed rate limits
+        self._respect_rate_limit()
+        
+        # Prepare the prompt
+        prompt = self._build_attribute_matching_prompt(product_title, product_description, category_attributes)
+        
+        try:
+            # Call OpenAI API
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are an expert e-commerce product attribute matching system. Your task is to identify the most appropriate attribute values for a product based on its title and description."
+                    },
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ],
+                response_format={"type": "json_object"},
+                temperature=0.2,  # Low temperature for more predictable results
+            )
+            
+            result = json.loads(response.choices[0].message.content)
+            
+            # Validate the response
+            if not isinstance(result, dict) or "attributes" not in result:
+                logger.warning(f"Invalid response format from OpenAI: {result}")
+                return self._fallback_attribute_matching(category_attributes)
+                
+            attributes = result["attributes"]
+            if not isinstance(attributes, list):
+                logger.warning(f"Invalid attributes format from OpenAI: {attributes}")
+                return self._fallback_attribute_matching(category_attributes)
+                
+            # Convert to the format expected by Trendyol API
+            trendyol_attributes = []
+            for attr in attributes:
+                if "attributeId" in attr and "attributeValueId" in attr:
+                    trendyol_attributes.append({
+                        "attributeId": attr["attributeId"],
+                        "attributeValueId": attr["attributeValueId"]
+                    })
+                    
+            logger.info(f"OpenAI matched {len(trendyol_attributes)} attributes for product")
+            return trendyol_attributes
+            
+        except Exception as e:
+            logger.error(f"Error calling OpenAI API for attribute matching: {str(e)}")
+            return self._fallback_attribute_matching(category_attributes)
+    
+    def _build_attribute_matching_prompt(self, product_title: str, product_description: str, category_attributes: List[Dict]) -> str:
+        """
+        Build a prompt for the OpenAI model to match attributes
+        """
+        # Clean and format the product description
+        clean_description = product_description or ""
+        if len(clean_description) > 2000:
+            clean_description = clean_description[:2000] + "..."
+        
+        # Format category attributes to show available options
+        formatted_attributes = []
+        for attr in category_attributes:
+            if attr.get('attributeValues'):
+                attr_values = []
+                for val in attr.get('attributeValues', []):
+                    attr_values.append({
+                        "id": val.get("id"),
+                        "name": val.get("name")
+                    })
+                
+                formatted_attributes.append({
+                    "attributeId": attr.get('attribute', {}).get('id'),
+                    "attributeName": attr.get('attribute', {}).get('name'),
+                    "required": attr.get('required', False),
+                    "values": attr_values
+                })
+        
+        attributes_json = json.dumps(formatted_attributes, ensure_ascii=False)
+        
+        return f"""
+        I need to match appropriate attributes for a product based on its title and description.
+
+        PRODUCT INFORMATION:
+        - Title: "{product_title}"
+        - Description: "{clean_description}"
+
+        AVAILABLE ATTRIBUTES:
+        {attributes_json}
+
+        TASK:
+        Analyze the product information and select the most appropriate attribute values from the available options.
+        Focus on identifying required attributes first, then try to fill in as many optional attributes as possible with confidence.
+        
+        Pay special attention to:
+        - Color (Renk) - this is typically required
+        - Size/Dimension if applicable
+        - Material/Fabric
+        - Gender or Age Group if applicable
+        
+        If you cannot confidently determine an attribute value, do not include it in your response.
+        
+        RESPONSE FORMAT:
+        Respond with a JSON object containing an "attributes" array with your selected attribute values:
+        
+        Example response:
+        {{
+            "attributes": [
+                {{
+                    "attributeId": 123,
+                    "attributeValueId": 456,
+                    "explanation": "Selected 'Kırmızı' color based on product description mention of 'red' color."
+                }},
+                {{
+                    "attributeId": 789,
+                    "attributeValueId": 101112,
+                    "explanation": "Selected 'Pamuk' material from description stating '100% cotton'."
+                }}
+            ],
+            "confidence": 0.85
+        }}
+        """
+    
+    def _fallback_attribute_matching(self, category_attributes: List[Dict]) -> List[Dict]:
+        """
+        Fallback method when OpenAI matching fails
+        Try to select the first value for required attributes
+        """
+        attributes = []
+        for attr in category_attributes:
+            # Check if this is a required attribute
+            if attr.get('required') and attr.get('attributeValues'):
+                # Just pick the first value for required attributes
+                first_value = attr['attributeValues'][0]
+                attributes.append({
+                    "attributeId": attr.get('attribute', {}).get('id'),
+                    "attributeValueId": first_value.get('id')
+                })
+                logger.info(f"Used fallback to select '{first_value.get('name')}' for required attribute '{attr.get('attribute', {}).get('name')}'")
+        
+        return attributes
