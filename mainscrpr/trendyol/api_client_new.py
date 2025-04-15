@@ -3,7 +3,6 @@ import json
 import time
 import re
 import uuid
-import copy
 from urllib.parse import quote
 from typing import Dict, List, Optional, Union, Any
 from dataclasses import dataclass
@@ -11,11 +10,7 @@ from functools import lru_cache
 import logging
 from decimal import Decimal
 
-try:
-    from django.utils import timezone
-except ImportError:
-    import datetime
-    timezone = datetime.datetime
+from django.utils import timezone
 from .models import TrendyolProduct, TrendyolBrand, TrendyolCategory, TrendyolAPIConfig
 
 logging.basicConfig(
@@ -588,29 +583,10 @@ class TrendyolCategoryFinder:
 
 
 # Global special attribute handling
-# Tanımlı özel öznitelikleri tutan global değişken
+# Tanımlı kumaş ve kalıp benzeri öznitelikleri tutan global değişken
 SPECIAL_ATTRIBUTES = {
     'kumaş': ['kumaş', 'fabric', 'material', 'malzeme', 'içerik', 'content'],
-    'kalıp': ['kalıp', 'kesim', 'fit', 'pattern', 'form', 'tip'],
-    'renk': ['renk', 'color', 'colour', 'renkli', 'rengi'],
-    'cinsiyet': ['cinsiyet', 'gender', 'sex', 'cinsiyeti'],
-    'yaş': ['yaş', 'age', 'yas', 'grubu', 'yaş grubu', 'aralığı', 'yaş aralığı'],
-    'beden': ['beden', 'size', 'boy', 'boyut', 'ölçü', 'ebat']
-}
-
-# Ortak öznitelik değerleri - yapay zeka analizi için eşleştirme tablosu
-COMMON_ATTRIBUTE_VALUES = {
-    'cinsiyet': {
-        'erkek': ['erkek', 'erkek çocuk', 'erkek bebek', 'male', 'boy', 'men', 'erkekler'],
-        'kadın': ['kadın', 'kadın çocuk', 'kız', 'kız çocuk', 'kız bebek', 'female', 'girl', 'women'],
-        'unisex': ['unisex', 'nötr', 'neutral', 'hem erkek hem kız', 'karma', 'hepsi']
-    },
-    'yaş': {
-        'bebek': ['bebek', 'baby', 'infant', '0-24 ay', '0-2 yaş', 'yeni doğan', 'newborn'],
-        'çocuk': ['çocuk', 'child', 'kid', '2-14 yaş', 'okul çağı', 'ilkokul', 'ortaokul'],
-        'yetişkin': ['yetişkin', 'adult', 'grown-up', 'büyük', '18+ yaş'],
-        'genç': ['genç', 'teen', 'teenager', 'youth', 'adolescent', 'lise']
-    }
+    'kalıp': ['kalıp', 'kesim', 'fit', 'pattern', 'form', 'tip']
 }
 
 class TrendyolProductManager:
@@ -752,28 +728,20 @@ class TrendyolProductManager:
       category_id = self.category_finder.find_best_category(
           product_data.category_name, product_title=product_data.title)
       brand_id = self.get_brand_id(product_data.brand_name)
-      
-      # İlk önce boş öznitelik listesi ile göndermeyi deneyelim
-      # Try sending with empty attributes list first to see which ones are actually required
-      initial_attributes = []
-      
-      logger.info("Submitting product with empty attributes to discover required attributes...")
+      # Pass both product title and description to extract attributes
+      attributes = self._get_attributes_for_category(
+          category_id, 
+          product_description=product_data.description,
+          product_title=product_data.title
+      )
+
       payload = self._build_product_payload(product_data, category_id,
-                                            brand_id, initial_attributes)
-      
+                                            brand_id, attributes)
       logger.info("Submitting product creation request...")
       response = self.api.post(
           f"product/sellers/{self.api.config.seller_id}/products", payload)
-      
-      batch_id = response.get('batchRequestId')
-      
-      if batch_id:
-          # Log the batch ID for reference
-          logger.info(f"Product submitted with batch ID: {batch_id}")
-          print(f"[DEBUG-API] Ürün boş özniteliklerle gönderildi. Batch ID: {batch_id}")
-          print(f"[DEBUG-API] Batch durumunu kontrol etmek için: {batch_id}")
-      
-      return batch_id
+
+      return response.get('batchRequestId')
     except Exception as e:
       logger.error(f"Product creation failed: {str(e)}")
       raise
@@ -781,60 +749,12 @@ class TrendyolProductManager:
   def check_batch_status(self, batch_id: str) -> Dict:
     """Check the status of a batch operation"""
     try:
-      response = self.api.get(
+      return self.api.get(
           f"product/sellers/{self.api.config.seller_id}/products/batch-requests/{batch_id}"
       )
-      
-      # Log detailed status info for debugging
-      status = response.get('status', 'UNKNOWN')
-      items = response.get('items', [])
-      print(f"[DEBUG-API] Batch {batch_id} durumu: {status}")
-      
-      if items:
-          for idx, item in enumerate(items):
-              item_status = item.get('status')
-              failure_reasons = item.get('failureReasons', [])
-              if item_status == 'FAILED' and failure_reasons:
-                  print(f"[DEBUG-API] Ürün {idx+1} hata nedenleri:")
-                  for reason in failure_reasons:
-                      print(f"[DEBUG-API]   - {reason}")
-      
-      return response
     except Exception as e:
       logger.error(f"Failed to check batch status: {str(e)}")
       raise
-      
-  def get_required_attributes_from_error(self, batch_id: str) -> List[str]:
-    """
-    Batch ID'den gelen hata mesajlarını analiz ederek gerekli öznitelikleri belirler
-    
-    Örnek hata mesajı: "Zorunlu kategori özellik bilgisi eksiktir. Eksik alan: Boy"
-    """
-    try:
-        # Batch durumunu kontrol et
-        batch_status = self.check_batch_status(batch_id)
-        items = batch_status.get('items', [])
-        
-        # Gerekli öznitelik isimlerini topla
-        required_attributes = []
-        
-        for item in items:
-            failure_reasons = item.get('failureReasons', [])
-            
-            for reason in failure_reasons:
-                # Eksik öznitelik hatalarını ara
-                match = re.search(r'Zorunlu kategori özellik bilgisi eksiktir\. Eksik alan: (.+)$', reason)
-                if match:
-                    attr_name = match.group(1).strip()
-                    if attr_name not in required_attributes:
-                        required_attributes.append(attr_name)
-                        print(f"[DEBUG-API] Tespit edilen zorunlu öznitelik: {attr_name}")
-        
-        return required_attributes
-    except Exception as e:
-        logger.error(f"Error analyzing batch errors: {str(e)}")
-        print(f"[DEBUG-API] Batch hata analizi hatası: {str(e)}")
-        return []
 
   def _build_product_payload(self, product: ProductData, category_id: int,
                              brand_id: int, attributes: List[Dict]) -> Dict:
@@ -1691,566 +1611,47 @@ def prepare_product_for_trendyol(trendyol_product: TrendyolProduct) -> Dict:
   return payload
 
 
-def analyze_and_determine_attribute(attr_name: str, product_data: Dict, category_attr_vals: List) -> Optional[Dict]:
-  """
-  Akıllı öznitelik analizi ile ürün bilgilerinden en uygun değeri belirleme
-  
-  Bu fonksiyon, ürün başlığı ve açıklamasını analiz ederek öznitelik için
-  en uygun değeri akıllıca belirler. Örneğin renk, cinsiyet, yaş grubu gibi
-  öznitelikleri otomatik olarak tespit eder.
-  
-  Args:
-      attr_name: Öznitelik adı
-      product_data: Ürün verilerini içeren sözlük
-      category_attr_vals: Kategori için mevcut öznitelik değerleri
-      
-  Returns:
-      Seçilen öznitelik değeri bilgisi veya None
-  """
-  attr_name_lower = attr_name.lower()
-  product_title = product_data.get('title', '')
-  product_description = product_data.get('description', '')
-  
-  # Birleşik metin - daha kapsamlı analiz için
-  combined_text = f"{product_title} {product_description}".lower()
-  
-  print(f"[DEBUG-AI] {attr_name} özniteliği için değer belirleniyor")
-  
-  # Öznitelik kategorisini belirle
-  attr_category = None
-  for category, keywords in SPECIAL_ATTRIBUTES.items():
-    if any(keyword in attr_name_lower for keyword in keywords):
-      attr_category = category
-      print(f"[DEBUG-AI] {attr_name} özniteliği '{category}' kategorisine ait")
-      break
-  
-  # Eğer bu bir özel kategori özniteliği ise
-  if attr_category:
-    # RENK DEĞERİ BELİRLEME
-    if attr_category == 'renk':
-      # Yaygın Türkçe renkler
-      turkish_colors = {
-        'kırmızı': ['kırmızı', 'kirmizi', 'red', 'bordo'],
-        'mavi': ['mavi', 'blue', 'lacivert', 'indigo', 'navy'],
-        'yeşil': ['yeşil', 'yesil', 'green', 'haki', 'mint', 'fıstık yeşili'],
-        'sarı': ['sarı', 'sari', 'yellow', 'hardal'],
-        'siyah': ['siyah', 'black', 'koyu'],
-        'beyaz': ['beyaz', 'white', 'krem', 'ekru', 'bej'],
-        'gri': ['gri', 'gray', 'grey', 'antrasit'],
-        'pembe': ['pembe', 'pink', 'fuşya', 'fusya'],
-        'mor': ['mor', 'purple', 'violet', 'lila'],
-        'turuncu': ['turuncu', 'orange', 'tarçın'],
-        'kahverengi': ['kahverengi', 'kahve', 'brown', 'camel'],
-      }
-      
-      # Renk değeri analizi
-      detected_color = None
-      best_match_score = 0
-      
-      # Metinde renk terimleri ara
-      for base_color, color_terms in turkish_colors.items():
-        for color_term in color_terms:
-          if color_term in combined_text:
-            # Daha spesifik eşleşme için çevreleyen metni kontrol et
-            context_score = 3
-            color_index = combined_text.find(color_term)
-            if color_index > 0:
-              before_text = combined_text[max(0, color_index-20):color_index]
-              if 'renk' in before_text or 'renkli' in before_text:
-                context_score += 2
-            
-            # Daha uzun renk terimleri daha spesifik olabilir
-            length_score = min(len(color_term) / 4, 1.5)
-            
-            # Toplam skor
-            current_score = context_score + length_score
-            
-            if current_score > best_match_score:
-              best_match_score = current_score
-              detected_color = base_color
-              
-      # Tespit edilen rengi yazdır
-      if detected_color:
-        print(f"[DEBUG-AI] Metinden belirlenen renk: {detected_color} (skor: {best_match_score:.2f})")
-        
-        # Kategori öznitelik değerlerinde bu rengi ara
-        for val in category_attr_vals:
-          val_name = val.get('name', '').lower()
-          
-          # Renk eşleşme kontrolü - tam veya içinde olma durumu
-          if detected_color == val_name or detected_color in val_name or val_name in detected_color:
-            print(f"[DEBUG-AI] Tam renk eşleşmesi: {val.get('name')}")
-            return {
-              "attributeId": val.get('id'),
-              "attributeValueId": val.get('id'),
-              "attributeName": attr_name,
-              "attributeValue": val.get('name')
-            }
-        
-        # Eşleşme bulunamadıysa metin içinde doğrudan arama yap
-        for val in category_attr_vals:
-          val_name = val.get('name', '').lower()
-          if val_name in combined_text:
-            print(f"[DEBUG-AI] Metin içinde renk eşleşmesi: {val.get('name')}")
-            return {
-              "attributeId": val.get('id'),
-              "attributeValueId": val.get('id'),
-              "attributeName": attr_name,
-              "attributeValue": val.get('name')
-            }
-    
-    # CİNSİYET DEĞERİ BELİRLEME
-    elif attr_category == 'cinsiyet':
-      # Cinsiyet analizi
-      gender_matches = {
-        'erkek': 0,
-        'kadın': 0,
-        'kız': 0,
-        'unisex': 0
-      }
-      
-      # Önce iyi belirlenmiş ifadeleri ara
-      clear_indicators = {
-        'erkek': ['erkek çocuk', 'erkek bebek', 'boy', 'men', 'erkekler için'],
-        'kadın': ['kadın', 'bayan', 'women', 'kadınlar için'],
-        'kız': ['kız çocuk', 'kız bebek', 'girl', 'kızlar için'],
-        'unisex': ['unisex', 'hem erkek hem kız', 'universal']
-      }
-      
-      for gender, indicators in clear_indicators.items():
-        for indicator in indicators:
-          if indicator in combined_text:
-            gender_matches[gender] += 3
-      
-      # Basit kelime eşleşmesi
-      if 'erkek' in combined_text:
-        gender_matches['erkek'] += 2
-      if 'kadın' in combined_text:
-        gender_matches['kadın'] += 2
-      if 'kız' in combined_text:
-        gender_matches['kız'] += 2
-      if 'unisex' in combined_text:
-        gender_matches['unisex'] += 2
-        
-      # En iyi eşleşmeyi bul
-      best_gender = max(gender_matches.items(), key=lambda x: x[1])
-      if best_gender[1] > 0:
-        determined_gender = best_gender[0]
-        print(f"[DEBUG-AI] Metinden belirlenen cinsiyet: {determined_gender} (skor: {best_gender[1]})")
-        
-        # Bu cinsiyet için uygun öznitelik değeri ara
-        for val in category_attr_vals:
-          val_name = val.get('name', '').lower()
-          
-          # Cinsiyet eşleşme kontrolü
-          if determined_gender in val_name:
-            print(f"[DEBUG-AI] Cinsiyet eşleşmesi: {val.get('name')}")
-            return {
-              "attributeId": val.get('id'),
-              "attributeValueId": val.get('id'),
-              "attributeName": attr_name,
-              "attributeValue": val.get('name')
-            }
-            
-    # YAŞ GRUBU DEĞERİ BELİRLEME
-    elif attr_category == 'yaş' or 'yaş grubu' in attr_name_lower:
-      # Yaş grubu eşleştirme göstergeleri
-      age_patterns = [
-        (r'(\d+)[- ]?(\d+)?\s*(ay|months)', 'bebek'),  # 0-24 ay
-        (r'(\d+)[- ]?(\d+)?\s*(yaş|yas|years|age)', 'çocuk'),  # 2-14 yaş
-        (r'yeni\s*doğan|newborn', 'bebek'),  # Yenidoğan
-        (r'bebek|baby|infant', 'bebek'),      # Bebek
-        (r'çocuk|child|kid', 'çocuk'),        # Çocuk
-        (r'genç|teen|ergen|adolescent', 'genç'), # Genç
-        (r'yetişkin|adult', 'yetişkin')       # Yetişkin
-      ]
-      
-      determined_age_group = None
-      
-      # Tam yaş ifadeleri ara - patern eşleştirme
-      for pattern, age_group in age_patterns:
-        if re.search(pattern, combined_text):
-          determined_age_group = age_group
-          print(f"[DEBUG-AI] Metinden belirlenen yaş grubu: {determined_age_group} (patern: {pattern})")
-          break
-          
-      # Şimdi spesifik yaş aralıklarını ara
-      if not determined_age_group:
-        # Yaş aralıklarını ara: "3-4 yaş" gibi
-        age_ranges = re.findall(r'(\d+)[-](\d+)\s*(yaş|yas|years|age)', combined_text)
-        if age_ranges:
-          min_age, max_age = int(age_ranges[0][0]), int(age_ranges[0][1])
-          print(f"[DEBUG-AI] Tespit edilen yaş aralığı: {min_age}-{max_age} yaş")
-          
-          # Yaş aralığına göre grup belirle
-          if max_age <= 3:
-            determined_age_group = 'bebek'
-          elif max_age <= 14:
-            determined_age_group = 'çocuk'
-          elif max_age <= 18:
-            determined_age_group = 'genç'
-          else:
-            determined_age_group = 'yetişkin'
-      
-      # Belirli bir yaş grubu bulunduysa
-      if determined_age_group:
-        # Bu yaş grubu için uygun öznitelik değeri ara
-        for val in category_attr_vals:
-          val_name = val.get('name', '').lower()
-          
-          # Yaş grubu eşleşme kontrolü
-          if determined_age_group in val_name or val_name in determined_age_group:
-            print(f"[DEBUG-AI] Yaş grubu eşleşmesi: {val.get('name')}")
-            return {
-              "attributeId": val.get('id'),
-              "attributeValueId": val.get('id'),
-              "attributeName": attr_name,
-              "attributeValue": val.get('name')
-            }
-            
-    # BEDEN / BOY DEĞERİ BELİRLEME            
-    elif attr_category == 'beden' or 'boy' in attr_name_lower:
-      # Beden ve boy için yaygın değerler
-      size_patterns = [
-        # Çocuk yaş bedenleri
-        (r'(\d+)[-]?(\d+)?\s*(yaş|yas|years|age)', 'yaş'),
-        # Sayısal beden
-        (r'\b(\d+)\s*(beden|numara|size)', 'numara'),
-        # Standart bedenler
-        (r'\b([xsml]|[XS|S|M|L]|small|medium|large|extra\s*large)\b', 'standart')
-      ]
-      
-      determined_size = None
-      size_type = None
-      
-      # Önce parçalanmış beden isimleri ara - örn: "M Beden"
-      for pattern, type_name in size_patterns:
-        size_matches = re.search(pattern, combined_text)
-        if size_matches:
-          if type_name == 'yaş':
-            age_min = size_matches.group(1)
-            age_max = size_matches.group(2) if size_matches.group(2) else age_min
-            determined_size = f"{age_min}-{age_max} Yaş"
-          elif type_name == 'numara':
-            determined_size = f"{size_matches.group(1)} Beden"
-          else:
-            determined_size = size_matches.group(1).upper()
-            
-          size_type = type_name
-          print(f"[DEBUG-AI] Metinden belirlenen beden: {determined_size} (tür: {size_type})")
-          break
-          
-      # Bulunan beden için uygun öznitelik değeri ara  
-      if determined_size:
-        for val in category_attr_vals:
-          val_name = val.get('name', '').lower()
-          determined_size_lower = determined_size.lower()
-          
-          # Beden eşleşme kontrolü - tam veya içerme
-          if determined_size_lower == val_name or determined_size_lower in val_name:
-            print(f"[DEBUG-AI] Beden eşleşmesi: {val.get('name')}")
-            return {
-              "attributeId": val.get('id'),
-              "attributeValueId": val.get('id'),
-              "attributeName": attr_name,
-              "attributeValue": val.get('name')
-            }
-      
-  # Hiçbir eşleşme bulunamadıysa ve değerler mevcutsa, ilk değeri kullan
-  if category_attr_vals and len(category_attr_vals) > 0:
-    first_val = category_attr_vals[0]
-    print(f"[DEBUG-AI] {attr_name} için özel eşleşme bulunamadı, ilk değer kullanılıyor: {first_val.get('name')}")
-    
-    # "Belirtilmemiş" değeri ara
-    unspecified_val = None
-    for val in category_attr_vals:
-      val_name = val.get('name', '').lower()
-      if val_name in ['belirtilmemiş', 'belirtilmemis', 'bilinmiyor', 'other', 'diğer']:
-        unspecified_val = val
-        print(f"[DEBUG-AI] {attr_name} için 'Belirtilmemiş' değeri bulundu (ID: {val.get('id')})")
-        break
-        
-    if unspecified_val:
-      return {
-        "attributeId": unspecified_val.get('id'),
-        "attributeValueId": unspecified_val.get('id'),
-        "attributeName": attr_name,
-        "attributeValue": unspecified_val.get('name')
-      }
-    else:
-      return {
-        "attributeId": first_val.get('id'),
-        "attributeValueId": first_val.get('id'),
-        "attributeName": attr_name,
-        "attributeValue": first_val.get('name')
-      }
-  
-  # Hiçbir değer yoksa None döndür
-  return None
-
-
-def get_required_attributes_and_retry(batch_id: str, product_data: Dict, max_retries: int = 3) -> str:
-  """
-  Batch ID'yi kullanarak hata mesajlarından gereken öznitelikleri alıp ürünü tekrar gönderir.
-  Hata devam ederse birden fazla kez deneyerek tüm gerekli öznitelikleri tespit eder.
-  
-  Args:
-      batch_id: İlk gönderimden dönen batch ID
-      product_data: Ürün bilgilerini içeren sözlük
-      max_retries: Maksimum tekrar deneme sayısı
-      
-  Returns:
-      Yeni oluşturulan batch ID
-  """
-  current_batch_id = batch_id
-  current_product_data = copy.deepcopy(product_data)
-  retry_count = 0
-  all_required_attrs = set()  # Şimdiye kadar tespit edilen tüm zorunlu öznitelikler
-  
-  try:
-    # API client al
-    product_manager = get_product_manager()
-    
-    # Kategori ID'sini kontrol et
-    category_id = current_product_data.get('categoryId')
-    if not category_id:
-      logger.error("Category ID is required")
-      return current_batch_id
-      
-    # Kategori özniteliklerini al
-    category_attrs = product_manager.category_finder.get_category_attributes(category_id)
-    
-    # Current product attributes - şu ana kadar eklenmiş öznitelikler
-    current_attributes = current_product_data.get('attributes', [])
-    
-    # Tekrarlı deneme döngüsü - her seferinde yeni zorunlu öznitelikler eklenecek
-    while retry_count < max_retries:
-      retry_count += 1
-      
-      # Gereken öznitelikleri hata mesajlarından belirle
-      new_required_attrs = product_manager.get_required_attributes_from_error(current_batch_id)
-      
-      if not new_required_attrs:
-        logger.info(f"No new required attributes found, product might be ready or processing")
-        
-        # Son batch durumunu kontrol et
-        batch_status = product_manager.check_batch_status(current_batch_id)
-        status = batch_status.get('status', 'UNKNOWN')
-        
-        if status in ['SUCCEEDED', 'SUCCESS', 'PROCESSING', 'IN_PROGRESS']:
-          logger.info(f"Batch {current_batch_id} status is {status}, no more retries needed")
-          print(f"[DEBUG-API] Batch durumu: {status}. Başarılı oldu veya işleniyor.")
-          return current_batch_id
-          
-        if retry_count >= max_retries:
-          logger.warning(f"Maximum retries ({max_retries}) reached with no new attributes found")
-          print(f"[DEBUG-API] Maksimum deneme sayısına ulaşıldı: {max_retries}")
-          return current_batch_id
-          
-        # Kısa bir bekleme süresi ve tekrar kontrol
-        logger.info("Waiting 3 seconds before rechecking batch status...")
-        time.sleep(3)
-        continue
-        
-      # Yeni bulunan öznitelikleri genel listeye ekle
-      print(f"[DEBUG-API] Deneme {retry_count}: {len(new_required_attrs)} yeni zorunlu öznitelik bulundu")
-      all_required_attrs.update(new_required_attrs)
-      
-      # Gereken öznitelikleri ata
-      for attr_name in new_required_attrs:
-        # Daha önce eklenmiş mi kontrol et
-        if any(attr.get('attributeName') == attr_name for attr in current_attributes):
-          print(f"[DEBUG-API] {attr_name} özniteliği zaten eklenmiş, atlanıyor")
-          continue
-          
-        attr_added = False
-        
-        # Kategori özelliklerinde ara
-        for cat_attr in category_attrs.get('categoryAttributes', []):
-          if cat_attr['attribute']['name'] == attr_name and cat_attr.get('attributeValues'):
-            # Öznitelik değeri bulundu
-            attribute = {
-              "attributeId": cat_attr['attribute']['id'],
-              "attributeName": cat_attr['attribute']['name']
-            }
-            
-            # Özel öznitelik işleme (kumaş/kalıp)
-            attr_name_lower = attr_name.lower()
-            
-            # SPECIAL_ATTRIBUTES değişkeninin tanımlı olup olmadığını kontrol et
-            if 'SPECIAL_ATTRIBUTES' not in globals():
-                # Tanımlı değilse, özel öznitelikleri burada tanımla
-                is_fabric_attribute = any(keyword in attr_name_lower for keyword in ['kumaş', 'fabric', 'material'])
-                is_pattern_attribute = any(keyword in attr_name_lower for keyword in ['kalıp', 'pattern', 'fit'])
-            else:
-                # Tanımlıysa, global değişkeni kullan
-                is_fabric_attribute = any(keyword in attr_name_lower for keyword in SPECIAL_ATTRIBUTES.get('kumaş', [])) 
-                is_pattern_attribute = any(keyword in attr_name_lower for keyword in SPECIAL_ATTRIBUTES.get('kalıp', []))
-            
-            # Belirtilmemiş değerini ara
-            if is_fabric_attribute or is_pattern_attribute:
-              belirtilmemis_found = False
-              for val in cat_attr['attributeValues']:
-                if val['name'].lower() in ['belirtilmemiş', 'belirtilmemis', 'bilinmiyor', 'other', 'diğer']:
-                  attribute["attributeValueId"] = val['id']
-                  attribute["attributeValue"] = val['name']
-                  belirtilmemis_found = True
-                  print(f"[DEBUG-API] Özel işleme: {attr_name} için 'Belirtilmemiş' değeri seçildi")
-                  break
-              
-              # Belirtilmemiş bulunamadıysa ilk değeri kullan
-              if not belirtilmemis_found and cat_attr['attributeValues']:
-                first_val = cat_attr['attributeValues'][0]
-                attribute["attributeValueId"] = first_val['id']
-                attribute["attributeValue"] = first_val['name']
-                print(f"[DEBUG-API] {attr_name} için ilk değer seçildi: {first_val['name']}")
-            else:
-              # Normal öznitelik için ilk değeri kullan
-              first_val = cat_attr['attributeValues'][0]
-              attribute["attributeValueId"] = first_val['id']
-              attribute["attributeValue"] = first_val['name']
-              print(f"[DEBUG-API] {attr_name} için ilk değer seçildi: {first_val['name']}")
-            
-            current_attributes.append(attribute)
-            attr_added = True
-            break
-        
-        if not attr_added:
-          logger.warning(f"Could not find attribute '{attr_name}' in category attributes")
-      
-      # Attributes listesini güncelle
-      if not current_attributes:
-        logger.warning("No attributes could be added")
-        return current_batch_id
-      
-      # Ürün payload'ını güncelle
-      current_product_data['attributes'] = current_attributes
-      
-      # Ürünü tekrar gönder
-      logger.info(f"Resubmitting product with {len(current_attributes)} attributes (pass {retry_count})")
-      print(f"[DEBUG-API] Ürün {len(current_attributes)} öznitelik ile tekrar gönderiliyor (Deneme {retry_count})")
-      print(f"[DEBUG-API] Eklenen öznitelikler: {', '.join([attr.get('attributeName') for attr in current_attributes])}")
-      
-      # API üzerinden gönder
-      response = product_manager.api.post(
-        f"product/sellers/{product_manager.api.config.seller_id}/products", 
-        {"items": [current_product_data]}
-      )
-      
-      new_batch_id = response.get('batchRequestId')
-      if new_batch_id:
-        logger.info(f"Product resubmitted with batch ID: {new_batch_id}")
-        print(f"[DEBUG-API] Ürün tekrar gönderildi. Yeni Batch ID: {new_batch_id}")
-        current_batch_id = new_batch_id
-        
-        # Kısa bir bekleme süresi - API'nin işleme zamanı için
-        logger.info("Waiting 3 seconds for API processing...")
-        time.sleep(3)
-        
-        # Batch durumunu hemen kontrol et
-        batch_status = product_manager.check_batch_status(current_batch_id)
-        status = batch_status.get('status', 'UNKNOWN')
-        
-        # Eğer başarılı olduysa döngüyü sonlandır
-        if status in ['SUCCEEDED', 'SUCCESS']:
-          logger.info(f"Batch {current_batch_id} status is {status}, retries complete")
-          print(f"[DEBUG-API] Batch durumu: {status}. İşlem başarıyla tamamlandı!")
-          return current_batch_id
-      else:
-        logger.error("Failed to get batch ID from response")
-        return current_batch_id
-    
-    # Son batch ID'yi döndür
-    return current_batch_id
-      
-  except Exception as e:
-    logger.error(f"Error in get_required_attributes_and_retry: {str(e)}")
-    print(f"[DEBUG-API] Hata: {str(e)}")
-    return current_batch_id
-
-
 def sync_product_to_trendyol(trendyol_product: TrendyolProduct) -> str:
   """
-    Sync a Trendyol product to the Trendyol platform using minimalist approach:
-    1. First send without attributes
-    2. Check batch status for required attributes
-    3. Resend with only required attributes
-    
+    Sync a Trendyol product to the Trendyol platform.
     Returns the batch ID of the submission.
     Raises exceptions if the sync fails.
     """
   try:
-    # 1. Prepare product data - but without attributes
+    # Prepare the product data
     product_data = prepare_product_for_trendyol(trendyol_product)
-    
-    # Get the API manager
-    product_manager = get_product_manager()
-    
-    # Remove attributes before sending
-    product_data_copy = copy.deepcopy(product_data)
-    product_data_copy['attributes'] = []
-    
-    logger.info(f"Sending product {trendyol_product.id} without attributes first")
-    print(f"[DEBUG-API] Ürün önce özniteliksiz gönderiliyor (ID: {trendyol_product.id})")
-    
-    # 2. Send the product to Trendyol
-    response = product_manager.api.post(
-        f"product/sellers/{product_manager.api.config.seller_id}/products",
-        {"items": [product_data_copy]})
+
+    # Get the API client
+    api_client = get_api_client()
+
+    # Send the product to Trendyol
+    response = api_client.post(
+        f"product/sellers/{api_client.config.seller_id}/products",
+        {"items": [product_data]})
 
     # Get the batch ID
-    initial_batch_id = response.get('batchRequestId')
-    if not initial_batch_id:
+    batch_id = response.get('batchRequestId')
+    if not batch_id:
       raise ValueError(f"No batch ID returned from Trendyol API: {response}")
-    
-    # Update product with initial batch ID
-    trendyol_product.batch_id = initial_batch_id
+
+    # Update the product with the batch ID
+    trendyol_product.batch_id = batch_id
     trendyol_product.batch_status = 'processing'
     trendyol_product.last_sync_time = timezone.now()
-    trendyol_product.status_message = "Initial submission without attributes"
+    trendyol_product.status_message = "Product submitted to Trendyol"
     trendyol_product.save()
-    
-    logger.info(f"Initial submission successful with batch ID: {initial_batch_id}")
-    print(f"[DEBUG-API] İlk gönderim başarılı. Batch ID: {initial_batch_id}")
-    
-    # 3. Wait for a moment before checking batch status
-    time.sleep(2)
-    
-    # 4. Check batch status to get required attributes
-    logger.info(f"Checking batch status to determine required attributes")
-    batch_status = product_manager.check_batch_status(initial_batch_id)
-    
-    # 5. Get required attributes from error messages
-    required_attrs = product_manager.get_required_attributes_from_error(initial_batch_id)
-    
-    # 6. If required attributes found, resubmit with them
-    if required_attrs:
-      logger.info(f"Found {len(required_attrs)} required attributes: {', '.join(required_attrs)}")
-      print(f"[DEBUG-API] {len(required_attrs)} zorunlu öznitelik bulundu: {', '.join(required_attrs)}")
-      
-      # Resubmit with required attributes
-      final_batch_id = get_required_attributes_and_retry(initial_batch_id, product_data_copy)
-      
-      if final_batch_id != initial_batch_id:
-        # Update product with new batch ID
-        trendyol_product.batch_id = final_batch_id
-        trendyol_product.batch_status = 'processing'
-        trendyol_product.last_sync_time = timezone.now()
-        trendyol_product.status_message = f"Resubmitted with {len(required_attrs)} required attributes"
-        trendyol_product.save()
-        
-        logger.info(f"Product resubmitted with required attributes, new batch ID: {final_batch_id}")
-        print(f"[DEBUG-API] Ürün zorunlu özniteliklerle tekrar gönderildi. Yeni Batch ID: {final_batch_id}")
-        
-        return final_batch_id
-    
-    return initial_batch_id
-    
+
+    logger.info(
+        f"Product {trendyol_product.id} submitted to Trendyol with batch ID: {batch_id}"
+    )
+
+    return batch_id
   except Exception as e:
     # Update the product status
     trendyol_product.batch_status = 'failed'
     trendyol_product.status_message = f"Sync failed: {str(e)}"
     trendyol_product.save()
 
-    logger.error(f"Failed to sync product {trendyol_product.id} to Trendyol: {str(e)}")
+    logger.error(
+        f"Failed to sync product {trendyol_product.id} to Trendyol: {str(e)}")
     raise
