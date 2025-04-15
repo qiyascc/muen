@@ -290,11 +290,20 @@ class OpenAIAttributeMatcher(OpenAIHelper):
         Analyze the product information and select the most appropriate attribute values from the available options.
         Focus on identifying required attributes first, then try to fill in as many optional attributes as possible with confidence.
         
-        Pay special attention to:
-        - Color (Renk) - this is typically required
-        - Size/Dimension if applicable
-        - Material/Fabric
-        - Gender or Age Group if applicable
+        MATCHING RULES:
+        1. Pay close attention to structured information in the description, like "Marka:", "Ürün Tipi:", "Cinsiyet:", etc.
+        2. For Gender attribute:
+           - If description mentions "Kız Çocuk", select "Kadın / Kız"
+           - If description mentions "Erkek Çocuk", select "Erkek"
+           - Only select "Unisex" if explicitly stated
+        3. For Material/Fabric: 
+           - Look for "Malzeme:" or "Kumaş:" in the description
+           - If description mentions "Pamuk" or "Cotton", look for cotton-related options
+           - If description mentions "Penye", look for "Penye Kumaş" or similar options
+        4. For Color (Renk):
+           - Look for color information in both title and description
+           - Only select a color if you're highly confident, otherwise don't include it
+        5. Match values that are directly mentioned in the description or title EXACTLY when possible
         
         If you cannot confidently determine an attribute value, do not include it in your response.
         
@@ -315,7 +324,7 @@ class OpenAIAttributeMatcher(OpenAIHelper):
                     "explanation": "Selected 'Pamuk' material from description stating '100% cotton'."
                 }}
             ],
-            "confidence": 0.85
+            "confidence": 0.95
         }}
         """
     

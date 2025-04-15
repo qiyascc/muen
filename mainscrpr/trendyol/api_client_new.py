@@ -721,8 +721,12 @@ class TrendyolProductManager:
       category_id = self.category_finder.find_best_category(
           product_data.category_name, product_title=product_data.title)
       brand_id = self.get_brand_id(product_data.brand_name)
-      # Pass product description to extract attributes
-      attributes = self._get_attributes_for_category(category_id, product_data.description)
+      # Pass both product title and description to extract attributes
+      attributes = self._get_attributes_for_category(
+          category_id, 
+          product_description=product_data.description,
+          product_title=product_data.title
+      )
 
       payload = self._build_product_payload(product_data, category_id,
                                             brand_id, attributes)
@@ -1069,6 +1073,45 @@ class TrendyolProductManager:
 
         attributes.append(color_attribute)
 
+      # Try to improve attributes with GPT-4o AI if available
+      try:
+        from trendyol.openai_helper import OpenAIAttributeMatcher
+        openai_matcher = OpenAIAttributeMatcher()
+        
+        if openai_matcher.is_available() and product_title and product_description:
+          print("[DEBUG-API] OpenAI attribute matcher aktif, GPT-4o ile öznitelik eşleştirme yapılıyor...")
+          
+          # Use OpenAI to find the best attribute matches based on title and description
+          openai_attributes = openai_matcher.match_attributes(
+              product_title=product_title,
+              product_description=product_description,
+              category_attributes=category_attrs.get('categoryAttributes', [])
+          )
+          
+          if openai_attributes:
+            # Replace existing attributes with those returned by OpenAI
+            # but preserve any that OpenAI didn't handle
+            
+            # Create a dictionary of attributes by ID for easy lookup
+            attributes_by_id = {a.get("attributeId"): a for a in attributes}
+            
+            # Add all attributes from OpenAI
+            for openai_attr in openai_attributes:
+              attr_id = openai_attr.get("attributeId")
+              if attr_id:
+                # Remove the existing attribute if present
+                if attr_id in attributes_by_id:
+                  attributes.remove(attributes_by_id[attr_id])
+                  
+                # Add the OpenAI attribute
+                attributes.append(openai_attr)
+                print(f"[DEBUG-API] OpenAI attribute eşleştirme: {openai_attr.get('attributeName', '')} = {openai_attr.get('attributeValue', '')}")
+            
+            print(f"[DEBUG-API] OpenAI ile {len(openai_attributes)} öznitelik eşleştirildi.")
+      except Exception as e:
+        logger.warning(f"OpenAI attribute matching failed: {str(e)}. Using traditional matching instead.")
+        print(f"[DEBUG-API] OpenAI öznitelik eşleştirme başarısız: {str(e)}. Geleneksel yöntem kullanılıyor.")
+      
       # Debug log the final attributes
       print(
           f"[DEBUG-API] Oluşturulan özellikler: {json.dumps(attributes, indent=2, ensure_ascii=False)}"
