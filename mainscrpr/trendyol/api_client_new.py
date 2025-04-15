@@ -1483,10 +1483,16 @@ def lcwaikiki_to_trendyol_product(lcw_product, variant_data=None) -> Optional[Tr
     raise  # Re-raise the exception as per requirement
 
 
-def prepare_product_for_trendyol(trendyol_product: TrendyolProduct) -> Dict:
+def prepare_product_for_trendyol(trendyol_product: TrendyolProduct, 
+                               include_attributes: bool = True,
+                               required_attribute_names: List[str] = None) -> Dict:
   """
     Prepare a Trendyol product for submission to the API.
-    This includes fetching required attributes from the API.
+    
+    Args:
+        trendyol_product: The product to prepare
+        include_attributes: Whether to include attributes in the payload
+        required_attribute_names: List of specific attribute names to include (used if we know what's required)
     
     Returns a payload dictionary ready for submission to Trendyol API.
     Raises exceptions if required data is missing.
@@ -1499,6 +1505,12 @@ def prepare_product_for_trendyol(trendyol_product: TrendyolProduct) -> Dict:
 
   if not trendyol_product.brand_id:
     raise ValueError(f"Product {trendyol_product.id} has no brand ID")
+    
+  # Log whether we're including attributes
+  if not include_attributes:
+    logger.info(f"Preparing product {trendyol_product.id} WITHOUT attributes per request")
+  elif required_attribute_names:
+    logger.info(f"Preparing product {trendyol_product.id} with ONLY these required attributes: {required_attribute_names}")
 
   # Clean up description - remove any "Satıcı:" text and related HTML
   description = trendyol_product.description
@@ -1580,6 +1592,78 @@ def prepare_product_for_trendyol(trendyol_product: TrendyolProduct) -> Dict:
           except Exception as e:
               print(f"[DEBUG-API] Varyant boyutu eklerken hata: {str(e)}")
 
+  # İki durumu ele alalım: öznitelik gönderme veya sadece belirli özniteliklerle 
+  
+  # Öznitelik filreleme
+  # Attribute filtering based on params
+  filtered_attributes = []
+  
+  if include_attributes:
+    if required_attribute_names and isinstance(required_attribute_names, list):
+      # Sadece gereken öznitelikleri ekle
+      # Only include required attributes by name
+      logger.info(f"Filtering attributes to only include required: {required_attribute_names}")
+      
+      # Gereken öznitelikleri kategorilerde ara ve uygun olanlarını seç
+      # Find required attributes in category and select appropriate ones
+      try:
+        # Kategori özniteliklerini al
+        category_attrs = product_manager.category_finder.get_category_attributes(
+            trendyol_product.category_id)
+            
+        # Her zorunlu öznitelik için
+        for required_name in required_attribute_names:
+          required_name_lower = required_name.lower()
+          
+          # Varolan öznitelikler içinde ara
+          attr_found = False
+          for attr in attributes:
+            attr_name = attr.get('attributeName', '')
+            if attr_name and attr_name.lower() == required_name_lower:
+              filtered_attributes.append(attr)
+              attr_found = True
+              logger.info(f"Bulunan zorunlu öznitelik: {attr_name}")
+              break
+              
+          # Eğer bulunamadıysa, kategoriden bu öznitelği ara
+          if not attr_found:
+            logger.info(f"Zorunlu öznitelik mevcut değil, kategori özniteliklerinden arıyoruz: {required_name}")
+            for cat_attr in category_attrs.get('categoryAttributes', []):
+              attr_name = cat_attr['attribute']['name']
+              if attr_name.lower() == required_name_lower:
+                # Öznitelik bulundu, API'den gelen ilk değeri kullan (veya "Belirtilmemiş")
+                if cat_attr.get('attributeValues'):
+                  # Önce "Belirtilmemiş" değerini ara
+                  belirtilmemis_value = None
+                  for val in cat_attr['attributeValues']:
+                    val_name = val['name'].lower()
+                    if val_name in ['belirtilmemiş', 'belirtilmemis', 'bilinmiyor', 'other', 'diğer']:
+                      belirtilmemis_value = val
+                      break
+                  
+                  # Eğer "Belirtilmemiş" bulunamadıysa ilk değeri kullan
+                  use_value = belirtilmemis_value or cat_attr['attributeValues'][0]
+                  
+                  filtered_attributes.append({
+                    "attributeId": cat_attr['attribute']['id'],
+                    "attributeName": attr_name,
+                    "attributeValueId": use_value['id'],
+                    "attributeValue": use_value['name']
+                  })
+                  logger.info(f"Zorunlu öznitelik kategoriden eklendi: {attr_name} = {use_value['name']}")
+                  break
+      except Exception as e:
+        logger.warning(f"Required attributes filtering error: {str(e)}")
+        
+      # Use the filtered attributes
+      logger.info(f"Toplam {len(filtered_attributes)} zorunlu öznitelik eklendi.")
+    else:
+      # Use all attributes as is
+      filtered_attributes = attributes
+  else:
+    # Don't include any attributes
+    filtered_attributes = []
+    
   # Construct the payload
   payload = {
       "barcode": trendyol_product.barcode,
@@ -1599,7 +1683,7 @@ def prepare_product_for_trendyol(trendyol_product: TrendyolProduct) -> Dict:
       "images": [{
           "url": trendyol_product.image_url
       }],
-      "attributes": attributes
+      "attributes": filtered_attributes
   }
 
   # Add additional images if available
@@ -1614,16 +1698,25 @@ def prepare_product_for_trendyol(trendyol_product: TrendyolProduct) -> Dict:
 def sync_product_to_trendyol(trendyol_product: TrendyolProduct) -> str:
   """
     Sync a Trendyol product to the Trendyol platform.
+    
+    İki aşamalı bir yaklaşım kullanır:
+    1. İlk önce ürünü öznitelik olmadan gönderir
+    2. Hata mesajlarına göre sadece gerekli öznitelikleri ekler ve tekrar dener
+    
     Returns the batch ID of the submission.
     Raises exceptions if the sync fails.
     """
   try:
-    # Prepare the product data
-    product_data = prepare_product_for_trendyol(trendyol_product)
-
     # Get the API client
     api_client = get_api_client()
-
+    
+    # İlk adım: Ürünü özniteliksiz gönder
+    # Step 1: Send product without attributes first
+    logger.info(f"Önce ürünü öznitelik olmadan gönderiyoruz: {trendyol_product.id}")
+    
+    # Prepare the product data initially without attributes
+    product_data = prepare_product_for_trendyol(trendyol_product, include_attributes=False)
+    
     # Send the product to Trendyol
     response = api_client.post(
         f"product/sellers/{api_client.config.seller_id}/products",
@@ -1638,13 +1731,82 @@ def sync_product_to_trendyol(trendyol_product: TrendyolProduct) -> str:
     trendyol_product.batch_id = batch_id
     trendyol_product.batch_status = 'processing'
     trendyol_product.last_sync_time = timezone.now()
-    trendyol_product.status_message = "Product submitted to Trendyol"
+    trendyol_product.status_message = "Product submitted to Trendyol without attributes"
     trendyol_product.save()
 
-    logger.info(
-        f"Product {trendyol_product.id} submitted to Trendyol with batch ID: {batch_id}"
-    )
-
+    logger.info(f"Product {trendyol_product.id} submitted to Trendyol with batch ID: {batch_id}")
+    
+    # Wait a moment for batch processing
+    time.sleep(2)
+    
+    # İkinci adım: Batch durumunu kontrol et ve gerekliyse özniteliklerle tekrar gönder
+    # Step 2: Check batch status and resend with attributes if needed
+    required_attributes = []
+    
+    try:
+      # Check batch status
+      status_response = api_client.get(
+          f"product/sellers/{api_client.config.seller_id}/products/batch-requests/{batch_id}"
+      )
+      
+      # Log the full response for debugging
+      logger.info(f"Batch status response: {status_response}")
+      
+      # Check if batch failed due to missing attributes
+      if status_response.get('status') == 'FAILED':
+        items_response = api_client.get(
+          f"product/sellers/{api_client.config.seller_id}/products/batch-requests/{batch_id}/items"
+        )
+        
+        if items_response.get('items'):
+          for item in items_response.get('items'):
+            if item.get('failureReasons'):
+              # Extract required attribute names from error messages
+              for reason in item.get('failureReasons'):
+                # Typical error message: "Zorunlu kategori özellik bilgisi eksiktir. Eksik alan: Boy"
+                if "Zorunlu kategori özellik bilgisi eksiktir" in reason:
+                  # Extract attribute name
+                  match = re.search(r'Eksik alan: (.+)$', reason)
+                  if match:
+                    required_attr = match.group(1)
+                    required_attributes.append(required_attr)
+                    logger.info(f"Zorunlu öznitelik tespit edildi: {required_attr}")
+        
+        if required_attributes:
+          logger.info(f"Tespit edilen zorunlu öznitelikler: {', '.join(required_attributes)}")
+          
+          # Resend with only the required attributes
+          product_data = prepare_product_for_trendyol(
+            trendyol_product, 
+            include_attributes=True,
+            required_attribute_names=required_attributes
+          )
+          
+          # Send the product to Trendyol again
+          response = api_client.post(
+              f"product/sellers/{api_client.config.seller_id}/products",
+              {"items": [product_data]})
+      
+          # Get the new batch ID
+          new_batch_id = response.get('batchRequestId')
+          if not new_batch_id:
+            raise ValueError(f"No batch ID returned from Trendyol API: {response}")
+      
+          # Update the product with the new batch ID
+          trendyol_product.batch_id = new_batch_id
+          trendyol_product.batch_status = 'processing'
+          trendyol_product.last_sync_time = timezone.now()
+          trendyol_product.status_message = f"Ürün sadece zorunlu özniteliklerle ({len(required_attributes)}) tekrar gönderildi"
+          trendyol_product.save()
+      
+          logger.info(f"Product {trendyol_product.id} resubmitted with required attributes. New batch ID: {new_batch_id}")
+          
+          # Return the new batch ID
+          return new_batch_id
+    except Exception as e:
+      logger.warning(f"Error checking batch status: {str(e)}. Continuing with original batch ID.")
+    
+    # If no resend occurred, return the original batch ID
     return batch_id
   except Exception as e:
     # Update the product status
