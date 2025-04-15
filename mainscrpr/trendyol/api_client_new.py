@@ -3,6 +3,7 @@ import json
 import time
 import re
 import uuid
+import copy
 from urllib.parse import quote
 from typing import Dict, List, Optional, Union, Any
 from dataclasses import dataclass
@@ -10,7 +11,11 @@ from functools import lru_cache
 import logging
 from decimal import Decimal
 
-from django.utils import timezone
+try:
+    from django.utils import timezone
+except ImportError:
+    import datetime
+    timezone = datetime.datetime
 from .models import TrendyolProduct, TrendyolBrand, TrendyolCategory, TrendyolAPIConfig
 
 logging.basicConfig(
@@ -723,264 +728,94 @@ class TrendyolProductManager:
       raise
 
   def create_product(self, product_data: ProductData) -> str:
-    """Create a new product on Trendyol with attribute matching"""
+    """Create a new product on Trendyol"""
     try:
       category_id = self.category_finder.find_best_category(
           product_data.category_name, product_title=product_data.title)
       brand_id = self.get_brand_id(product_data.brand_name)
-      # Pass both product title and description to extract attributes
-      attributes = self._get_attributes_for_category(
-          category_id, 
-          product_description=product_data.description,
-          product_title=product_data.title
-      )
-
+      
+      # İlk önce boş öznitelik listesi ile göndermeyi deneyelim
+      # Try sending with empty attributes list first to see which ones are actually required
+      initial_attributes = []
+      
+      logger.info("Submitting product with empty attributes to discover required attributes...")
       payload = self._build_product_payload(product_data, category_id,
-                                            brand_id, attributes)
+                                            brand_id, initial_attributes)
+      
       logger.info("Submitting product creation request...")
       response = self.api.post(
           f"product/sellers/{self.api.config.seller_id}/products", payload)
-
-      return response.get('batchRequestId')
+      
+      batch_id = response.get('batchRequestId')
+      
+      if batch_id:
+          # Log the batch ID for reference
+          logger.info(f"Product submitted with batch ID: {batch_id}")
+          print(f"[DEBUG-API] Ürün boş özniteliklerle gönderildi. Batch ID: {batch_id}")
+          print(f"[DEBUG-API] Batch durumunu kontrol etmek için: {batch_id}")
+      
+      return batch_id
     except Exception as e:
       logger.error(f"Product creation failed: {str(e)}")
-      raise
-      
-  def create_product_without_attributes(self, product_data: ProductData) -> str:
-    """
-    Create a new product on Trendyol without any attributes.
-    This is used as the first step in the "try first, then fix" approach
-    where we submit a product without attributes, then check what attributes are required.
-    """
-    try:
-      category_id = self.category_finder.find_best_category(
-          product_data.category_name, product_title=product_data.title)
-      brand_id = self.get_brand_id(product_data.brand_name)
-      
-      # Use empty attributes list
-      attributes = []
-      
-      payload = self._build_product_payload(product_data, category_id,
-                                            brand_id, attributes)
-      logger.info("Submitting product without attributes...")
-      response = self.api.post(
-          f"product/sellers/{self.api.config.seller_id}/products", payload)
-
-      return response.get('batchRequestId')
-    except Exception as e:
-      logger.error(f"Product creation without attributes failed: {str(e)}")
       raise
 
   def check_batch_status(self, batch_id: str) -> Dict:
     """Check the status of a batch operation"""
     try:
-      return self.api.get(
+      response = self.api.get(
           f"product/sellers/{self.api.config.seller_id}/products/batch-requests/{batch_id}"
       )
+      
+      # Log detailed status info for debugging
+      status = response.get('status', 'UNKNOWN')
+      items = response.get('items', [])
+      print(f"[DEBUG-API] Batch {batch_id} durumu: {status}")
+      
+      if items:
+          for idx, item in enumerate(items):
+              item_status = item.get('status')
+              failure_reasons = item.get('failureReasons', [])
+              if item_status == 'FAILED' and failure_reasons:
+                  print(f"[DEBUG-API] Ürün {idx+1} hata nedenleri:")
+                  for reason in failure_reasons:
+                      print(f"[DEBUG-API]   - {reason}")
+      
+      return response
     except Exception as e:
       logger.error(f"Failed to check batch status: {str(e)}")
       raise
       
-  def process_batch_errors(self, batch_id: str, product_data: ProductData) -> Dict:
+  def get_required_attributes_from_error(self, batch_id: str) -> List[str]:
     """
-    Process batch errors, extract required attributes from failure reasons,
-    and create a product with correct attributes based on batch errors.
+    Batch ID'den gelen hata mesajlarını analiz ederek gerekli öznitelikleri belirler
     
-    Args:
-        batch_id: The batch ID to check for errors
-        product_data: The original product data that was submitted
-        
-    Returns:
-        Dict with keys:
-        - success: Boolean indicating if processing was successful
-        - batch_id: New batch ID if product was resubmitted, original batch ID otherwise
-        - message: Status message describing what happened
+    Örnek hata mesajı: "Zorunlu kategori özellik bilgisi eksiktir. Eksik alan: Boy"
     """
     try:
-      # 1. Check the batch status
-      batch_status = self.check_batch_status(batch_id)
-      
-      # 2. If batch was successful, no further processing needed
-      if batch_status.get('status') == 'SUCCESS':
-        return {
-          'success': True,
-          'batch_id': batch_id,
-          'message': 'Batch was successful, no errors to process'
-        }
-      
-      # 3. Extract failure reasons from batch status
-      items = batch_status.get('items', [])
-      required_attributes = []
-      
-      for item in items:
-        failure_reasons = item.get('failureReasons', [])
+        # Batch durumunu kontrol et
+        batch_status = self.check_batch_status(batch_id)
+        items = batch_status.get('items', [])
         
-        # Look for missing attribute errors in failure reasons
-        for reason in failure_reasons:
-          # Pattern to match: "Zorunlu kategori özellik bilgisi eksiktir. Eksik alan: XXX"
-          if "Zorunlu kategori özellik bilgisi eksiktir" in reason:
-            try:
-              # Extract the attribute name from the error message
-              attr_name = reason.split("Eksik alan:")[1].strip()
-              if attr_name and attr_name not in required_attributes:
-                required_attributes.append(attr_name)
-                print(f"[DEBUG-API] Required attribute found in error: {attr_name}")
-            except Exception as e:
-              print(f"[DEBUG-API] Error parsing failure reason '{reason}': {str(e)}")
-      
-      # 4. If no required attributes found in errors, can't process further
-      if not required_attributes:
-        return {
-          'success': False,
-          'batch_id': batch_id,
-          'message': 'No required attributes found in batch errors'
-        }
-      
-      # 5. Get the category ID for this product
-      category_id = self.category_finder.find_best_category(
-          product_data.category_name, product_title=product_data.title)
-      
-      # 6. Get the brand ID for this product
-      brand_id = self.get_brand_id(product_data.brand_name)
-      
-      # 7. Get category attributes from API
-      category_attrs = self.category_finder.get_category_attributes(category_id)
-      category_attributes = category_attrs.get('categoryAttributes', [])
-      
-      # 8. Find required attributes in category attributes and populate values
-      attributes_to_add = []
-      
-      # IMPORTANT: Only add the specific attributes mentioned in failure reasons
-      for attr in category_attributes:
-        attr_name = attr['attribute']['name']
+        # Gerekli öznitelik isimlerini topla
+        required_attributes = []
         
-        # Check if this attribute is in our required list
-        if attr_name in required_attributes or any(req.lower() in attr_name.lower() for req in required_attributes):
-          print(f"[DEBUG-API] Processing required attribute: {attr_name}")
-          
-          if attr.get('attributeValues') and len(attr['attributeValues']) > 0:
-            # Handle special attributes like kumaş and kalıp with "Belirtilmemiş"
-            is_fabric_attribute = any(keyword in attr_name.lower() for keyword in SPECIAL_ATTRIBUTES['kumaş'])
-            is_pattern_attribute = any(keyword in attr_name.lower() for keyword in SPECIAL_ATTRIBUTES['kalıp'])
+        for item in items:
+            failure_reasons = item.get('failureReasons', [])
             
-            if is_fabric_attribute or is_pattern_attribute:
-              # Look for "Belirtilmemiş" option
-              belirtilmemis_value = None
-              for val in attr['attributeValues']:
-                if val['name'].lower() in ['belirtilmemiş', 'belirtilmemis', 'bilinmiyor', 'other', 'diğer']:
-                  belirtilmemis_value = val
-                  break
-                  
-              if belirtilmemis_value:
-                attributes_to_add.append({
-                  "attributeId": attr['attribute']['id'],
-                  "attributeValueId": belirtilmemis_value['id']
-                })
-                print(f"[DEBUG-API] Added 'Belirtilmemiş' for {attr_name}")
-                continue
-            
-            # For color attribute, try to extract from title or description
-            if attr_name.lower() in ['renk', 'color', 'colour']:
-              # Try to find a matching color from product title or description
-              color_value = None
-              
-              if product_data.description:
-                # Try to find color in description
-                for val in attr['attributeValues']:
-                  if val['name'].lower() in product_data.description.lower():
-                    color_value = val
-                    break
-                    
-              if not color_value and product_data.title:
-                # Try to find color in title
-                for val in attr['attributeValues']:
-                  if val['name'].lower() in product_data.title.lower():
-                    color_value = val
-                    break
-              
-              # If found a matching color, use it
-              if color_value:
-                attributes_to_add.append({
-                  "attributeId": attr['attribute']['id'],
-                  "attributeValueId": color_value['id']
-                })
-                print(f"[DEBUG-API] Added color attribute: {color_value['name']}")
-                continue
-            
-            # For gender attribute, try to determine from product title or description
-            if attr_name.lower() in ['cinsiyet', 'gender']:
-              gender_value = None
-              
-              # Define gender mappings
-              gender_keywords = {
-                'erkek': ['erkek', 'men', 'man', 'male'],
-                'kadın': ['kadın', 'kadin', 'women', 'woman', 'female', 'bayan'],
-                'unisex': ['unisex', 'both'],
-                'kız çocuk': ['kız çocuk', 'kız', 'girl'],
-                'erkek çocuk': ['erkek çocuk', 'oğlan', 'boy']
-              }
-              
-              # Check title and description for gender clues
-              content_to_check = (product_data.title or '').lower() + ' ' + (product_data.description or '').lower()
-              
-              for gender, keywords in gender_keywords.items():
-                if any(keyword in content_to_check for keyword in keywords):
-                  # Found gender match, now find corresponding attribute value
-                  for val in attr['attributeValues']:
-                    if gender.lower() in val['name'].lower():
-                      gender_value = val
-                      break
-                      
-                  if gender_value:
-                    break
-              
-              # If found a matching gender, use it
-              if gender_value:
-                attributes_to_add.append({
-                  "attributeId": attr['attribute']['id'],
-                  "attributeValueId": gender_value['id']
-                })
-                print(f"[DEBUG-API] Added gender attribute: {gender_value['name']}")
-                continue
-            
-            # For all other attributes, use the first available value
-            attributes_to_add.append({
-              "attributeId": attr['attribute']['id'],
-              "attributeValueId": attr['attributeValues'][0]['id']
-            })
-            print(f"[DEBUG-API] Added attribute {attr_name} with value {attr['attributeValues'][0]['name']}")
-      
-      # 9. Submit updated product with required attributes
-      if attributes_to_add:
-        print(f"[DEBUG-API] Resubmitting product with {len(attributes_to_add)} attributes")
-        payload = self._build_product_payload(
-          product_data, category_id, brand_id, attributes_to_add
-        )
+            for reason in failure_reasons:
+                # Eksik öznitelik hatalarını ara
+                match = re.search(r'Zorunlu kategori özellik bilgisi eksiktir\. Eksik alan: (.+)$', reason)
+                if match:
+                    attr_name = match.group(1).strip()
+                    if attr_name not in required_attributes:
+                        required_attributes.append(attr_name)
+                        print(f"[DEBUG-API] Tespit edilen zorunlu öznitelik: {attr_name}")
         
-        response = self.api.post(
-          f"product/sellers/{self.api.config.seller_id}/products", payload
-        )
-        
-        new_batch_id = response.get('batchRequestId')
-        return {
-          'success': True,
-          'batch_id': new_batch_id,
-          'message': f'Product resubmitted with {len(attributes_to_add)} required attributes'
-        }
-      else:
-        return {
-          'success': False,
-          'batch_id': batch_id,
-          'message': 'No attributes could be added based on error messages'
-        }
-        
+        return required_attributes
     except Exception as e:
-      logger.error(f"Error processing batch errors: {str(e)}")
-      return {
-        'success': False,
-        'batch_id': batch_id,
-        'message': f'Error: {str(e)}'
-      }
+        logger.error(f"Error analyzing batch errors: {str(e)}")
+        print(f"[DEBUG-API] Batch hata analizi hatası: {str(e)}")
+        return []
 
   def _build_product_payload(self, product: ProductData, category_id: int,
                              brand_id: int, attributes: List[Dict]) -> Dict:
@@ -1837,47 +1672,268 @@ def prepare_product_for_trendyol(trendyol_product: TrendyolProduct) -> Dict:
   return payload
 
 
+def get_required_attributes_and_retry(batch_id: str, product_data: Dict, max_retries: int = 3) -> str:
+  """
+  Batch ID'yi kullanarak hata mesajlarından gereken öznitelikleri alıp ürünü tekrar gönderir.
+  Hata devam ederse birden fazla kez deneyerek tüm gerekli öznitelikleri tespit eder.
+  
+  Args:
+      batch_id: İlk gönderimden dönen batch ID
+      product_data: Ürün bilgilerini içeren sözlük
+      max_retries: Maksimum tekrar deneme sayısı
+      
+  Returns:
+      Yeni oluşturulan batch ID
+  """
+  current_batch_id = batch_id
+  current_product_data = copy.deepcopy(product_data)
+  retry_count = 0
+  all_required_attrs = set()  # Şimdiye kadar tespit edilen tüm zorunlu öznitelikler
+  
+  try:
+    # API client al
+    product_manager = get_product_manager()
+    
+    # Kategori ID'sini kontrol et
+    category_id = current_product_data.get('categoryId')
+    if not category_id:
+      logger.error("Category ID is required")
+      return current_batch_id
+      
+    # Kategori özniteliklerini al
+    category_attrs = product_manager.category_finder.get_category_attributes(category_id)
+    
+    # Current product attributes - şu ana kadar eklenmiş öznitelikler
+    current_attributes = current_product_data.get('attributes', [])
+    
+    # Tekrarlı deneme döngüsü - her seferinde yeni zorunlu öznitelikler eklenecek
+    while retry_count < max_retries:
+      retry_count += 1
+      
+      # Gereken öznitelikleri hata mesajlarından belirle
+      new_required_attrs = product_manager.get_required_attributes_from_error(current_batch_id)
+      
+      if not new_required_attrs:
+        logger.info(f"No new required attributes found, product might be ready or processing")
+        
+        # Son batch durumunu kontrol et
+        batch_status = product_manager.check_batch_status(current_batch_id)
+        status = batch_status.get('status', 'UNKNOWN')
+        
+        if status in ['SUCCEEDED', 'SUCCESS', 'PROCESSING', 'IN_PROGRESS']:
+          logger.info(f"Batch {current_batch_id} status is {status}, no more retries needed")
+          print(f"[DEBUG-API] Batch durumu: {status}. Başarılı oldu veya işleniyor.")
+          return current_batch_id
+          
+        if retry_count >= max_retries:
+          logger.warning(f"Maximum retries ({max_retries}) reached with no new attributes found")
+          print(f"[DEBUG-API] Maksimum deneme sayısına ulaşıldı: {max_retries}")
+          return current_batch_id
+          
+        # Kısa bir bekleme süresi ve tekrar kontrol
+        logger.info("Waiting 3 seconds before rechecking batch status...")
+        time.sleep(3)
+        continue
+        
+      # Yeni bulunan öznitelikleri genel listeye ekle
+      print(f"[DEBUG-API] Deneme {retry_count}: {len(new_required_attrs)} yeni zorunlu öznitelik bulundu")
+      all_required_attrs.update(new_required_attrs)
+      
+      # Gereken öznitelikleri ata
+      for attr_name in new_required_attrs:
+        # Daha önce eklenmiş mi kontrol et
+        if any(attr.get('attributeName') == attr_name for attr in current_attributes):
+          print(f"[DEBUG-API] {attr_name} özniteliği zaten eklenmiş, atlanıyor")
+          continue
+          
+        attr_added = False
+        
+        # Kategori özelliklerinde ara
+        for cat_attr in category_attrs.get('categoryAttributes', []):
+          if cat_attr['attribute']['name'] == attr_name and cat_attr.get('attributeValues'):
+            # Öznitelik değeri bulundu
+            attribute = {
+              "attributeId": cat_attr['attribute']['id'],
+              "attributeName": cat_attr['attribute']['name']
+            }
+            
+            # Özel öznitelik işleme (kumaş/kalıp)
+            attr_name_lower = attr_name.lower()
+            
+            # SPECIAL_ATTRIBUTES değişkeninin tanımlı olup olmadığını kontrol et
+            if 'SPECIAL_ATTRIBUTES' not in globals():
+                # Tanımlı değilse, özel öznitelikleri burada tanımla
+                is_fabric_attribute = any(keyword in attr_name_lower for keyword in ['kumaş', 'fabric', 'material'])
+                is_pattern_attribute = any(keyword in attr_name_lower for keyword in ['kalıp', 'pattern', 'fit'])
+            else:
+                # Tanımlıysa, global değişkeni kullan
+                is_fabric_attribute = any(keyword in attr_name_lower for keyword in SPECIAL_ATTRIBUTES.get('kumaş', [])) 
+                is_pattern_attribute = any(keyword in attr_name_lower for keyword in SPECIAL_ATTRIBUTES.get('kalıp', []))
+            
+            # Belirtilmemiş değerini ara
+            if is_fabric_attribute or is_pattern_attribute:
+              belirtilmemis_found = False
+              for val in cat_attr['attributeValues']:
+                if val['name'].lower() in ['belirtilmemiş', 'belirtilmemis', 'bilinmiyor', 'other', 'diğer']:
+                  attribute["attributeValueId"] = val['id']
+                  attribute["attributeValue"] = val['name']
+                  belirtilmemis_found = True
+                  print(f"[DEBUG-API] Özel işleme: {attr_name} için 'Belirtilmemiş' değeri seçildi")
+                  break
+              
+              # Belirtilmemiş bulunamadıysa ilk değeri kullan
+              if not belirtilmemis_found and cat_attr['attributeValues']:
+                first_val = cat_attr['attributeValues'][0]
+                attribute["attributeValueId"] = first_val['id']
+                attribute["attributeValue"] = first_val['name']
+                print(f"[DEBUG-API] {attr_name} için ilk değer seçildi: {first_val['name']}")
+            else:
+              # Normal öznitelik için ilk değeri kullan
+              first_val = cat_attr['attributeValues'][0]
+              attribute["attributeValueId"] = first_val['id']
+              attribute["attributeValue"] = first_val['name']
+              print(f"[DEBUG-API] {attr_name} için ilk değer seçildi: {first_val['name']}")
+            
+            current_attributes.append(attribute)
+            attr_added = True
+            break
+        
+        if not attr_added:
+          logger.warning(f"Could not find attribute '{attr_name}' in category attributes")
+      
+      # Attributes listesini güncelle
+      if not current_attributes:
+        logger.warning("No attributes could be added")
+        return current_batch_id
+      
+      # Ürün payload'ını güncelle
+      current_product_data['attributes'] = current_attributes
+      
+      # Ürünü tekrar gönder
+      logger.info(f"Resubmitting product with {len(current_attributes)} attributes (pass {retry_count})")
+      print(f"[DEBUG-API] Ürün {len(current_attributes)} öznitelik ile tekrar gönderiliyor (Deneme {retry_count})")
+      print(f"[DEBUG-API] Eklenen öznitelikler: {', '.join([attr.get('attributeName') for attr in current_attributes])}")
+      
+      # API üzerinden gönder
+      response = product_manager.api.post(
+        f"product/sellers/{product_manager.api.config.seller_id}/products", 
+        {"items": [current_product_data]}
+      )
+      
+      new_batch_id = response.get('batchRequestId')
+      if new_batch_id:
+        logger.info(f"Product resubmitted with batch ID: {new_batch_id}")
+        print(f"[DEBUG-API] Ürün tekrar gönderildi. Yeni Batch ID: {new_batch_id}")
+        current_batch_id = new_batch_id
+        
+        # Kısa bir bekleme süresi - API'nin işleme zamanı için
+        logger.info("Waiting 3 seconds for API processing...")
+        time.sleep(3)
+        
+        # Batch durumunu hemen kontrol et
+        batch_status = product_manager.check_batch_status(current_batch_id)
+        status = batch_status.get('status', 'UNKNOWN')
+        
+        # Eğer başarılı olduysa döngüyü sonlandır
+        if status in ['SUCCEEDED', 'SUCCESS']:
+          logger.info(f"Batch {current_batch_id} status is {status}, retries complete")
+          print(f"[DEBUG-API] Batch durumu: {status}. İşlem başarıyla tamamlandı!")
+          return current_batch_id
+      else:
+        logger.error("Failed to get batch ID from response")
+        return current_batch_id
+    
+    # Son batch ID'yi döndür
+    return current_batch_id
+      
+  except Exception as e:
+    logger.error(f"Error in get_required_attributes_and_retry: {str(e)}")
+    print(f"[DEBUG-API] Hata: {str(e)}")
+    return current_batch_id
+
+
 def sync_product_to_trendyol(trendyol_product: TrendyolProduct) -> str:
   """
-    Sync a Trendyol product to the Trendyol platform.
+    Sync a Trendyol product to the Trendyol platform using minimalist approach:
+    1. First send without attributes
+    2. Check batch status for required attributes
+    3. Resend with only required attributes
+    
     Returns the batch ID of the submission.
     Raises exceptions if the sync fails.
     """
   try:
-    # Prepare the product data
+    # 1. Prepare product data - but without attributes
     product_data = prepare_product_for_trendyol(trendyol_product)
-
-    # Get the API client
-    api_client = get_api_client()
-
-    # Send the product to Trendyol
-    response = api_client.post(
-        f"product/sellers/{api_client.config.seller_id}/products",
-        {"items": [product_data]})
+    
+    # Get the API manager
+    product_manager = get_product_manager()
+    
+    # Remove attributes before sending
+    product_data_copy = copy.deepcopy(product_data)
+    product_data_copy['attributes'] = []
+    
+    logger.info(f"Sending product {trendyol_product.id} without attributes first")
+    print(f"[DEBUG-API] Ürün önce özniteliksiz gönderiliyor (ID: {trendyol_product.id})")
+    
+    # 2. Send the product to Trendyol
+    response = product_manager.api.post(
+        f"product/sellers/{product_manager.api.config.seller_id}/products",
+        {"items": [product_data_copy]})
 
     # Get the batch ID
-    batch_id = response.get('batchRequestId')
-    if not batch_id:
+    initial_batch_id = response.get('batchRequestId')
+    if not initial_batch_id:
       raise ValueError(f"No batch ID returned from Trendyol API: {response}")
-
-    # Update the product with the batch ID
-    trendyol_product.batch_id = batch_id
+    
+    # Update product with initial batch ID
+    trendyol_product.batch_id = initial_batch_id
     trendyol_product.batch_status = 'processing'
     trendyol_product.last_sync_time = timezone.now()
-    trendyol_product.status_message = "Product submitted to Trendyol"
+    trendyol_product.status_message = "Initial submission without attributes"
     trendyol_product.save()
-
-    logger.info(
-        f"Product {trendyol_product.id} submitted to Trendyol with batch ID: {batch_id}"
-    )
-
-    return batch_id
+    
+    logger.info(f"Initial submission successful with batch ID: {initial_batch_id}")
+    print(f"[DEBUG-API] İlk gönderim başarılı. Batch ID: {initial_batch_id}")
+    
+    # 3. Wait for a moment before checking batch status
+    time.sleep(2)
+    
+    # 4. Check batch status to get required attributes
+    logger.info(f"Checking batch status to determine required attributes")
+    batch_status = product_manager.check_batch_status(initial_batch_id)
+    
+    # 5. Get required attributes from error messages
+    required_attrs = product_manager.get_required_attributes_from_error(initial_batch_id)
+    
+    # 6. If required attributes found, resubmit with them
+    if required_attrs:
+      logger.info(f"Found {len(required_attrs)} required attributes: {', '.join(required_attrs)}")
+      print(f"[DEBUG-API] {len(required_attrs)} zorunlu öznitelik bulundu: {', '.join(required_attrs)}")
+      
+      # Resubmit with required attributes
+      final_batch_id = get_required_attributes_and_retry(initial_batch_id, product_data_copy)
+      
+      if final_batch_id != initial_batch_id:
+        # Update product with new batch ID
+        trendyol_product.batch_id = final_batch_id
+        trendyol_product.batch_status = 'processing'
+        trendyol_product.last_sync_time = timezone.now()
+        trendyol_product.status_message = f"Resubmitted with {len(required_attrs)} required attributes"
+        trendyol_product.save()
+        
+        logger.info(f"Product resubmitted with required attributes, new batch ID: {final_batch_id}")
+        print(f"[DEBUG-API] Ürün zorunlu özniteliklerle tekrar gönderildi. Yeni Batch ID: {final_batch_id}")
+        
+        return final_batch_id
+    
+    return initial_batch_id
+    
   except Exception as e:
     # Update the product status
     trendyol_product.batch_status = 'failed'
     trendyol_product.status_message = f"Sync failed: {str(e)}"
     trendyol_product.save()
 
-    logger.error(
-        f"Failed to sync product {trendyol_product.id} to Trendyol: {str(e)}")
+    logger.error(f"Failed to sync product {trendyol_product.id} to Trendyol: {str(e)}")
     raise
