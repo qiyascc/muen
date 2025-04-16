@@ -12,6 +12,7 @@ from .product_models import Product, ProductSize, City, Store, SizeStoreStock
 from trendyol import api_client
 from trendyol.api_helpers import submit_product_to_trendyol, prepare_product_for_submission
 from trendyol.fetch_api_data import fetch_all_categories, fetch_all_brands
+from .sopyo_api import send_product_to_sopyo
 
 # Product Models Admin Configuration
 
@@ -39,7 +40,7 @@ class ProductAdmin(ModelAdmin):
   readonly_fields = ('timestamp', )
   list_per_page = 20
   inlines = [ProductSizeInline]
-  actions = ['send_to_trendyol']
+  actions = ['send_to_trendyol', 'send_to_sopyo']
 
   # Unfold specific configurations
   fieldsets = (

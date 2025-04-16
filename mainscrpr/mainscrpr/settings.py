@@ -278,3 +278,11 @@ SCHEDULER_CONFIG = {
 }
 SCHEDULER_AUTOSTART = True
 SCHEDULER_TIMEZONE = "UTC"
+
+# API keys and tokens
+import os
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+TRENDYOL_SUPPLIER_ID = os.environ.get("TRENDYOL_SUPPLIER_ID", "199999")
+TRENDYOL_API_KEY = os.environ.get("TRENDYOL_API_KEY", "your-api-key")
+TRENDYOL_API_SECRET = os.environ.get("TRENDYOL_API_SECRET", "your-api-secret")
+SOPYO_API_TOKEN = os.environ.get("SOPYO_API_TOKEN", "1ba49fbfc39f233229242b89e0a3baeecFEDL")
