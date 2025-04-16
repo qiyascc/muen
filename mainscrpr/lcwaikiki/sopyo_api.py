@@ -83,6 +83,15 @@ class SopyoAPI:
             if not self.login():
                 return {"status": False, "message": "API login hatası"}
         
+        # Stok ve resim kontrolü
+        if product.get_total_stock() <= 0:
+            logger.warning(f"Ürün '{product.title}' (ID: {product.id}) stokta yok, gönderilmiyor.")
+            return {"status": False, "message": "Ürün stokta değil. Stok bilgisi olmayan ürünler gönderilemez."}
+            
+        if not product.images:
+            logger.warning(f"Ürün '{product.title}' (ID: {product.id}) için resim yok, gönderilmiyor.")
+            return {"status": False, "message": "Ürün resmi bulunamadı. Resim olmadan ürün gönderilemez."}
+        
         try:
             url = f"{SOPYO_API_BASE_URL}/api/v2/products"
             
@@ -118,30 +127,42 @@ class SopyoAPI:
             }
             
             # API isteği gönder
-            response = requests.post(
-                url, 
-                headers=self.headers,
-                data=json.dumps(product_data)
-            )
-            
-            if response.status_code == 200 or response.status_code == 201:
-                result = response.json()
-                logger.info(f"Ürün başarıyla Sopyo'ya gönderildi: {product.title}")
-                return result
-            else:
-                logger.error(f"Sopyo API ürün gönderme hatası. Status code: {response.status_code}")
-                logger.error(f"Hata detayı: {response.text}")
+            try:
+                # Gönderilen veriyi logla (debug için)
+                logger.info(f"Sopyo API'ye gönderilen veri: {json.dumps(product_data, indent=4)}")
                 
-                # Token süresi dolmuş olabilir, yeniden login dene
-                if response.status_code == 401:
-                    logger.info("Token süresi dolmuş, yeniden login deneniyor...")
-                    if self.login():
-                        return self.send_product(product)  # Recursive olarak tekrar dene
+                response = requests.post(
+                    url, 
+                    headers=self.headers,
+                    data=json.dumps(product_data)
+                )
+                
+                if response.status_code == 200 or response.status_code == 201:
+                    result = response.json()
+                    logger.info(f"Ürün başarıyla Sopyo'ya gönderildi: {product.title}")
+                    return result
+                else:
+                    logger.error(f"Sopyo API ürün gönderme hatası. Status code: {response.status_code}")
+                    logger.error(f"Hata detayı: {response.text}")
+                    
+                    # Hata mesajını ayrıştır
+                    try:
+                        error_data = response.json()
+                        logger.error(f"Hata JSON: {json.dumps(error_data, indent=4)}")
+                    except:
+                        logger.error("Hata yanıtı JSON formatında değil")
+                    
+                    # Token süresi dolmuş olabilir, yeniden login dene
+                    if response.status_code == 401:
+                        logger.info("Token süresi dolmuş, yeniden login deneniyor...")
+                        if self.login():
+                            return self.send_product(product)  # Recursive olarak tekrar dene
+            except requests.exceptions.RequestException as e:
+                logger.error(f"API isteği gönderilirken hata oluştu: {str(e)}")
                 
                 return {
                     "status": False, 
-                    "message": f"API hatası: {response.status_code}", 
-                    "details": response.text
+                    "message": f"API isteği hatası: {str(e)}"
                 }
         
         except Exception as e:
