@@ -90,9 +90,14 @@ class SopyoAPI:
             product_sizes = list(product.sizes.all())
             total_stock = product.get_total_stock()
             
+            # Başlık düzenleme: Fazla boşlukları temizle ve 150 karaktere sınırla
+            cleaned_title = ' '.join(product.title.split())  # Fazla boşlukları kaldır
+            if len(cleaned_title) > 149:
+                cleaned_title = cleaned_title[:149]  # Uzunsa 149 karaktere kısalt
+            
             # Ürün verilerini hazırla
             product_data = {
-                "title": product.title,
+                "title": cleaned_title,
                 "stock_code": product.product_code or f"LCW-{product.id}",
                 "stock": total_stock,
                 "category_id": 25,  # Varsayılan kategori ID
