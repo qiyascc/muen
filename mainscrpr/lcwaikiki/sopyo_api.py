@@ -97,7 +97,7 @@ class SopyoAPI:
                 "stock": total_stock,
                 "category_id": 25,  # Varsayılan kategori ID
                 "desi": 5,  # Varsayılan desi değeri
-                "tax_rate": 18,  # Varsayılan vergi oranı
+                "tax_rate": 10,  # Varsayılan vergi oranı
                 "sub_title": f"LC Waikiki {product.color or 'Ürün'}",
                 "barcode": product_sizes[0].barcode_list[0] if product_sizes and product_sizes[0].barcode_list else "",
                 "barcode_2": product_sizes[1].barcode_list[0] if len(product_sizes) > 1 and product_sizes[1].barcode_list else "",
