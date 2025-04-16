@@ -129,7 +129,11 @@ class SopyoAPI:
             # API isteği gönder
             try:
                 # Gönderilen veriyi logla (debug için)
-                logger.info(f"Sopyo API'ye gönderilen veri: {json.dumps(product_data, indent=4)}")
+                if product.id:  # Ürün ID'sini loglarda göster
+                    logger.info(f"Sopyo API'ye gönderilen ürün - ID: {product.id}, Başlık: {product.title}")
+                
+                # Debug modunda tüm veriyi logla
+                logger.debug(f"Sopyo API'ye gönderilen veri detayı: {json.dumps(product_data, indent=4)}")
                 
                 response = requests.post(
                     url, 
@@ -142,15 +146,21 @@ class SopyoAPI:
                     logger.info(f"Ürün başarıyla Sopyo'ya gönderildi: {product.title}")
                     return result
                 else:
-                    logger.error(f"Sopyo API ürün gönderme hatası. Status code: {response.status_code}")
-                    logger.error(f"Hata detayı: {response.text}")
+                    logger.error(f"[Ürün ID: {product.id}] Sopyo API ürün gönderme hatası. Status code: {response.status_code}")
+                    logger.error(f"[Ürün ID: {product.id}] Hata detayı: {response.text}")
                     
                     # Hata mesajını ayrıştır
                     try:
                         error_data = response.json()
-                        logger.error(f"Hata JSON: {json.dumps(error_data, indent=4)}")
+                        # Hata mesajını daha okunaklı hale getir
+                        hata_mesaji = error_data.get('message', 'Bilinmeyen hata')
+                        hata_detay = error_data.get('errors', {})
+                        
+                        logger.error(f"[Ürün ID: {product.id}] Sopyo hata mesajı: {hata_mesaji}")
+                        if hata_detay:
+                            logger.error(f"[Ürün ID: {product.id}] Hata detayları: {json.dumps(hata_detay, indent=4)}")
                     except:
-                        logger.error("Hata yanıtı JSON formatında değil")
+                        logger.error(f"[Ürün ID: {product.id}] Hata yanıtı JSON formatında değil")
                     
                     # Token süresi dolmuş olabilir, yeniden login dene
                     if response.status_code == 401:

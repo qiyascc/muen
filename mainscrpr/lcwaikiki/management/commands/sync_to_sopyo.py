@@ -64,6 +64,22 @@ class Command(BaseCommand):
                 ))
                 limit = in_stock_count
         
+        # Gönderim öncesi ürünlere dair özet bilgileri göster
+        if product_ids:
+            products = Product.objects.filter(id__in=product_ids)
+        else:
+            products = Product.objects.filter(in_stock=True).order_by('-timestamp')[:limit]
+            
+        self.stdout.write(self.style.SUCCESS(f"Gönderilecek ürünler hakkında:"))
+        self.stdout.write(f"- Toplam ürün sayısı: {products.count()}")
+        self.stdout.write(f"- Stokta olan ürün sayısı: {products.filter(in_stock=True).count()}")
+        self.stdout.write(f"- Stoğu olmayan ürün sayısı: {products.filter(in_stock=False).count()}")
+        
+        with_images = sum(1 for p in products if p.images)
+        without_images = sum(1 for p in products if not p.images)
+        self.stdout.write(f"- Resmi olan ürün sayısı: {with_images}")
+        self.stdout.write(f"- Resmi olmayan ürün sayısı: {without_images}")
+        
         # Ürünleri Sopyo'ya gönder
         self.stdout.write(self.style.SUCCESS("Sopyo API'ye bağlanılıyor..."))
         result = send_multiple_products_to_sopyo(product_ids, limit)
