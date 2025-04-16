@@ -284,6 +284,84 @@ class ProductAdmin(ModelAdmin):
           level=messages.WARNING if success_count > 0 else messages.ERROR)
 
   send_to_trendyol.short_description = "Send selected products to Trendyol"
+  
+  def send_to_sopyo(self, request, queryset):
+    """
+    Action to send selected products to Sopyo platform.
+    This implementation selects products and sends them to Sopyo in batches.
+    """
+    if not queryset.exists():
+      self.message_user(request,
+                        "No products selected to send to Sopyo",
+                        level=messages.ERROR)
+      return
+
+    # Filter out products that are not in stock
+    valid_products = []
+    skipped_products = []
+
+    for product in queryset:
+      if not product.in_stock:
+        skipped_products.append(product)
+      else:
+        valid_products.append(product)
+
+    # Show warnings for skipped products
+    for product in skipped_products:
+      self.message_user(
+          request,
+          f"Product '{product.title}' is not in stock and was skipped",
+          level=messages.WARNING)
+
+    if not valid_products:
+      self.message_user(request,
+                        "No in-stock products to send to Sopyo",
+                        level=messages.WARNING)
+      return
+
+    # Process products in batches
+    batch_size = min(5, len(valid_products))  # Kullanıcı arayüzü için daha küçük batch boyutu
+    self.message_user(
+        request,
+        f"Processing {len(valid_products)} products in batches of {batch_size}... This may take a while.",
+        level=messages.INFO)
+
+    # Ürünlerin ID'lerini topla
+    product_ids = [product.id for product in valid_products]
+    
+    try:
+      # API'ye bağlan ve ürünleri gönder
+      from .sopyo_api import send_multiple_products_to_sopyo
+      result = send_multiple_products_to_sopyo(product_ids, limit=min(10, len(product_ids)))
+      
+      if result.get("status", False):
+        results = result.get('results', {})
+        self.message_user(
+            request,
+            f"Sopyo API'ye gönderim tamamlandı: {results.get('success', 0)}/{results.get('total', 0)} ürün başarıyla gönderildi.",
+            level=messages.SUCCESS)
+            
+        # Başarısız ürünleri göster
+        if results.get('failed', 0) > 0:
+          for item in results.get('details', []):
+            if not item.get('result', {}).get('status', False):
+              self.message_user(
+                  request,
+                  f"Ürün ID: {item.get('product_id')}, Başlık: {item.get('title')}, Hata: {item.get('result', {}).get('message', 'Bilinmeyen hata')}",
+                  level=messages.WARNING)
+      else:
+        self.message_user(
+            request,
+            f"Sopyo API hatası: {result.get('message', 'Bilinmeyen hata')}",
+            level=messages.ERROR)
+    
+    except Exception as e:
+      self.message_user(
+          request,
+          f"Sopyo API entegrasyonu hatası: {str(e)}",
+          level=messages.ERROR)
+      
+  send_to_sopyo.short_description = "Send selected products to Sopyo"
 
 
 @admin.register(City)
