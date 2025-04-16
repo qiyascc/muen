@@ -107,7 +107,7 @@ class SopyoAPI:
                 "price1": [
                     {
                         "sale_price": str(product.price),
-                        "list_price": str(product.price * 0.8)  # Liste fiyatını %20 düşük göster
+                        "list_price": str(float(product.price) * 0.8)  # Liste fiyatını %20 düşük göster
                     }
                 ]
             }
