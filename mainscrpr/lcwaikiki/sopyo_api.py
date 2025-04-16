@@ -106,8 +106,8 @@ class SopyoAPI:
                 "images": product.images[:3] if product.images else [],
                 "price1": [
                     {
-                        "sale_price": str(product.price),
-                        "list_price": str(float(product.price) * 0.8)  # Liste fiyatını %20 düşük göster
+                        "sale_price": "{:.2f}".format(float(product.price)),
+                        "list_price": "{:.2f}".format(float(product.price) * 0.8)  # Liste fiyatını %20 düşük göster
                     }
                 ]
             }
