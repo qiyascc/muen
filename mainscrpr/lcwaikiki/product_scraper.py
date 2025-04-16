@@ -33,7 +33,7 @@ class ProductScraper:
         'Mozilla/5.0 (iPad; CPU OS 16_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.1 Mobile/15E148 Safari/604.1'
     ]
     
-    DEFAULT_CITY_ID = "870"  # Sakarya
+    DEFAULT_CITY_ID = "870"  # Sakarya - Default city for inventory checks
     INVENTORY_API_URL = "https://www.lcw.com/tr-TR/TR/ajax/Model/GetStoreInventoryMultiple"
     
     def __init__(self):
@@ -285,7 +285,7 @@ class ProductScraper:
                 return False
                 
             # Get active cities from configuration
-            active_cities = self.config.active_cities if self.config else ['870']
+            active_cities = self.config.active_cities if self.config else ['870']  # 870 = Sakarya
             
             # Dictionary to track cities and their total stock
             city_stocks = {}

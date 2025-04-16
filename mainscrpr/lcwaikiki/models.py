@@ -40,12 +40,11 @@ class Config(models.Model):
     }
     """
     CITY_CHOICES = [
+        ('870', 'Sakarya'),  # Default city
         ('34', 'Istanbul'),
         ('6', 'Ankara'),
         ('35', 'Izmir'),
         ('1', 'Adana'),
-        ('865', 'Default City'),
-        ('870', 'Sakarya'),
     ]
     
     name = models.CharField(max_length=100, unique=True, help_text="Configuration name")
@@ -58,7 +57,7 @@ class Config(models.Model):
     
     @property
     def default_city_id(self):
-        """Get the default city ID from the configuration"""
+        """Get the default city ID from the configuration (870 = Sakarya)"""
         try:
             return self.brands.get('city_config', {}).get('default_city_id', '870')
         except (AttributeError, KeyError):
