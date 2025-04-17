@@ -6,8 +6,10 @@ import base64
 from django.utils import timezone
 from openai import OpenAI
 import os
+import pathlib
 from functools import lru_cache
 import time
+from datetime import datetime
 from django.conf import settings
 
 from .models import TrendyolAPIConfig, TrendyolProduct
@@ -394,6 +396,9 @@ class TrendyolProductManager:
                 }]
             }
             
+            # İstek verilerini kaydet
+            self._save_product_request(product_data, product.stock_code)
+            
             # Send to Trendyol using the configured products endpoint
             seller_id = self.api.config.supplier_id
             endpoint = self.api.config.products_endpoint.format(sellerId=seller_id)
@@ -407,6 +412,34 @@ class TrendyolProductManager:
         except Exception as e:
             logger.error(f"Error creating product on Trendyol: {str(e)}")
             raise
+    
+    def _save_product_request(self, product_data, stock_code):
+        """
+        Trendyol API'sine gönderilen ürün verilerini JSON dosyasına kaydet
+        """
+        try:
+            # Requests klasörünü oluştur
+            requests_dir = pathlib.Path("requests/trendyol")
+            requests_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Dosya adını oluştur - stok kodu ile
+            filename = f"product_{stock_code}.json"
+            file_path = requests_dir / filename
+            
+            # Tarih ve saat bilgisini ekle
+            data_with_timestamp = {
+                "timestamp": datetime.now().isoformat(),
+                "data": product_data
+            }
+            
+            # JSON dosyasına kaydet, Türkçe karakterleri doğru göster
+            with open(file_path, 'w', encoding='utf-8') as f:
+                json.dump(data_with_timestamp, f, ensure_ascii=False, indent=2)
+                
+            logger.info(f"Saved Trendyol request data to {file_path}")
+            
+        except Exception as e:
+            logger.error(f"Error saving product request data: {str(e)}")
     
     def _format_attributes(self, attribute_values):
         """Format attributes for Trendyol API"""
