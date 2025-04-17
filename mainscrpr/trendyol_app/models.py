@@ -41,7 +41,7 @@ class TrendyolAPIConfig(models.Model):
     )
     batch_status_endpoint = models.CharField(
         max_length=255,
-        default="suppliers/{supplierId}/products/batch-requests/{batchId}",
+        default="product/sellers/{sellerId}/products/batch-requests/{batchRequestId}",
         verbose_name=_("Batch Durum Endpoint")
     )
     

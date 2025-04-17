@@ -421,12 +421,26 @@ class TrendyolProductManager:
     def check_batch_status(self, batch_id):
         """Check status of a product batch"""
         try:
-            supplier_id = self.api.config.supplier_id
+            seller_id = self.api.config.seller_id
             endpoint = self.api.config.batch_status_endpoint.format(
-                supplierId=supplier_id, 
-                batchId=batch_id
+                sellerId=seller_id, 
+                batchRequestId=batch_id
             )
             response = self.api.get(endpoint)
+            
+            # Başarılı yanıt kontrolü
+            if response and isinstance(response, dict):
+                status = response.get('status', '').upper()
+                if status == 'COMPLETED':
+                    # Başarısız ürün sayısını kontrol et
+                    failed_count = response.get('failedItemCount', 0)
+                    if failed_count == 0:
+                        logger.info(f"Batch {batch_id} completed successfully with no failures.")
+                    else:
+                        logger.warning(f"Batch {batch_id} completed but has {failed_count} failed items.")
+                else:
+                    logger.info(f"Batch {batch_id} status: {status}")
+            
             return response
         except Exception as e:
             logger.error(f"Error checking batch status: {str(e)}")
@@ -480,13 +494,44 @@ def check_product_batch_status(product):
         
         batch_status = product_manager.check_batch_status(product.batch_id)
         
-        status = batch_status.get('status', 'processing').lower()
-        message = None
+        # Trendyol API'dan dönen yanıt formatına göre durumu belirle
+        status = batch_status.get('status', 'PROCESSING').upper()
         
-        if status == 'failed':
-            message = batch_status.get('failureReasons', 'Unknown error')
-            if isinstance(message, list):
-                message = '; '.join([reason.get('message', 'Unknown') for reason in message])
+        # Status'u Django model statusuna dönüştür (hepsi küçük harf)
+        if status == 'COMPLETED':
+            django_status = 'completed'
+        elif status == 'FAILED':
+            django_status = 'failed'
+        else:
+            django_status = 'processing'
+            
+        # Hata mesajını işle
+        message = None
+        failed_count = batch_status.get('failedItemCount', 0)
+        
+        if failed_count > 0 or status == 'FAILED':
+            # Ürün seviyesindeki hataları topla
+            error_messages = []
+            
+            # items listesinde her bir ürün için döngü
+            items = batch_status.get('items', [])
+            for item in items:
+                if item.get('status') != 'SUCCESS':
+                    failure_reasons = item.get('failureReasons', [])
+                    if isinstance(failure_reasons, list) and failure_reasons:
+                        for reason in failure_reasons:
+                            error_messages.append(reason.get('message', 'Unknown error'))
+            
+            # Genel hata mesajlarını kontrol et
+            failure_reasons = batch_status.get('failureReasons', [])
+            if isinstance(failure_reasons, list) and failure_reasons:
+                for reason in failure_reasons:
+                    error_messages.append(reason.get('message', 'Unknown error'))
+                    
+            if error_messages:
+                message = '; '.join(error_messages)
+            else:
+                message = f"Failed with {failed_count} errors but no specific error messages found"
         
         product.set_batch_status(status, message)
         
