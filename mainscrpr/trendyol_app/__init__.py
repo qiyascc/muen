@@ -1,0 +1,1 @@
+default_app_config = 'trendyol_app.apps.TrendyolAppConfig'

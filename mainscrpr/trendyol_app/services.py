@@ -2,11 +2,13 @@ import requests
 import json
 import uuid
 import logging
-from urllib.parse import quote
+import base64
 from django.utils import timezone
-import time
-import os
 from openai import OpenAI
+import os
+from functools import lru_cache
+import time
+from django.conf import settings
 
 from .models import TrendyolAPIConfig, TrendyolProduct
 
@@ -18,14 +20,29 @@ DEFAULT_TIMEOUT = 15
 MAX_RETRIES = 3
 RETRY_DELAY = 1
 
+def get_active_api_config():
+    """
+    Get the active API configuration
+    """
+    try:
+        return TrendyolAPIConfig.objects.filter(is_active=True).first()
+    except Exception as e:
+        logger.error(f"Error retrieving API config: {str(e)}")
+        return None
+
+
 class TrendyolAPI:
     """Base class for Trendyol API operations with retry mechanism"""
     
     def __init__(self, config: TrendyolAPIConfig):
         self.config = config
         self.session = requests.Session()
+        auth_str = f"{settings.TRENDYOL_SUPPLIER_ID}:{self.config.api_key}"
+        auth_bytes = auth_str.encode('utf-8')
+        encoded_auth = base64.b64encode(auth_bytes).decode('utf-8')
+        
         self.session.headers.update({
-            "Authorization": f"Basic {self.config.api_key}",
+            "Authorization": f"Basic {encoded_auth}",
             "User-Agent": f"{self.config.seller_id} - SelfIntegration",
             "Content-Type": "application/json"
         })
@@ -55,18 +72,16 @@ class TrendyolAPI:
 
 
 class TrendyolCategoryFinder:
-    """Enhanced category discovery with ChatGPT integration"""
+    """Handles category discovery using GPT-4o"""
     
     def __init__(self, api_client: TrendyolAPI):
         self.api = api_client
+        self.openai_client = OpenAI(api_key=settings.OPENAI_API_KEY)
         self._category_cache = None
-        self._attribute_cache = {}
-        # OpenAI client
-        self.openai_api_key = os.environ.get("OPENAI_API_KEY")
-        self.openai_client = OpenAI(api_key=self.openai_api_key)
     
     @property
     def category_cache(self):
+        """Cached category list"""
         if self._category_cache is None:
             self._category_cache = self._fetch_all_categories()
         return self._category_cache
@@ -80,379 +95,295 @@ class TrendyolCategoryFinder:
             logger.error(f"Failed to fetch categories: {str(e)}")
             raise Exception("Failed to load categories. Please check your API credentials and try again.")
     
+    @lru_cache(maxsize=128)
     def get_category_attributes(self, category_id):
         """Get attributes for a specific category with caching"""
-        if category_id not in self._attribute_cache:
-            try:
-                data = self.api.get(f"product/product-categories/{category_id}/attributes")
-                self._attribute_cache[category_id] = data
-            except Exception as e:
-                logger.error(f"Failed to fetch attributes for category {category_id}: {str(e)}")
-                raise Exception(f"Failed to load attributes for category {category_id}")
-        return self._attribute_cache[category_id]
-    
-    def _get_all_leaf_categories(self, categories):
-        """Get all leaf categories (categories without children)"""
-        leaf_categories = []
-        self._collect_leaf_categories(categories, leaf_categories)
-        return leaf_categories
-    
-    def _collect_leaf_categories(self, categories, result):
-        """Recursively collect leaf categories"""
-        for cat in categories:
-            if not cat.get('subCategories'):
-                result.append(cat)
-            else:
-                self._collect_leaf_categories(cat['subCategories'], result)
-    
-    def find_best_category_with_gpt(self, search_term, product_info=None):
-        """
-        Find the most relevant category using ChatGPT
-        
-        Args:
-            search_term: The main search term (usually category name)
-            product_info: Optional additional product information to help with matching
-        
-        Returns:
-            category ID of the best match
-        """
         try:
-            # Get all leaf categories
-            categories = self.category_cache
-            leaf_categories = self._get_all_leaf_categories(categories)
-            
-            # Prepare category data for GPT
-            category_data = []
-            for cat in leaf_categories:
-                cat_info = {"id": cat['id'], "name": cat['name']}
-                # Add breadcrumb paths if available
-                if cat.get('breadcrumb'):
-                    cat_info["path"] = " > ".join(cat['breadcrumb'])
-                category_data.append(cat_info)
-            
-            # Format product info
-            product_description = ""
-            if product_info:
-                product_description = f"""
-                Ürün başlığı: {product_info.get('title', '')}
-                Ürün açıklaması: {product_info.get('description', '')}
-                Marka: {product_info.get('brand', '')}
-                """
-            
-            # Construct the prompt for ChatGPT
-            prompt = f"""
-            Trendyol kategorileri içinden, aşağıdaki ürün bilgilerine en uygun kategoriyi bul.
-            
-            Ürün bilgileri:
-            Aranan kategori: {search_term}
-            {product_description}
-            
-            Aşağıdaki kategoriler arasından en uygun olanı seç:
-            ```
-            {json.dumps(category_data, ensure_ascii=False, indent=2)}
-            ```
-            
-            Ürünün özellikleri ve kategori isimleri arasında anlamsal bir eşleşme yap.
-            Yanıt olarak sadece kategori ID'sini ve kısa bir açıklama döndür, JSON formatında olsun:
-            {{
-                "category_id": [seçilen kategori ID'si],
-                "category_name": [seçilen kategori adı],
-                "reasoning": [seçim nedeni]
-            }}
-            """
-            
-            logger.info(f"Making category search request to ChatGPT for: {search_term}")
-            
-            # Make request to OpenAI
-            response = self.openai_client.chat.completions.create(
-                model="gpt-4o",  # the newest OpenAI model is "gpt-4o" which was released May 13, 2024. do not change this unless explicitly requested by the user
-                messages=[
-                    {"role": "system", "content": "Sen bir uzman e-ticaret kategori eşleştiricisisin. "
-                                                  "Verilen ürün bilgilerini uygun Trendyol kategorisiyle eşleştir."},
-                    {"role": "user", "content": prompt}
-                ],
-                response_format={"type": "json_object"},
-                temperature=0.2,
-            )
-            
-            # Parse the response
-            result = json.loads(response.choices[0].message.content)
-            category_id = int(result.get("category_id"))
-            
-            logger.info(f"ChatGPT found category: {result.get('category_name')} (ID: {category_id})")
-            logger.info(f"Reasoning: {result.get('reasoning')}")
-            
-            return category_id
-            
+            data = self.api.get(f"product/product-categories/{category_id}/attributes")
+            return data
         except Exception as e:
-            logger.error(f"Category search with ChatGPT failed for '{search_term}': {str(e)}")
-            # Fallback to traditional search
-            return self._traditional_category_search(search_term)
+            logger.error(f"Failed to fetch attributes for category {category_id}: {str(e)}")
+            raise Exception(f"Failed to load attributes for category {category_id}")
     
-    def _traditional_category_search(self, search_term):
-        """Traditional category search as fallback"""
+    def find_matching_category(self, product_title, product_description=None):
+        """Find best matching category using GPT-4o"""
         categories = self.category_cache
-        leaf_categories = self._get_all_leaf_categories(categories)
+        if not categories:
+            raise ValueError("No categories available from Trendyol API")
         
-        # Simple text matching
-        for cat in leaf_categories:
-            if search_term.lower() == cat['name'].lower():
-                return cat['id']
+        # Prepare the category data in a format suitable for GPT
+        category_data = self._prepare_category_data(categories)
         
-        # Partial matching
-        matches = []
-        for cat in leaf_categories:
-            if search_term.lower() in cat['name'].lower():
-                matches.append(cat)
-        
-        if matches:
-            return matches[0]['id']
+        # Query GPT-4o to find the best matching category
+        return self._query_gpt_for_category(category_data, product_title, product_description)
+    
+    def _prepare_category_data(self, categories, parent_path=''):
+        """Recursively prepare category data for GPT"""
+        result = []
+        for category in categories:
+            current_path = f"{parent_path}/{category['name']}" if parent_path else category['name']
+            category_entry = {
+                'id': category['id'], 
+                'name': category['name'], 
+                'path': current_path,
+                'has_children': bool(category.get('subCategories', []))
+            }
+            result.append(category_entry)
             
-        # No match found, return a default category
-        logger.warning(f"No category match found for '{search_term}', using first leaf category")
-        return leaf_categories[0]['id'] if leaf_categories else None
-            
-    def get_optimized_attributes(self, category_id, product_info):
-        """
-        Get optimized attributes for a product using ChatGPT
+            if category.get('subCategories'):
+                subcategories = self._prepare_category_data(
+                    category['subCategories'], current_path)
+                result.extend(subcategories)
         
-        Args:
-            category_id: The category ID
-            product_info: Dictionary with product information
-        
-        Returns:
-            List of attribute dictionaries
-        """
+        return result
+    
+    def _query_gpt_for_category(self, category_data, product_title, product_description=None):
+        """Query GPT-4o to find the best matching category"""
         try:
-            # Get the category attributes
-            category_attrs = self.get_category_attributes(category_id)
-            
-            # If no attributes required or available, return empty list
-            if not category_attrs.get('categoryAttributes'):
-                return []
-                
-            # Format all available attributes and their values
-            available_attributes = []
-            required_attributes = []
-            
-            for attr in category_attrs.get('categoryAttributes', []):
-                attr_info = {
-                    "attributeId": attr['attribute']['id'],
-                    "attributeName": attr['attribute']['name'],
-                    "required": attr.get('required', False),
-                    "varianter": attr.get('varianter', False),
-                    "allowCustom": attr.get('allowCustom', False),
-                    "values": []
-                }
-                
-                # Add possible values
-                for val in attr.get('attributeValues', []):
-                    attr_info["values"].append({
-                        "id": val['id'],
-                        "name": val['name']
-                    })
-                
-                available_attributes.append(attr_info)
-                
-                if attr.get('required', False):
-                    required_attributes.append(attr_info)
-            
-            # If we don't have required attributes, just return empty
-            if not required_attributes:
-                return []
-            
-            # Format product info for the prompt
-            product_description = f"""
-            Ürün başlığı: {product_info.get('title', '')}
-            Ürün açıklaması: {product_info.get('description', '')}
-            Marka: {product_info.get('brand', '')}
-            """
-            
-            # Construct the prompt for ChatGPT
+            # Prepare prompt with product information
             prompt = f"""
-            Bu ürün için en uygun öznitelikleri (attributes) belirle:
+            I need to match a product to the appropriate Trendyol category ID. 
             
-            {product_description}
-            
-            Kategori öznitelikleri:
-            ```
-            {json.dumps(available_attributes, ensure_ascii=False, indent=2)}
-            ```
-            
-            Şu öznitelikler zorunlu: {', '.join([a['attributeName'] for a in required_attributes])}
-            
-            Ürünün açıklaması ve başlığını incele, en uygun öznitelik değerlerini seç.
-            Eğer özniteliğin sabit değerleri (values) varsa, bu listeden seç.
-            Eğer öznitelik için özel değer (allowCustom=true) girilebiliyorsa, uygun bir değer yaz.
-            
-            Yanıt olarak aşağıdaki formatta bir JSON döndür:
-            [
-                {{
-                    "attributeId": [öznitelik ID'si],
-                    "attributeName": [öznitelik adı],
-                    "attributeValueId": [seçilen değer ID'si, eğer sabit bir liste varsa],
-                    "attributeValue": [seçilen değer adı, eğer sabit bir liste varsa],
-                    "customAttributeValue": [özel değer, eğer özel değer giriliyorsa]
-                }},
-                ...
-            ]
+            Product title: {product_title}
             """
             
-            logger.info(f"Making attribute optimization request to ChatGPT for product in category ID: {category_id}")
+            if product_description:
+                prompt += f"\nProduct description: {product_description}\n"
             
-            # Make request to OpenAI
+            # Add category information
+            prompt += """
+            Below is the full list of available Trendyol categories with their IDs, names, and hierarchical paths:
+            """
+            
+            # Add category data (limit to avoid token limits)
+            categories_str = json.dumps(category_data)
+            prompt += f"\n{categories_str}\n"
+            
+            prompt += """
+            Please analyze the product information and find the most appropriate category.
+            
+            You are a Turkish e-commerce expert at Trendyol. Considering both the product title and description,
+            select the most specific and appropriate category for this product. Consider the product attributes 
+            and match it to the most precise subcategory possible.
+            
+            Give me ONLY the category ID (not the name) that best matches the product. 
+            Return ONLY the numeric ID with no other text or explanations.
+            """
+            
+            # Make the API call
             response = self.openai_client.chat.completions.create(
-                model="gpt-4o",  # the newest OpenAI model is "gpt-4o" which was released May 13, 2024. do not change this unless explicitly requested by the user
+                model="gpt-4o",  # the newest OpenAI model is "gpt-4o" which was released May 13, 2024.
                 messages=[
-                    {"role": "system", "content": "Sen bir uzman e-ticaret ürün özniteliği belirleyicisisin. "
-                                                  "Verilen ürün bilgilerine göre en uygun öznitelikleri seç."},
+                    {"role": "system", "content": "You are a Turkish e-commerce expert at Trendyol."},
                     {"role": "user", "content": prompt}
                 ],
-                response_format={"type": "json_object"},
-                temperature=0.2,
+                temperature=0.3,
+                max_tokens=10  # We just need a category ID, so keep it short
             )
             
-            # Parse the response
-            result = json.loads(response.choices[0].message.content)
+            # Extract the category ID from the response
+            category_id = response.choices[0].message.content.strip()
             
-            # Log the results
-            logger.info(f"ChatGPT optimized attributes: {json.dumps(result, ensure_ascii=False)}")
-            
-            return result
-            
+            # Ensure it's a valid numeric ID
+            try:
+                category_id = int(category_id)
+                logger.info(f"GPT-4o selected category ID {category_id} for product '{product_title}'")
+                return category_id
+            except ValueError:
+                logger.error(f"GPT-4o response was not a valid category ID: {category_id}")
+                raise ValueError(f"Invalid category ID from GPT: {category_id}")
+                
         except Exception as e:
-            logger.error(f"Attribute optimization with ChatGPT failed: {str(e)}")
-            # Fallback to traditional attribute selection
-            return self._get_default_attributes(category_id)
+            logger.error(f"Error finding category with GPT-4o: {str(e)}")
+            raise Exception(f"Failed to find category with GPT-4o: {str(e)}")
     
-    def _get_default_attributes(self, category_id):
-        """Generate default attributes as fallback"""
-        attributes = []
-        category_attrs = self.get_category_attributes(category_id)
+    def get_required_attributes(self, category_id):
+        """Get required attributes for a category"""
+        attributes_data = self.get_category_attributes(category_id)
+        required_attributes = []
         
-        for attr in category_attrs.get('categoryAttributes', []):
-            # Skip attributes with empty attributeValues array when custom values are not allowed
-            if not attr.get('attributeValues') and not attr.get('allowCustom'):
+        if not attributes_data or 'categoryAttributes' not in attributes_data:
+            return []
+        
+        for attr in attributes_data.get('categoryAttributes', []):
+            if attr.get('required'):
+                required_attributes.append({
+                    'id': attr.get('attribute', {}).get('id'),
+                    'name': attr.get('attribute', {}).get('name'),
+                    'allowCustom': attr.get('allowCustom', False),
+                    'valueType': attr.get('attribute', {}).get('valueType'),
+                    'attributeValues': attr.get('attributeValues', [])
+                })
+        
+        return required_attributes
+    
+    def match_attribute_values(self, product_title, product_description, required_attributes):
+        """Match product to attribute values using GPT-4o"""
+        if not required_attributes:
+            return {}
+            
+        result = {}
+        for attr in required_attributes:
+            if not attr.get('attributeValues'):
                 continue
                 
-            attribute = {
-                "attributeId": attr['attribute']['id'],
-                "attributeName": attr['attribute']['name']
-            }
+            attribute_values = [{
+                'id': val.get('id'),
+                'name': val.get('name')
+            } for val in attr.get('attributeValues', [])]
             
-            if attr.get('attributeValues') and len(attr['attributeValues']) > 0:
-                if not attr['allowCustom']:
-                    attribute["attributeValueId"] = attr['attributeValues'][0]['id']
-                    attribute["attributeValue"] = attr['attributeValues'][0]['name']
-                else:
-                    attribute["customAttributeValue"] = f"Sample {attr['attribute']['name']}"
-            elif attr.get('allowCustom'):
-                attribute["customAttributeValue"] = f"Sample {attr['attribute']['name']}"
-            else:
-                continue
+            # Query GPT to select the best attribute value
+            selected_value = self._query_gpt_for_attribute_value(
+                product_title, 
+                product_description, 
+                attr.get('name'),
+                attribute_values
+            )
             
-            attributes.append(attribute)
+            if selected_value:
+                result[attr.get('id')] = selected_value
         
-        return attributes
-
+        return result
+    
+    def _query_gpt_for_attribute_value(self, product_title, product_description, attr_name, attr_values):
+        """Query GPT-4o to select the best attribute value"""
+        try:
+            # Prepare prompt with product and attribute information
+            prompt = f"""
+            I need to select the most appropriate value for a product attribute.
+            
+            Product title: {product_title}
+            Product description: {product_description or 'No description available'}
+            
+            Attribute name: {attr_name}
+            Available values: {json.dumps(attr_values)}
+            
+            Based on the product title and description, select the most appropriate value for this attribute.
+            Return ONLY the numeric ID of the selected value, no explanation.
+            
+            If there is no appropriate match, return 'none'.
+            """
+            
+            # Make the API call
+            response = self.openai_client.chat.completions.create(
+                model="gpt-4o",  # the newest OpenAI model is "gpt-4o" which was released May 13, 2024.
+                messages=[
+                    {"role": "system", "content": "You are a Turkish e-commerce product attributes expert."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.3,
+                max_tokens=10  # We just need a value ID, so keep it short
+            )
+            
+            # Extract the value ID from the response
+            value_id = response.choices[0].message.content.strip()
+            
+            # Handle the case where no appropriate match was found
+            if value_id.lower() == 'none':
+                return None
+                
+            # Ensure it's a valid numeric ID
+            try:
+                value_id = int(value_id)
+                logger.info(f"GPT-4o selected value ID {value_id} for attribute '{attr_name}'")
+                return value_id
+            except ValueError:
+                logger.error(f"GPT-4o response was not a valid value ID: {value_id}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Error finding attribute value with GPT-4o: {str(e)}")
+            return None
+            
 
 class TrendyolProductManager:
-    """Handles product creation and management"""
+    """Manages Trendyol products and batch processes"""
     
     def __init__(self, api_client: TrendyolAPI):
         self.api = api_client
         self.category_finder = TrendyolCategoryFinder(api_client)
     
-    def get_brand_id(self, brand_name):
-        """Find brand ID by name"""
-        encoded_name = quote(brand_name)
+    def create_product(self, product: TrendyolProduct):
+        """Create a product on Trendyol"""
         try:
-            brands = self.api.get(f"product/brands/by-name?name={encoded_name}")
-            if isinstance(brands, list) and brands:
-                return brands[0]['id']
-            # If LC Waikiki brand is not found, use brand ID 7651 as default
-            if brand_name.lower() == 'lcw' or 'lcw' in brand_name.lower() or 'lc waikiki' in brand_name.lower():
-                logger.info(f"Using default LC Waikiki brand ID (7651) for: {brand_name}")
-                return 7651
-            raise ValueError(f"Brand not found: {brand_name}")
-        except Exception as e:
-            logger.error(f"Brand search failed for '{brand_name}': {str(e)}")
-            raise
-    
-    def create_product(self, product_data):
-        """Create a new product on Trendyol with enhanced attribute matching"""
-        try:
-            # Prepare product info for category search
-            product_info = {
-                'title': product_data.title,
-                'description': product_data.description,
-                'brand': product_data.brand_name
+            # Find matching category
+            category_id = self.category_finder.find_matching_category(
+                product.title, product.description)
+            
+            # Get required attributes for this category
+            required_attributes = self.category_finder.get_required_attributes(category_id)
+            
+            # Match attribute values
+            attribute_values = self.category_finder.match_attribute_values(
+                product.title, product.description, required_attributes[:8])  # Limit to first 8 attributes
+            
+            # Default attributes
+            if 'fabric' not in attribute_values:
+                attribute_values['fabric'] = 'unspecified'
+            if 'pattern' not in attribute_values:
+                attribute_values['pattern'] = 'unspecified'
+            
+            # Prepare product data
+            product_data = {
+                'items': [{
+                    'barcode': product.barcode,
+                    'title': product.title,
+                    'productMainId': product.product_main_id,
+                    'brandName': product.brand_name,
+                    'categoryName': product.category_name,
+                    'quantity': product.quantity,
+                    'stockCode': product.stock_code,
+                    'dimensionalWeight': 1,
+                    'description': product.description,
+                    'currencyType': product.currency_type,
+                    'listPrice': float(product.price),
+                    'salePrice': float(product.sale_price),
+                    'vatRate': product.vat_rate,
+                    'cargoCompanyId': 10,  # Default cargo company
+                    'images': [
+                        {
+                            'url': product.image_url
+                        }
+                    ],
+                    'attributes': self._format_attributes(attribute_values),
+                    'categoryId': category_id
+                }]
             }
             
-            # Find category with GPT assistance
-            category_id = self.category_finder.find_best_category_with_gpt(
-                product_data.category_name, 
-                product_info
-            )
+            # Send to Trendyol
+            response = self.api.post('supplier/product-service/v2/products', product_data)
             
-            # Get brand ID
-            brand_id = self.get_brand_id(product_data.brand_name)
-            
-            # Get optimized attributes with GPT
-            attributes = self.category_finder.get_optimized_attributes(
-                category_id,
-                product_info
-            )
-            
-            # Build payload
-            payload = self._build_product_payload(product_data, category_id, brand_id, attributes)
-            
-            logger.info(f"Submitting product creation request for: {product_data.title}")
-            response = self.api.post(f"product/sellers/{self.api.config.seller_id}/products", payload)
-            
-            return response.get('batchRequestId')
+            if 'batchId' in response:
+                return response['batchId']
+            else:
+                raise Exception("No batch ID returned from API")
+                
         except Exception as e:
-            logger.error(f"Product creation failed: {str(e)}")
+            logger.error(f"Error creating product on Trendyol: {str(e)}")
             raise
+    
+    def _format_attributes(self, attribute_values):
+        """Format attributes for Trendyol API"""
+        formatted = []
+        for attr_id, value_id in attribute_values.items():
+            formatted.append({
+                'attributeId': attr_id,
+                'attributeValueId': value_id
+            })
+        return formatted
     
     def check_batch_status(self, batch_id):
-        """Check the status of a batch operation"""
+        """Check status of a product batch"""
         try:
-            return self.api.get(f"product/sellers/{self.api.config.seller_id}/products/batch-requests/{batch_id}")
+            response = self.api.get(f'supplier/product-service/v2/products/batch/{batch_id}')
+            return response
         except Exception as e:
-            logger.error(f"Failed to check batch status: {str(e)}")
+            logger.error(f"Error checking batch status: {str(e)}")
             raise
-    
-    def _build_product_payload(self, product, category_id, brand_id, attributes):
-        """Construct the complete product payload"""
-        return {
-            "items": [{
-                "barcode": product.barcode,
-                "title": product.title,
-                "productMainId": product.product_main_id,
-                "brandId": brand_id,
-                "categoryId": category_id,
-                "quantity": product.quantity,
-                "stockCode": product.stock_code,
-                "description": product.description,
-                "currencyType": product.currency_type,
-                "listPrice": float(product.price) + 10,  # Extra margin for list price
-                "salePrice": float(product.price),
-                "vatRate": product.vat_rate,
-                "images": [{"url": product.image_url}],
-                "attributes": attributes
-            }]
-        }
-
-
-def get_active_api_config():
-    try:
-        return TrendyolAPIConfig.objects.filter(is_active=True).first()
-    except:
-        return None
 
 
 def create_trendyol_product(product):
+    """Create a product on Trendyol"""
     config = get_active_api_config()
     if not config:
         logger.error("No active Trendyol API config found")
@@ -480,48 +411,54 @@ def create_trendyol_product(product):
 
 
 def check_product_batch_status(product):
+    """Check the status of a product batch"""
     if not product.batch_id:
         return
     
+    if not product.needs_status_check():
+        return
+        
     config = get_active_api_config()
     if not config:
-        logger.error("No active Trendyol API config found")
+        product.set_batch_status('failed', 'No active Trendyol API config found')
         return
-    
+        
     try:
         api = TrendyolAPI(config)
         product_manager = TrendyolProductManager(api)
         
-        status_data = product_manager.check_batch_status(product.batch_id)
+        batch_status = product_manager.check_batch_status(product.batch_id)
         
-        items = status_data.get('items', [])
-        if not items:
-            product.set_batch_status('processing', 'Waiting for processing')
-            return
+        status = batch_status.get('status', 'processing').lower()
+        message = None
         
-        item = items[0]
-        status = item.get('status')
+        if status == 'failed':
+            message = batch_status.get('failureReasons', 'Unknown error')
+            if isinstance(message, list):
+                message = '; '.join([reason.get('message', 'Unknown') for reason in message])
         
-        if status == 'SUCCESS':
-            product.set_batch_status('completed', 'Product created successfully')
-        elif status == 'ERROR':
-            product.set_batch_status('failed', f"Error: {item.get('failureReasons', 'Unknown error')}")
-        else:
-            product.set_batch_status('processing', f"Status: {status}")
+        product.set_batch_status(status, message)
         
     except Exception as e:
-        logger.error(f"Failed to check batch status: {str(e)}")
-        product.last_check_time = timezone.now()
-        product.save(update_fields=['last_check_time'])
+        logger.error(f"Failed to check batch status for {product.batch_id}: {str(e)}")
+        # Don't update status on connection errors, just log them
 
 
 def check_pending_products():
-    products = TrendyolProduct.objects.filter(
-        batch_id__isnull=False,
-        batch_status__in=['pending', 'processing']
-    )
-    
-    for product in products:
-        if product.needs_status_check():
-            logger.info(f"Checking status for product {product.id}: {product.title}")
-            check_product_batch_status(product)
+    """Check status of all pending products"""
+    try:
+        pending_products = TrendyolProduct.objects.filter(
+            batch_id__isnull=False,
+            batch_status__in=['pending', 'processing']
+        )
+        
+        for product in pending_products:
+            if product.needs_status_check():
+                check_product_batch_status(product)
+                time.sleep(0.5)  # Avoid rate limiting
+                
+        return f"Checked {pending_products.count()} pending products"
+        
+    except Exception as e:
+        logger.error(f"Error checking pending products: {str(e)}")
+        return f"Error: {str(e)}"

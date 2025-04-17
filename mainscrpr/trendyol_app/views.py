@@ -18,11 +18,18 @@ class TrendyolProductViewSet(viewsets.ModelViewSet):
                 {'error': 'Bu ürün henüz Trendyol\'a gönderilmemiş'},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
-        check_product_batch_status(product)
-        return Response({
-            'batch_id': product.batch_id,
-            'batch_status': product.batch_status,
-            'status_message': product.status_message,
-            'last_check_time': product.last_check_time
-        })
+            
+        try:
+            check_product_batch_status(product)
+            return Response({
+                'batch_id': product.batch_id,
+                'batch_status': product.batch_status,
+                'status_message': product.status_message,
+                'last_check_time': product.last_check_time
+            })
+            
+        except Exception as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
