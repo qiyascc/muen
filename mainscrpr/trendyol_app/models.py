@@ -4,12 +4,47 @@ from django.utils import timezone
 
 class TrendyolAPIConfig(models.Model):
     seller_id = models.CharField(max_length=100, verbose_name=_("Satıcı ID"))
+    supplier_id = models.CharField(max_length=100, verbose_name=_("Tedarikçi ID"), null=True, blank=True)
     api_key = models.CharField(max_length=255, verbose_name=_("API Key"))
+    api_secret = models.CharField(max_length=255, verbose_name=_("API Secret"), default="", blank=True)
     base_url = models.CharField(
         max_length=255, 
         default="https://apigw.trendyol.com/integration/",
         verbose_name=_("API Base URL")
     )
+    
+    # API Endpoints
+    products_endpoint = models.CharField(
+        max_length=255,
+        default="product/sellers/{sellerId}/products",
+        verbose_name=_("Ürünler Endpoint")
+    )
+    product_detail_endpoint = models.CharField(
+        max_length=255,
+        default="product/sellers/{sellerId}/products",
+        verbose_name=_("Ürün Detay Endpoint")
+    )
+    brands_endpoint = models.CharField(
+        max_length=255,
+        default="brands",
+        verbose_name=_("Markalar Endpoint")
+    )
+    categories_endpoint = models.CharField(
+        max_length=255,
+        default="product-categories",
+        verbose_name=_("Kategoriler Endpoint")
+    )
+    category_attributes_endpoint = models.CharField(
+        max_length=255,
+        default="product-categories/{categoryId}/attributes",
+        verbose_name=_("Kategori Özellikleri Endpoint")
+    )
+    batch_status_endpoint = models.CharField(
+        max_length=255,
+        default="suppliers/{supplierId}/products/batch-requests/{batchId}",
+        verbose_name=_("Batch Durum Endpoint")
+    )
+    
     is_active = models.BooleanField(default=True, verbose_name=_("Aktif Mi?"))
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -20,6 +55,12 @@ class TrendyolAPIConfig(models.Model):
     
     def __str__(self):
         return f"Trendyol API Config: {self.seller_id}"
+        
+    def save(self, *args, **kwargs):
+        # Supplier ID otomatik olarak Seller ID'ye eşit olsun
+        if not self.supplier_id:
+            self.supplier_id = self.seller_id
+        super().save(*args, **kwargs)
 
 
 class TrendyolProduct(models.Model):
