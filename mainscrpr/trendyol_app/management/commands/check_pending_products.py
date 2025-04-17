@@ -4,11 +4,10 @@ Django yönetim komutu: Bekleyen ürünleri kontrol etme
 Bu komut, tüm bekleyen Trendyol ürünlerinin batch durumlarını kontrol eder.
 """
 
-from django.core.management.base import BaseCommand
 import logging
-import time
-from trendyol_app.models import TrendyolProduct
-from trendyol_app.services import check_product_batch_status
+from django.core.management.base import BaseCommand
+from trendyol_app.models import TrendyolProduct, TrendyolAPIConfig
+from trendyol_app.services import TrendyolAPIClient
 
 logger = logging.getLogger(__name__)
 
@@ -20,61 +19,103 @@ class Command(BaseCommand):
             '--batch-size',
             type=int,
             default=10,
-            help='Bir seferde kontrol edilecek max ürün sayısı (varsayılan: 10)'
+            help='Bir seferde kontrol edilecek maksimum ürün sayısı (varsayılan: 10)'
         )
         parser.add_argument(
-            '--delay',
-            type=float,
-            default=0.5,
-            help='İki istek arasındaki bekleme süresi, saniye cinsinden (varsayılan: 0.5)'
+            '--retry-failed',
+            action='store_true',
+            help='Başarısız ürünleri yeniden deneme'
+        )
+        parser.add_argument(
+            '--verbose',
+            action='store_true',
+            help='Detaylı çıktı göster'
         )
 
     def handle(self, *args, **options):
         batch_size = options['batch_size']
-        delay = options['delay']
+        retry_failed = options['retry_failed']
+        verbose = options['verbose']
         
-        self.stdout.write(self.style.WARNING(f'Bekleyen ürünler kontrol ediliyor (batch boyutu: {batch_size}, gecikme: {delay} saniye)...'))
+        self.stdout.write(self.style.WARNING(
+            f'Bekleyen Trendyol ürünlerinin batch durumları kontrol ediliyor '
+            f'(batch boyutu: {batch_size})...'
+        ))
         
         try:
-            pending_products = TrendyolProduct.objects.filter(
+            # API yapılandırmasını al
+            api_config = TrendyolAPIConfig.objects.filter(is_active=True).first()
+            if not api_config:
+                self.stdout.write(self.style.ERROR('Aktif bir Trendyol API yapılandırması bulunamadı.'))
+                return
+                
+            # API istemcisi oluştur
+            api_client = TrendyolAPIClient(api_config)
+            
+            # Bekleyen ürünleri filtrele
+            query = TrendyolProduct.objects.filter(
                 batch_id__isnull=False,
-                batch_status__in=['pending', 'processing']
+                status_code__isnull=True
             )
             
-            count = pending_products.count()
+            if retry_failed:
+                # Başarısız ürünleri de dahil et
+                query = TrendyolProduct.objects.filter(
+                    batch_id__isnull=False
+                ).exclude(status='success')
+                
+            count = query.count()
             if count == 0:
                 self.stdout.write(self.style.SUCCESS('Bekleyen ürün bulunamadı.'))
                 return
                 
-            self.stdout.write(self.style.WARNING(f'Toplam {count} bekleyen ürün bulundu.'))
+            self.stdout.write(self.style.WARNING(f'Toplam {count} bekleyen ürün kontrol edilecek.'))
             
-            updated = 0
-            for i, product in enumerate(pending_products[:batch_size]):
-                if product.needs_status_check():
-                    old_status = product.batch_status
-                    check_product_batch_status(product)
-                    new_status = product.batch_status
+            # Batch işleme
+            products_to_check = query[:batch_size]
+            updated_count = 0
+            success_count = 0
+            
+            for i, product in enumerate(products_to_check):
+                try:
+                    if verbose:
+                        self.stdout.write(f'({i+1}/{len(products_to_check)}) Kontrol ediliyor: {product.title} (Batch ID: {product.batch_id})')
                     
-                    if old_status != new_status:
-                        self.stdout.write(self.style.SUCCESS(
-                            f'Ürün {product.id} ({product.title}) durumu güncellendi: {old_status} -> {new_status}'
-                        ))
+                    # Batch durumunu kontrol et
+                    result = api_client.check_batch_status(product.batch_id)
+                    
+                    if result:
+                        product.status = result.get('status', 'error')
+                        product.status_code = result.get('status_code')
+                        product.status_message = result.get('message', '')
+                        
+                        if result.get('status') == 'success':
+                            success_count += 1
+                            self.stdout.write(self.style.SUCCESS(
+                                f'({i+1}/{len(products_to_check)}) Ürün başarılı: {product.title}'
+                            ))
+                        else:
+                            self.stdout.write(self.style.WARNING(
+                                f'({i+1}/{len(products_to_check)}) Ürün durumu: {product.status}, Mesaj: {product.status_message}'
+                            ))
+                            
+                        product.save()
+                        updated_count += 1
                     else:
-                        self.stdout.write(
-                            f'Ürün {product.id} ({product.title}) durumu aynı kaldı: {old_status}'
-                        )
-                    
-                    updated += 1
-                    
-                    # API rate limiting'i önlemek için bekleme
-                    if i < batch_size - 1 and delay > 0:
-                        time.sleep(delay)
+                        self.stdout.write(self.style.ERROR(
+                            f'({i+1}/{len(products_to_check)}) Batch durumu alınamadı: {product.title}'
+                        ))
+                except Exception as e:
+                    self.stdout.write(self.style.ERROR(
+                        f'({i+1}/{len(products_to_check)}) Kontrol hatası: {str(e)}'
+                    ))
+                    logger.error(f"Ürün kontrolü sırasında hata (ID: {product.id}): {str(e)}")
             
-            remaining = count - batch_size if count > batch_size else 0
             self.stdout.write(self.style.SUCCESS(
-                f'{updated} ürünün durumu kontrol edildi. {remaining} ürün kaldı.'
+                f'İşlem tamamlandı: {updated_count} ürün kontrol edildi, {success_count} başarılı. '
+                f'{count - batch_size if count > batch_size else 0} ürün kaldı.'
             ))
             
         except Exception as e:
-            self.stdout.write(self.style.ERROR(f'Ürün durumu kontrol edilirken hata: {str(e)}'))
-            logger.error(f"Ürün durumu kontrol edilirken hata: {str(e)}")
+            self.stdout.write(self.style.ERROR(f'Ürün kontrolü sırasında hata: {str(e)}'))
+            logger.error(f"Ürün kontrolü sırasında hata: {str(e)}")

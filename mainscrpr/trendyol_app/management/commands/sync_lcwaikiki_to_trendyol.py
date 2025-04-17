@@ -9,7 +9,7 @@ import logging
 import time
 import random
 from django.db import transaction
-from lcwaikiki.models import Product
+from lcwaikiki.product_models import Product
 from trendyol_app.models import TrendyolProduct
 
 logger = logging.getLogger(__name__)
@@ -62,15 +62,15 @@ class Command(BaseCommand):
         
         try:
             # Aktarılacak ürünleri filtrele
-            query = Product.objects.filter(total_stock__gte=min_stock)
+            query = Product.objects.filter(in_stock=True)
             
             if filter_category:
                 query = query.filter(category__icontains=filter_category)
                 
             if not force:
-                # Daha önce aktarılmış ürünleri hariç tut
-                existing_barcodes = TrendyolProduct.objects.values_list('barcode', flat=True)
-                query = query.exclude(barcode__in=existing_barcodes)
+                # Daha önce aktarılmış ürünleri hariç tut (product_code kullanarak)
+                existing_products = TrendyolProduct.objects.values_list('product_main_id', flat=True)
+                query = query.exclude(product_code__in=existing_products)
                 
             count = query.count()
             if count == 0:
@@ -116,10 +116,8 @@ class Command(BaseCommand):
     def _lcwaikiki_to_trendyol(self, lcw_product):
         """LCWaikiki ürününü Trendyol ürününe dönüştürür"""
         # Temel bilgileri al
-        barcode = lcw_product.barcode
-        if not barcode:
-            # Eksikse rastgele bir barkod oluştur
-            barcode = f"LCW{str(lcw_product.id).zfill(8)}{random.randint(1000, 9999)}"
+        # Rastgele bir barkod oluştur
+        barcode = f"LCW{str(lcw_product.id).zfill(8)}{random.randint(1000, 9999)}"
             
         # Ana ürün ID'sini al
         product_main_id = lcw_product.product_code
@@ -139,6 +137,16 @@ class Command(BaseCommand):
         # Marka adını al (LC Waikiki)
         brand_name = "LC Waikiki"
         
+        # Stok hesaplama
+        total_stock = lcw_product.get_total_stock()
+        if total_stock <= 0 and lcw_product.in_stock:
+            total_stock = 10  # Varsayılan stok miktarı
+        
+        # İlk görseli al
+        image_url = ""
+        if lcw_product.images and isinstance(lcw_product.images, list) and len(lcw_product.images) > 0:
+            image_url = lcw_product.images[0]
+        
         # Trendyol ürününü oluştur
         trendyol_product = TrendyolProduct(
             barcode=barcode,
@@ -146,12 +154,12 @@ class Command(BaseCommand):
             product_main_id=product_main_id,
             brand_name=brand_name,
             category_name=lcw_product.category or "Giyim",
-            quantity=lcw_product.total_stock or 0,
+            quantity=total_stock,
             stock_code=lcw_product.product_code or str(lcw_product.id),
-            price=lcw_product.old_price or lcw_product.price,
+            price=lcw_product.price,
             sale_price=lcw_product.price,
             description=lcw_product.description or f"{title} - LC Waikiki",
-            image_url=lcw_product.image or "",
+            image_url=image_url,
             vat_rate=10,  # Varsayılan KDV oranı
             currency_type="TRY"
         )
