@@ -7,117 +7,125 @@ and also verifies that the API configuration is correct.
 Run this script with: python manage.py shell < fix_api_endpoints.py
 """
 
-import django
 import os
 import sys
-import requests
+import django
+import logging
 import json
-import base64
-from loguru import logger
+import requests
+from urllib.parse import urljoin
 
-# Set up Django environment
+# Django ortamını yükle
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'mainscrpr.settings')
 django.setup()
 
-# Import models and API client functions
-from trendyol.models import TrendyolAPIConfig
-from trendyol.api_client import get_api_client, TrendyolApi
+# Modelleri içe aktar
+from trendyol_app.models import TrendyolAPIConfig
+
+# Logging ayarları
+# Force root logger to show logs
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger("fix_endpoints")
+logger.setLevel(logging.DEBUG)
+# Add console handler
+console = logging.StreamHandler()
+console.setLevel(logging.DEBUG)
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+console.setFormatter(formatter)
+logger.addHandler(console)
 
 def print_endpoint_test(api_client, endpoint_name, endpoint_path):
     """Test and print an endpoint's full URL"""
-    # Calculate the full URL 
-    url = f"{api_client.base_url}{endpoint_path}"
-    
-    print(f"Testing endpoint: {endpoint_name}")
-    print(f"  Path: {endpoint_path}")
-    print(f"  Full URL: {url}")
-    print()
+    base_url = api_client.base_url
+    full_url = urljoin(base_url, endpoint_path.format(sellerId=api_client.supplier_id))
+    logger.info(f"Testing {endpoint_name} endpoint: {full_url}")
+    return full_url
 
 def test_create_product_endpoint(api_client):
     """Test the create product endpoint specifically"""
-    if not api_client:
-        print("No API client available")
-        return
+    # Eski URL formatı: /supplier/product-service/v2/products
+    # Yeni URL formatı: /product/sellers/{sellerId}/products
     
-    endpoint = api_client.products._get_products_endpoint()
-    url = f"{api_client.base_url}{endpoint}"
+    old_endpoint = "supplier/product-service/v2/products"
+    new_endpoint = "product/sellers/{sellerId}/products"
     
-    print("\nCreating product test:")
-    print(f"  Endpoint path: {endpoint}")
-    print(f"  Full URL: {url}")
+    old_url = urljoin(api_client.base_url, old_endpoint)
+    new_url = urljoin(api_client.base_url, new_endpoint.format(sellerId=api_client.supplier_id))
     
-    # Create a minimal test product data to test logging (won't actually send)
-    test_data = {
-        "items": [{
-            "barcode": "TEST_BARCODE_12345",
-            "title": "Test Product",
-            "productMainId": "TEST_MAIN_123",
-            "brandId": 1,
-            "categoryId": 1000,
-            "listPrice": 100.0,
-            "salePrice": 90.0,
-            "vatRate": 18,
-            "stockCode": "TEST_STOCK_123"
-        }]
-    }
+    logger.info(f"Old product creation endpoint: {old_url}")
+    logger.info(f"New product creation endpoint: {new_url}")
     
-    # Don't actually make the request, just log what would be sent
-    print(f"  Request payload: {json.dumps(test_data, indent=2)}")
+    # Test new endpoint with a simple request
+    headers = api_client.get_auth_headers()
+    test_data = {"items": [{"barcode": "TEST123", "title": "Test Product"}]}
     
-    # Check for duplicate /integration in the URL
-    if "/integration/integration" in url:
-        print("\n⚠️ Warning: Duplicate '/integration' detected in URL")
-        print("  This could cause API errors")
-    
-    return endpoint, url
+    try:
+        # Don't actually send the request, just prepare it
+        req = requests.Request('POST', new_url, headers=headers, json=test_data)
+        prepped = req.prepare()
+        
+        logger.info(f"Request would be sent to: {prepped.url}")
+        logger.info(f"With headers: {json.dumps(dict(prepped.headers), indent=2)}")
+        logger.info(f"With body: {prepped.body.decode('utf-8')}")
+        
+        return new_endpoint
+    except Exception as e:
+        logger.error(f"Error preparing test request: {str(e)}")
+        return None
 
 def main():
     """Test and fix Trendyol API endpoints"""
-    # Get active API configuration
-    config = TrendyolAPIConfig.objects.filter(is_active=True).first()
-    
-    if not config:
-        print("No active Trendyol API configuration found")
+    # Aktif API yapılandırmasını kontrol et
+    api_config = TrendyolAPIConfig.objects.filter(is_active=True).first()
+    if not api_config:
+        logger.error("No active Trendyol API configuration found.")
         return
     
-    print(f"Testing API configuration: {config.name}")
-    print(f"Base URL: {config.base_url}")
-    print(f"Supplier ID: {config.supplier_id or config.seller_id}")
-    print()
+    logger.info(f"Found active API config (ID: {api_config.id})")
+    logger.info(f"Current base_url: {api_config.base_url}")
+    logger.info(f"Current supplier_id: {api_config.supplier_id}")
     
-    # Initialize API client directly
-    api_client = TrendyolApi(
-        api_key=config.api_key,
-        api_secret=config.api_secret,
-        supplier_id=config.supplier_id or config.seller_id,
-        base_url=config.base_url,
-        user_agent=config.user_agent or f"{config.supplier_id or config.seller_id} - SelfIntegration"
-    )
+    # The old products endpoint was api_config.products_endpoint
+    logger.info(f"Current products_endpoint: {api_config.products_endpoint}")
     
-    # Test all the endpoints
-    print("Testing all endpoints:")
-    print("=====================")
+    # Create a simple API client with the configuration
+    class SimpleAPIClient:
+        def __init__(self, config):
+            self.base_url = config.base_url
+            self.supplier_id = config.supplier_id
+            self.api_key = config.api_key
+            self.api_secret = config.api_secret
+        
+        def get_auth_headers(self):
+            import base64
+            auth_token = base64.b64encode(
+                f"{self.api_key}:{self.api_secret}".encode()
+            ).decode()
+            
+            return {
+                "Authorization": f"Basic {auth_token}",
+                "User-Agent": "Trendyol API Client",
+                "Content-Type": "application/json"
+            }
     
-    # Test Brands API endpoints
-    print_endpoint_test(api_client, "Brands List", api_client.brands._get_brands_endpoint())
+    api_client = SimpleAPIClient(api_config)
     
-    # Test Categories API endpoints
-    print_endpoint_test(api_client, "Categories List", api_client.categories._get_categories_endpoint())
+    # Check current endpoints
+    logger.info("Checking current API endpoints...")
     
-    # Test for specific category attributes
-    cat_attr_endpoint = api_client.categories._get_category_attributes_endpoint(1000)
-    print_endpoint_test(api_client, "Category Attributes", cat_attr_endpoint)
+    # Test old and new product creation endpoints
+    new_endpoint = test_create_product_endpoint(api_client)
     
-    # Test Products API endpoints
-    print_endpoint_test(api_client, "Products List", api_client.products._get_products_endpoint())
-    batch_endpoint = api_client.products._get_batch_request_endpoint("test-batch-id")
-    print_endpoint_test(api_client, "Batch Request Status", batch_endpoint)
-    
-    # Test Inventory API endpoints
-    print_endpoint_test(api_client, "Price & Inventory Update", api_client.inventory._get_price_inventory_endpoint())
-    
-    # Test create product specifically
-    test_create_product_endpoint(api_client)
+    if new_endpoint:
+        logger.info(f"Updating products_endpoint to: {new_endpoint}")
+        
+        # Update the API configuration
+        api_config.products_endpoint = new_endpoint
+        api_config.save()
+        
+        logger.info("API configuration updated successfully.")
+    else:
+        logger.error("Could not determine the correct products endpoint.")
 
 if __name__ == "__main__":
     main()
