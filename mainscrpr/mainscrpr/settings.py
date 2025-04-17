@@ -74,7 +74,7 @@ UNFOLD = {
                     {
                         "title": "Trendyol API Config",
                         "icon": "api",
-                        "link": "/admin/trendyol/trendyolapiconfig/",
+                        "link": "/admin/trendyol_app/trendyolapiconfig/",
                     },
                 ],
             },
