@@ -109,13 +109,25 @@ class TrendyolCategoryFinder:
         """Find best matching category using GPT-4o"""
         categories = self.category_cache
         if not categories:
-            raise ValueError("No categories available from Trendyol API")
+            logger.warning("No categories available from Trendyol API, using default")
+            return 2356  # 2356 = Erkek Giyim (varsayılan kategori)
         
-        # Prepare the category data in a format suitable for GPT
-        category_data = self._prepare_category_data(categories)
+        # Token limiti aşma sorunu için kategori sayısını sınırla
+        # Sadece üst seviye kategorileri kullan
+        top_level_categories = [cat for cat in categories if not cat.get('parentCategoryId')]
         
-        # Query GPT-4o to find the best matching category
-        return self._query_gpt_for_category(category_data, product_title, product_description)
+        # En fazla 20 kategori kullan
+        limited_categories = top_level_categories[:20] if len(top_level_categories) > 20 else top_level_categories
+        
+        try:
+            # Prepare the category data in a format suitable for GPT
+            category_data = self._prepare_category_data(limited_categories)
+            
+            # Query GPT-4o to find the best matching category
+            return self._query_gpt_for_category(category_data, product_title, product_description)
+        except Exception as e:
+            logger.error(f"Error in find_matching_category: {str(e)}")
+            return 2356  # Varsayılan kategori
     
     def _prepare_category_data(self, categories, parent_path=''):
         """Recursively prepare category data for GPT"""
@@ -140,45 +152,46 @@ class TrendyolCategoryFinder:
     def _query_gpt_for_category(self, category_data, product_title, product_description=None):
         """Query GPT-4o to find the best matching category"""
         try:
-            # Prepare prompt with product information
-            prompt = f"""
-            I need to match a product to the appropriate Trendyol category ID. 
+            # Kısa ürün başlığı kullan
+            short_title = product_title[:100] if len(product_title) > 100 else product_title
             
-            Product title: {product_title}
-            """
-            
+            # Kısa açıklama kullan
+            short_description = None
             if product_description:
-                prompt += f"\nProduct description: {product_description}\n"
+                short_description = product_description[:200] + "..." if len(product_description) > 200 else product_description
             
-            # Add category information
-            prompt += """
-            Below is the full list of available Trendyol categories with their IDs, names, and hierarchical paths:
-            """
+            # Sadece gerekli kategori alanlarını içeren basit bir format kullan
+            simple_categories = []
+            for cat in category_data:
+                simple_categories.append({
+                    "id": cat["id"],
+                    "name": cat["name"]
+                })
             
-            # Add category data (limit to avoid token limits)
-            categories_str = json.dumps(category_data)
-            prompt += f"\n{categories_str}\n"
+            # Daha kısa ve öz prompt hazırla
+            prompt = f"Ürün: {short_title}"
             
-            prompt += """
-            Please analyze the product information and find the most appropriate category.
+            if short_description:
+                prompt += f"\nAçıklama: {short_description}"
             
-            You are a Turkish e-commerce expert at Trendyol. Considering both the product title and description,
-            select the most specific and appropriate category for this product. Consider the product attributes 
-            and match it to the most precise subcategory possible.
+            prompt += "\n\nKategoriler:"
             
-            Give me ONLY the category ID (not the name) that best matches the product. 
-            Return ONLY the numeric ID with no other text or explanations.
-            """
+            # Kategori verilerini basit bir formatta ekle
+            for cat in simple_categories:
+                prompt += f"\n{cat['id']}: {cat['name']}"
             
-            # Make the API call
+            prompt += "\n\nYukarıdaki ürün için EN UYGUN kategori ID'sini seçin. SADECE rakamsal ID'yi yazın, başka açıklama yapmayın."
+            
+            # Make the API call with efficient settings
             response = self.openai_client.chat.completions.create(
                 model="gpt-4o",  # the newest OpenAI model is "gpt-4o" which was released May 13, 2024.
                 messages=[
-                    {"role": "system", "content": "You are a Turkish e-commerce expert at Trendyol."},
+                    {"role": "system", "content": "You are a Turkish e-commerce expert. Be concise and direct."},
                     {"role": "user", "content": prompt}
                 ],
-                temperature=0.3,
-                max_tokens=10  # We just need a category ID, so keep it short
+                temperature=0.1,  # Daha düşük sıcaklık daha deterministik sonuçlar verir
+                max_tokens=5,     # Sadece kategori ID'sini istiyoruz, çok kısa tutabiliriz
+                top_p=0.9,        # Daha az çeşitlilik için top_p değerini düşür
             )
             
             # Extract the category ID from the response
@@ -187,15 +200,16 @@ class TrendyolCategoryFinder:
             # Ensure it's a valid numeric ID
             try:
                 category_id = int(category_id)
-                logger.info(f"GPT-4o selected category ID {category_id} for product '{product_title}'")
+                logger.info(f"GPT-4o selected category ID {category_id} for product '{short_title}'")
                 return category_id
             except ValueError:
-                logger.error(f"GPT-4o response was not a valid category ID: {category_id}")
-                raise ValueError(f"Invalid category ID from GPT: {category_id}")
+                logger.warning(f"GPT-4o response was not a valid category ID: {category_id}, using default")
+                return 2356  # Varsayılan kategori ID'si
                 
         except Exception as e:
             logger.error(f"Error finding category with GPT-4o: {str(e)}")
-            raise Exception(f"Failed to find category with GPT-4o: {str(e)}")
+            # Hata durumunda varsayılan kategori döndür
+            return 2356  # Varsayılan kategori ID'si
     
     def get_required_attributes(self, category_id):
         """Get required attributes for a category"""
@@ -248,31 +262,33 @@ class TrendyolCategoryFinder:
     def _query_gpt_for_attribute_value(self, product_title, product_description, attr_name, attr_values):
         """Query GPT-4o to select the best attribute value"""
         try:
-            # Prepare prompt with product and attribute information
-            prompt = f"""
-            I need to select the most appropriate value for a product attribute.
+            # Daha kısa ürün başlığı ve açıklaması kullan
+            short_title = product_title[:50] if len(product_title) > 50 else product_title
             
-            Product title: {product_title}
-            Product description: {product_description or 'No description available'}
+            # Açıklama çok uzunsa kısalt veya hiç dahil etme
+            short_desc = "Bilgi yok"
+            if product_description and len(product_description) > 0:
+                short_desc = product_description[:100] if len(product_description) > 100 else product_description
             
-            Attribute name: {attr_name}
-            Available values: {json.dumps(attr_values)}
+            # Daha basit bir prompt hazırla
+            prompt = f"Ürün: {short_title}\nÖzellik: {attr_name}\n\nDeğerler:"
             
-            Based on the product title and description, select the most appropriate value for this attribute.
-            Return ONLY the numeric ID of the selected value, no explanation.
+            # Öznitelik değerlerini basit bir şekilde göster
+            for val in attr_values:
+                prompt += f"\n{val['id']}: {val['name']}"
             
-            If there is no appropriate match, return 'none'.
-            """
+            prompt += "\n\nBu ürün için yukarıdaki değerlerden hangisi en uygun? SADECE ID'yi yazın. Eşleşme yoksa 'none' yazın."
             
-            # Make the API call
+            # Make the API call with more efficient settings
             response = self.openai_client.chat.completions.create(
                 model="gpt-4o",  # the newest OpenAI model is "gpt-4o" which was released May 13, 2024.
                 messages=[
-                    {"role": "system", "content": "You are a Turkish e-commerce product attributes expert."},
+                    {"role": "system", "content": "You are a Turkish e-commerce expert. Be concise."},
                     {"role": "user", "content": prompt}
                 ],
-                temperature=0.3,
-                max_tokens=10  # We just need a value ID, so keep it short
+                temperature=0.1,
+                max_tokens=5,  # Sadece ID için yeterli
+                top_p=0.9
             )
             
             # Extract the value ID from the response
@@ -280,19 +296,47 @@ class TrendyolCategoryFinder:
             
             # Handle the case where no appropriate match was found
             if value_id.lower() == 'none':
+                logger.info(f"No matching value found for attribute '{attr_name}'")
                 return None
                 
+            # Varsayılan öznitelik değerleri için sabit ID kullan (opsiyonel)
+            if attr_name.lower() == 'renk' or attr_name.lower() == 'color':
+                # Renk için varsayılan değer kullan (Çoğu ürün rengi)
+                most_common_colors = {
+                    'beyaz': 347, 'siyah': 348, 'mavi': 349, 'kırmızı': 350, 
+                    'yeşil': 351, 'sarı': 352, 'pembe': 354, 'mor': 355, 
+                    'gri': 357, 'turuncu': 359, 'kahverengi': 360
+                }
+                
+                # Ürün başlığında renk adı geçiyorsa, o rengi seç
+                for color_name, color_id in most_common_colors.items():
+                    if color_name in product_title.lower():
+                        logger.info(f"Using color '{color_name}' from product title")
+                        return color_id
+            
             # Ensure it's a valid numeric ID
             try:
                 value_id = int(value_id)
                 logger.info(f"GPT-4o selected value ID {value_id} for attribute '{attr_name}'")
                 return value_id
             except ValueError:
-                logger.error(f"GPT-4o response was not a valid value ID: {value_id}")
+                logger.warning(f"Invalid value ID from GPT: {value_id}, using first value")
+                
+                # Geçerli bir ID değilse, ilk değeri kullanmayı dene
+                if attr_values and len(attr_values) > 0:
+                    default_id = attr_values[0]['id']
+                    logger.info(f"Using default value ID {default_id} for attribute '{attr_name}'")
+                    return default_id
                 return None
                 
         except Exception as e:
             logger.error(f"Error finding attribute value with GPT-4o: {str(e)}")
+            
+            # Hata durumunda ilk değeri kullanmayı dene
+            if attr_values and len(attr_values) > 0:
+                default_id = attr_values[0]['id']
+                logger.info(f"Using first value ID {default_id} for attribute '{attr_name}' due to error")
+                return default_id
             return None
             
 

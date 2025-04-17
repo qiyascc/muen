@@ -72,7 +72,7 @@ class Command(BaseCommand):
                 elif failed_products:
                     failed_query = TrendyolProduct.objects.filter(
                         status_message__isnull=False
-                    ).exclude(status='success')
+                    ).exclude(batch_status='success')
                     count = failed_query.count()
                     failed_query.delete()
                     self.stdout.write(self.style.SUCCESS(f'Hatalı Trendyol ürünleri silindi ({count} ürün)'))
@@ -87,7 +87,7 @@ class Command(BaseCommand):
                     self.stdout.write(self.style.SUCCESS(f'Bekleyen Trendyol ürünleri silindi ({count} ürün)'))
                     
                 elif success_products:
-                    success_query = TrendyolProduct.objects.filter(status='success')
+                    success_query = TrendyolProduct.objects.filter(batch_status='success')
                     count = success_query.count()
                     success_query.delete()
                     self.stdout.write(self.style.SUCCESS(f'Başarılı Trendyol ürünleri silindi ({count} ürün)'))
@@ -97,7 +97,7 @@ class Command(BaseCommand):
                         batch_id=None,
                         status_message=None,
                         status_code=None,
-                        status='pending',
+                        batch_status='pending',
                         trendyol_id=None,
                         approved=False
                     )
