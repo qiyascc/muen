@@ -7,5 +7,15 @@ class TrendyolAppConfig(AppConfig):
     verbose_name = 'Trendyol API Entegrasyonu'
     
     def ready(self):
-        from . import signals
-        from .scheduler import start_scheduler
+        # Import signals
+        try:
+            from . import signals
+        except ImportError:
+            pass
+            
+        # Import scheduler if available
+        try:
+            from .scheduler import start_scheduler
+            # start_scheduler()  # Uncomment when scheduler is ready
+        except ImportError:
+            pass

@@ -9,9 +9,11 @@ from unfold.admin import ModelAdmin, TabularInline
 from unfold.forms import AdminPasswordChangeForm, UserChangeForm, UserCreationForm
 from .models import Config, ProductAvailableUrl, ProductDeletedUrl, ProductNewUrl
 from .product_models import Product, ProductSize, City, Store, SizeStoreStock
-from trendyol import api_client
-from trendyol.api_helpers import submit_product_to_trendyol, prepare_product_for_submission
-from trendyol.fetch_api_data import fetch_all_categories, fetch_all_brands
+# Trendyol referanslarını güncelleme
+# from trendyol import api_client
+# from trendyol.api_helpers import submit_product_to_trendyol, prepare_product_for_submission
+# from trendyol.fetch_api_data import fetch_all_categories, fetch_all_brands
+from trendyol_app.services import create_trendyol_product
 from .sopyo_api import send_product_to_sopyo
 
 # Product Models Admin Configuration
@@ -131,8 +133,12 @@ class ProductAdmin(ModelAdmin):
       """
       try:
         # Import from our new implementation
-        from trendyol.api_client_new import lcwaikiki_to_trendyol_product, sync_product_to_trendyol
-        from trendyol.models import TrendyolCategory
+        # Eski Trendyol uygulaması devre dışı bırakıldı
+        # from trendyol.api_client_new import lcwaikiki_to_trendyol_product, sync_product_to_trendyol
+        # from trendyol.models import TrendyolCategory
+        
+        # Yeni Trendyol uygulamasını kullanalım
+        from trendyol_app.services import create_trendyol_product
         import logging
 
         logger = logging.getLogger('trendyol.admin')

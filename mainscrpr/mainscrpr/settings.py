@@ -29,8 +29,9 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'rest_framework',
     'lcwaikiki',
-    'trendyol',  # Trendyol integration app
+    'trendyol_app',  # Yeni Trendyol entegrasyon uygulaması
     'django_apscheduler',  # Django APScheduler for scheduling tasks
+    # 'trendyol',  # Eski Trendyol uygulaması (devre dışı bırakıldı)
 ]
 
 # Unfold settings

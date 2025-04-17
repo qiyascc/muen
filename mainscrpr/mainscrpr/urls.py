@@ -300,7 +300,7 @@ def xml_api_docs(request):
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('lcwaikiki/', include('lcwaikiki.urls')),  # Include all lcwaikiki URLs with lcwaikiki/ prefix
-    path('trendyol/', include('trendyol.urls')),  # Include all trendyol URLs with trendyol/ prefix
+    path('trendyol/', include('trendyol_app.urls')),  # Yeni Trendyol uygulama URL'leri
     path('api/docs/xml/', xml_api_docs, name='xml_api_docs'),  # XML API dokümantasyonu
     path('', RedirectView.as_view(url='/admin/', permanent=False)),  # Redirect root URL to admin
 ]
