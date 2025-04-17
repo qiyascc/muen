@@ -132,32 +132,73 @@ class ProductAdmin(ModelAdmin):
           variant_data: Optional dict with variant info, e.g. {'size': 'M', 'stock': 10}
       """
       try:
-        # Import from our new implementation
-        # Eski Trendyol uygulaması devre dışı bırakıldı
-        # from trendyol.api_client_new import lcwaikiki_to_trendyol_product, sync_product_to_trendyol
-        # from trendyol.models import TrendyolCategory
-        
-        # Yeni Trendyol uygulamasını kullanalım
-        from trendyol_app.services import create_trendyol_product
+        # Gerekli modül ve işlevleri import et
+        from trendyol_app.services import create_trendyol_product, TrendyolAPI, TrendyolCategoryFinder
+        from trendyol_app.models import TrendyolAPIConfig, TrendyolProduct
         import logging
+        import json
 
-        logger = logging.getLogger('trendyol.admin')
+        logger = logging.getLogger('lcwaikiki.admin')
         
-        # If this is a variant, log the variant information
+        # Varyant bilgisini kaydet
+        variant_desc = ""
         if variant_data:
             variant_size = variant_data.get('size')
             variant_stock = variant_data.get('stock')
+            variant_desc = f" (Size: {variant_size})"
             logger.info(f"Processing variant for product {product.id}: Size={variant_size}, Stock={variant_stock}")
             self.message_user(
                 request,
                 f"Processing size variant '{variant_size}' with stock {variant_stock} for product '{product.title}'",
                 level=messages.INFO)
         
-        # Convert to Trendyol product with potential variant data
+        # LCWaikiki ürününü Trendyol ürününe dönüştür
         try:
-            trendyol_product = lcwaikiki_to_trendyol_product(product, variant_data)
+            # Varolan Trendyol ürününü kontrol et
+            trendyol_product = TrendyolProduct.objects.filter(lcwaikiki_product=product).first()
+            
+            # Eğer yoksa yeni oluştur
+            if not trendyol_product:
+                trendyol_product = TrendyolProduct()
+                trendyol_product.lcwaikiki_product = product
+            
+            # Ürün bilgilerini doldur
+            trendyol_product.barcode = product.product_code
+            trendyol_product.product_main_id = product.product_code
+            trendyol_product.title = product.title
+            trendyol_product.description = product.description or product.title
+            trendyol_product.brand_name = "LC Waikiki"
+            trendyol_product.brand_id = 102  # LC Waikiki brand ID
+            trendyol_product.category_name = product.category
+            
+            # Stok bilgisini ayarla
+            if variant_data:
+                trendyol_product.quantity = variant_data.get('stock')
+                trendyol_product.stock_code = f"{product.product_code}-{variant_data.get('size')}"
+            else:
+                trendyol_product.quantity = product.get_total_stock()
+                trendyol_product.stock_code = product.product_code
+            
+            # Fiyat bilgilerini ayarla
+            trendyol_product.price = product.price
+            trendyol_product.sale_price = product.get_discounted_price()
+            
+            # Varsayılan vergi oranı
+            trendyol_product.vat_rate = 18
+            
+            # Resim URL'sini ayarla
+            product_images = product.get_images()
+            if product_images and len(product_images) > 0:
+                trendyol_product.image_url = product_images[0]
+            
+            # Para birimi
+            trendyol_product.currency_type = "TRY"
+            
+            # Ürünü kaydet
+            trendyol_product.save()
+            
+            logger.info(f"Converted LCWaikiki product {product.id} to TrendyolProduct with ID {trendyol_product.id}")
         except Exception as e:
-            variant_desc = f" (Size: {variant_data.get('size')})" if variant_data else ""
             self.message_user(
                 request,
                 f"Failed to convert '{product.title}{variant_desc}' to Trendyol format: {str(e)}",
@@ -165,43 +206,41 @@ class ProductAdmin(ModelAdmin):
             logger.error(f"Error converting product {product.id}: {str(e)}")
             return None
 
-        if not trendyol_product:
-          variant_desc = f" (Size: {variant_data.get('size')})" if variant_data else ""
-          self.message_user(
-              request,
-              f"Failed to convert '{product.title}{variant_desc}' to Trendyol format",
-              level=messages.ERROR)
-          return None
-
-        # No need to check for category or find one, as our new implementation
-        # throws an error if category can't be found from the API
-        
-        # Send to Trendyol
-        try:
-            batch_id = sync_product_to_trendyol(trendyol_product)
-            # Update the batch ID in the product
-            trendyol_product.batch_id = batch_id
-            trendyol_product.save()
-            
-            # If we get here, the sync was successful
-            variant_desc = f" (Size: {variant_data.get('size')})" if variant_data else ""
+        # API config al
+        config = TrendyolAPIConfig.objects.filter(is_active=True).first()
+        if not config:
             self.message_user(
                 request,
-                f"Product '{product.title}{variant_desc}' sent to Trendyol with batch ID: {batch_id}",
-                level=messages.SUCCESS)
-            return batch_id
+                f"No active Trendyol API configuration found. Cannot send '{product.title}{variant_desc}'",
+                level=messages.ERROR)
+            return None
+        
+        # Ürünü Trendyol'a gönder
+        try:
+            # create_trendyol_product fonksiyonunu çağır
+            batch_id = create_trendyol_product(trendyol_product)
+            
+            if batch_id:
+                # Başarılı gönderim
+                self.message_user(
+                    request,
+                    f"Product '{product.title}{variant_desc}' sent to Trendyol with batch ID: {batch_id}",
+                    level=messages.SUCCESS)
+                return batch_id
+            else:
+                # Gönderim başarısız
+                self.message_user(
+                    request,
+                    f"Failed to send '{product.title}{variant_desc}' to Trendyol. No batch ID returned.",
+                    level=messages.ERROR)
+                return None
         except Exception as e:
-            variant_desc = f" (Size: {variant_data.get('size')})" if variant_data else ""
+            # Hata durumunda
             self.message_user(
                 request,
                 f"Failed to send '{product.title}{variant_desc}' to Trendyol: {str(e)}",
                 level=messages.ERROR)
-            logger.error(f"Error syncing product {trendyol_product.id}: {str(e)}")
-            
-            error_message = f"Failed to send '{product.title}{variant_desc}' to Trendyol"
-            if trendyol_product.status_message:
-                error_message += f": {trendyol_product.status_message}"
-            self.message_user(request, error_message, level=messages.ERROR)
+            logger.error(f"Error sending product {trendyol_product.id} to Trendyol: {str(e)}")
             return None
       except Exception as e:
         variant_desc = f" (Size: {variant_data.get('size')})" if variant_data else ""

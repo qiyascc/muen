@@ -60,6 +60,44 @@ class Product(models.Model):
             return 10  # Default stock value when in_stock but no specific quantity known
             
         return total
+        
+    def get_images(self):
+        """Get list of image URLs for this product"""
+        if isinstance(self.images, list) and len(self.images) > 0:
+            # Already a list, return it
+            return self.images
+        elif isinstance(self.images, dict) and 'images' in self.images:
+            # Extract from dict format
+            return self.images.get('images', [])
+        elif self.images:
+            # Try to handle any other format
+            try:
+                if isinstance(self.images, str):
+                    import json
+                    parsed = json.loads(self.images)
+                    if isinstance(parsed, list):
+                        return parsed
+                    elif isinstance(parsed, dict) and 'images' in parsed:
+                        return parsed.get('images', [])
+            except:
+                pass
+        
+        # Fallback: if we can't parse images, return an empty list
+        return []
+        
+    def get_discounted_price(self):
+        """Calculate the discounted price if a discount ratio is set"""
+        if not self.price:
+            return 0
+            
+        if self.discount_ratio and self.discount_ratio > 0:
+            from decimal import Decimal
+            # Apply discount: original price - (original price * discount percentage)
+            discount_factor = Decimal(self.discount_ratio) / Decimal(100)
+            return self.price * (Decimal(1) - discount_factor)
+        
+        # No discount or invalid discount, return the original price
+        return self.price
     
     class Meta:
         verbose_name = "Product"

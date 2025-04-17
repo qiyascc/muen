@@ -71,6 +71,20 @@ class TrendyolProduct(models.Model):
         ('failed', _('Başarısız')),
     ]
     
+    # LCWaikiki ilişkisi
+    lcwaikiki_product = models.ForeignKey(
+        'lcwaikiki.Product', 
+        on_delete=models.SET_NULL,
+        null=True, 
+        blank=True, 
+        related_name='trendyol_products',
+        verbose_name=_("LCWaikiki Ürünü")
+    )
+    
+    # Kategori ID
+    category_id = models.IntegerField(null=True, blank=True, verbose_name=_("Kategori ID"))
+    brand_id = models.IntegerField(default=102, verbose_name=_("Marka ID"))  # Default: LCWaikiki
+    
     barcode = models.CharField(max_length=100, unique=True, verbose_name=_("Barkod"))
     title = models.CharField(max_length=255, verbose_name=_("Başlık"))
     product_main_id = models.CharField(max_length=100, unique=True, verbose_name=_("Ürün Ana ID"))
