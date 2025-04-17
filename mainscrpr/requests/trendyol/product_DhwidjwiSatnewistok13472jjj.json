@@ -1,0 +1,59 @@
+{
+  "timestamp": "2025-04-17T16:02:05.199930",
+  "data": {
+    "items": [
+      {
+        "barcode": "Satencoraperkekirisk",
+        "title": "Saten erkek kırmızı spor çorap",
+        "productMainId": "Satenekrkeke2362pim",
+        "brandName": "LC Waikiki",
+        "categoryName": "Çorap",
+        "quantity": 231,
+        "stockCode": "DhwidjwiSatnewistok13472jjj",
+        "dimensionalWeight": 1,
+        "description": "Saten erkek kırmızı detayli araba izli epic mukemmel erkek çocuk çorap",
+        "currencyType": "TRY",
+        "listPrice": 321.0,
+        "salePrice": 300.0,
+        "vatRate": 10,
+        "cargoCompanyId": 10,
+        "images": [
+          {
+            "url": "https://t.me/abc"
+          }
+        ],
+        "attributes": [
+          {
+            "attributeId": 346,
+            "attributeValueId": 256115
+          },
+          {
+            "attributeId": 1192,
+            "attributeValueId": 10619932
+          },
+          {
+            "attributeId": 343,
+            "attributeValueId": 4296
+          },
+          {
+            "attributeId": 338,
+            "attributeValueId": 10622983
+          },
+          {
+            "attributeId": 200,
+            "attributeValueId": 10619094
+          },
+          {
+            "attributeId": "fabric",
+            "attributeValueId": "unspecified"
+          },
+          {
+            "attributeId": "pattern",
+            "attributeValueId": "unspecified"
+          }
+        ],
+        "categoryId": 550
+      }
+    ]
+  }
+}

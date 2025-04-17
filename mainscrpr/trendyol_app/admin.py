@@ -39,7 +39,7 @@ class TrendyolProductAdmin(admin.ModelAdmin):
         return "Resim yok"
     display_image.short_description = "Ürün Resmi"
     
-    actions = ['check_batch_status']
+    actions = ['check_batch_status', 'send_to_trendyol']
     
     def check_batch_status(self, request, queryset):
         from .services import check_product_batch_status
@@ -51,3 +51,71 @@ class TrendyolProductAdmin(admin.ModelAdmin):
         
         self.message_user(request, f"{updated} ürünün batch durumu güncellendi.")
     check_batch_status.short_description = "Seçili ürünlerin batch durumlarını kontrol et"
+    
+    def send_to_trendyol(self, request, queryset):
+        """Seçili ürünleri Trendyol'a gönderir"""
+        from .services import TrendyolAPI, TrendyolCategoryFinder, TrendyolProductManager, create_trendyol_product
+        from .models import TrendyolAPIConfig
+        import json
+        
+        success_count = 0
+        error_count = 0
+        
+        # API yapılandırmasını al
+        config = TrendyolAPIConfig.objects.filter(is_active=True).first()
+        if not config:
+            self.message_user(request, "Aktif Trendyol API yapılandırması bulunamadı", level='error')
+            return
+            
+        # API istemcisini oluştur
+        api_client = TrendyolAPI(config)
+        category_finder = TrendyolCategoryFinder(api_client)
+        
+        for product in queryset:
+            try:
+                # Kategori ID'sini GPT-4o ile bul
+                if not product.category_id:
+                    category_id = category_finder.find_matching_category(product.title, product.description)
+                    product.category_id = category_id
+                    product.save(update_fields=['category_id'])
+                
+                # Ürünü Trendyol'a gönder
+                batch_id = create_trendyol_product(product)
+                
+                if batch_id:
+                    success_count += 1
+                    self.message_user(
+                        request, 
+                        f"'{product.title}' başarıyla gönderildi. Batch ID: {batch_id}", 
+                        level='success'
+                    )
+                else:
+                    error_count += 1
+                    self.message_user(
+                        request,
+                        f"'{product.title}' gönderilemedi. Bir hata oluştu.",
+                        level='error'
+                    )
+            except Exception as e:
+                error_count += 1
+                self.message_user(
+                    request,
+                    f"'{product.title}' gönderilemedi: {str(e)}",
+                    level='error'
+                )
+        
+        if success_count > 0:
+            self.message_user(
+                request,
+                f"{success_count} ürün başarıyla Trendyol'a gönderildi. Durumlarını birkaç dakika içinde kontrol edin.",
+                level='success'
+            )
+        
+        if error_count > 0:
+            self.message_user(
+                request,
+                f"{error_count} ürün gönderilemedi.",
+                level='warning'
+            )
+    
+    send_to_trendyol.short_description = "Seçili ürünleri Trendyol'a gönder"

@@ -369,30 +369,35 @@ class TrendyolProductManager:
             if 'pattern' not in attribute_values:
                 attribute_values['pattern'] = 'unspecified'
             
-            # Prepare product data
+            # Prepare product data - Trendyol API formatına uygun
             product_data = {
                 'items': [{
                     'barcode': product.barcode,
                     'title': product.title,
                     'productMainId': product.product_main_id,
-                    'brandName': product.brand_name,
-                    'categoryName': product.category_name,
+                    'brandId': product.brand_id or 1791,  # Varsayılan marka ID (eğer yoksa)
+                    'categoryId': category_id,
                     'quantity': product.quantity,
                     'stockCode': product.stock_code,
-                    'dimensionalWeight': 1,
+                    'dimensionalWeight': 2,
                     'description': product.description,
-                    'currencyType': product.currency_type,
+                    'currencyType': product.currency_type or 'TRY',
                     'listPrice': float(product.price),
                     'salePrice': float(product.sale_price),
-                    'vatRate': product.vat_rate,
-                    'cargoCompanyId': 10,  # Default cargo company
+                    'vatRate': product.vat_rate or 18,
+                    'cargoCompanyId': 10,
+                    'shipmentAddressId': 0,
+                    'returningAddressId': 0,
+                    'deliveryOption': {
+                        'deliveryDuration': 1,
+                        'fastDeliveryType': 'SAME_DAY_SHIPPING'
+                    },
                     'images': [
                         {
                             'url': product.image_url
                         }
                     ],
-                    'attributes': self._format_attributes(attribute_values),
-                    'categoryId': category_id
+                    'attributes': self._format_attributes(attribute_values)
                 }]
             }
             
