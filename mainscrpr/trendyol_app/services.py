@@ -394,8 +394,10 @@ class TrendyolProductManager:
                 }]
             }
             
-            # Send to Trendyol
-            response = self.api.post('supplier/product-service/v2/products', product_data)
+            # Send to Trendyol using the configured products endpoint
+            seller_id = self.api.config.supplier_id
+            endpoint = self.api.config.products_endpoint.format(sellerId=seller_id)
+            response = self.api.post(endpoint, product_data)
             
             if 'batchId' in response:
                 return response['batchId']
@@ -419,7 +421,12 @@ class TrendyolProductManager:
     def check_batch_status(self, batch_id):
         """Check status of a product batch"""
         try:
-            response = self.api.get(f'supplier/product-service/v2/products/batch/{batch_id}')
+            supplier_id = self.api.config.supplier_id
+            endpoint = self.api.config.batch_status_endpoint.format(
+                supplierId=supplier_id, 
+                batchId=batch_id
+            )
+            response = self.api.get(endpoint)
             return response
         except Exception as e:
             logger.error(f"Error checking batch status: {str(e)}")
