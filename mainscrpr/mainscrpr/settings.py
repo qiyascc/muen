@@ -106,22 +106,17 @@ UNFOLD = {
                     {
                         "title": "Products",
                         "icon": "inventory_2",
-                        "link": "/admin/trendyol/trendyolproduct/",
-                    },
-                    {
-                        "title": "Brands",
-                        "icon": "branding_watermark",
-                        "link": "/admin/trendyol/trendyolbrand/",
-                    },
-                    {
-                        "title": "Categories",
-                        "icon": "category",
-                        "link": "/admin/trendyol/trendyolcategory/",
+                        "link": "/admin/trendyol_app/trendyolproduct/",
                     },
                     {
                         "title": "Sync Status",
                         "icon": "sync",
-                        "link": "/trendyol/sync-status/",
+                        "link": "/trendyol/products/",
+                    },
+                    {
+                        "title": "API Commands",
+                        "icon": "api",
+                        "link": "/admin/trendyol_app/",
                     },
                 ],
             },
