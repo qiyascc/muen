@@ -1,1 +1,0 @@
-# Trendyol management commands

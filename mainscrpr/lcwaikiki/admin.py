@@ -9,10 +9,6 @@ from unfold.admin import ModelAdmin, TabularInline
 from unfold.forms import AdminPasswordChangeForm, UserChangeForm, UserCreationForm
 from .models import Config, ProductAvailableUrl, ProductDeletedUrl, ProductNewUrl
 from .product_models import Product, ProductSize, City, Store, SizeStoreStock
-# Trendyol referanslarını güncelleme
-# from trendyol import api_client
-# from trendyol.api_helpers import submit_product_to_trendyol, prepare_product_for_submission
-# from trendyol.fetch_api_data import fetch_all_categories, fetch_all_brands
 from trendyol_app.services import create_trendyol_product
 from .sopyo_api import send_product_to_sopyo
 

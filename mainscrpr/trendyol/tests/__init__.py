@@ -1,1 +1,0 @@
-# Trendyol API Integration Tests Package
