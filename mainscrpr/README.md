@@ -66,14 +66,6 @@ The system uses django-apscheduler to run the following scheduled jobs:
    - Processes up to 75 items per run
    - Focuses only on updating deleted product status
 
-## Installation and Setup
-
-1. Ensure Python 3.11+ and PostgreSQL are installed
-2. Install dependencies: `pip install -r requirements.txt`
-3. Configure database settings in `settings.py`
-4. Run migrations: `python manage.py migrate`
-5. Create an admin user: `python manage.py createsuperuser`
-6. Start the server: `python manage.py runserver 0.0.0.0:5000`
 
 ## Access
 
